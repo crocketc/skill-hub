@@ -383,6 +383,265 @@ async fn interrupted_managed_change_before_first_write_can_be_rolled_back() {
 }
 
 #[tokio::test]
+async fn managed_sync_after_filesystem_write_can_resume_database_commit_after_restart() {
+    let fixture = fixture().await;
+    let (deployment_id, destination) = seed_managed_copy(
+        &fixture,
+        "sync-recovery-agent",
+        &fixture.first_version,
+        "# First\n",
+        "# Forked\n",
+    );
+    let app = facade(&fixture);
+    assert_eq!(
+        adopt_target_version(&app, &fixture).await,
+        "version.adopted_deployment_partial"
+    );
+    let prepared = app
+        .prepare_usage_change(usage_change(
+            "sync",
+            &format!("managed:{deployment_id}"),
+            Some("library_current"),
+        ))
+        .expect("prepare managed sync");
+
+    let database = Database::open(&fixture.database_path).expect("open database for fault");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_sync_reconcile BEFORE UPDATE ON deployments
+             WHEN OLD.id = '{}'
+             BEGIN SELECT RAISE(ABORT, 'injected reconcile failure'); END;",
+            deployment_id
+        ))
+        .expect("install deployment update fault");
+    drop(database);
+
+    let interrupted = app
+        .commit_usage_change(CommitUsageChange {
+            operation_id: prepared.operation_id,
+            prepared_id: prepared.prepared_id,
+        })
+        .expect("return a recoverable per-target failure");
+    assert_eq!(
+        interrupted.item_results[0].status,
+        UsageChangeItemStatus::RecoveryRequired
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("written target"),
+        "# Target\n"
+    );
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.first_version.id
+    );
+    drop(app);
+
+    let database = Database::open(&fixture.database_path).expect("open database after fault");
+    database
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_sync_reconcile;")
+        .expect("remove deployment update fault");
+    drop(database);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after restart")
+    else {
+        panic!("expected recovery candidates");
+    };
+    let candidate = candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("partially applied sync remains visible");
+    assert_eq!(
+        candidate.actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    std::fs::write(destination.join("SKILL.md"), "# User change\n")
+        .expect("simulate target drift after candidate listing");
+    let stale_completion = restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect_err("completion must recheck the target after listing");
+    assert_eq!(
+        stale_completion.code,
+        skillhub_core::ErrorCode::OperationConflict
+    );
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.first_version.id
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("preserved user change"),
+        "# User change\n"
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck candidate after target drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("drifted operation remains visible")
+        .actions
+        .is_empty());
+
+    std::fs::write(destination.join("SKILL.md"), "# Target\n")
+        .expect("restore exact target content");
+    let expected_hash = deploy_row(&fixture, deployment_id).expected_hash;
+    let database = Database::open(&fixture.database_path).expect("open database for drift");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET expected_hash='changed-outside-operation' WHERE id=?1",
+            rusqlite::params![deployment_id.to_string()],
+        )
+        .expect("simulate deployment fact drift");
+    drop(database);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after deployment fact drift")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .find(|candidate| candidate.operation_id == prepared.operation_id)
+        .expect("database-drifted operation remains visible")
+        .actions
+        .is_empty());
+    let database = Database::open(&fixture.database_path).expect("restore database facts");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployments SET expected_hash=?1 WHERE id=?2",
+            rusqlite::params![expected_hash, deployment_id.to_string()],
+        )
+        .expect("restore deployment fact");
+    drop(database);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("recheck candidates after restoring facts")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("restored operation remains visible")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+
+    let database =
+        Database::open(&fixture.database_path).expect("open database for recovery fault");
+    database
+        .connection_for_test()
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_managed_usage_settlement BEFORE UPDATE ON operations
+             WHEN OLD.operation_id = '{}'
+             BEGIN SELECT RAISE(ABORT, 'injected settlement failure'); END;",
+            prepared.operation_id
+        ))
+        .expect("install recovery journal fault");
+    drop(database);
+    let settlement_error = restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect_err("journal settlement fault leaves a resumable operation");
+    assert_eq!(
+        settlement_error.code,
+        skillhub_core::ErrorCode::InternalError
+    );
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.target_version.id
+    );
+    let interrupted_settlement =
+        Database::open(&fixture.database_path).expect("open database after recovery fault");
+    let still_pending = interrupted_settlement
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read recovery operation")
+        .expect("recovery operation remains");
+    assert_eq!(
+        still_pending.phase,
+        skillhub_core::OperationPhase::NeedsRecovery
+    );
+    interrupted_settlement
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_managed_usage_settlement;")
+        .expect("remove recovery journal fault");
+    drop(interrupted_settlement);
+    drop(restarted);
+
+    let restarted = facade(&fixture);
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list candidates after second restart")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(
+        candidates
+            .iter()
+            .find(|candidate| candidate.operation_id == prepared.operation_id)
+            .expect("recovery remains visible after partial settlement")
+            .actions,
+        vec![skillhub_core::RecoveryAction::CompleteOperation]
+    );
+    restarted
+        .execute(AppCommand::ResolveRecovery(ResolveRecovery {
+            operation_id: prepared.operation_id,
+            action: skillhub_core::RecoveryAction::CompleteOperation,
+        }))
+        .await
+        .expect("resume the journal settlement without repeating file work");
+    let settled = Database::open(&fixture.database_path)
+        .expect("reopen settled database")
+        .operation_repository()
+        .get_sync(prepared.operation_id)
+        .expect("read recovered operation")
+        .expect("operation remains recorded");
+    assert_eq!(settled.phase, skillhub_core::OperationPhase::Committed);
+    assert_eq!(
+        deploy_row(&fixture, deployment_id).version_id,
+        fixture.target_version.id
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination.join("SKILL.md")).expect("preserved target"),
+        "# Target\n"
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates after settlement")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.operation_id != prepared.operation_id));
+}
+
+#[tokio::test]
 async fn interrupted_managed_change_with_backup_only_can_be_settled_without_touching_it() {
     for backup_checkpointed in [false, true] {
         let fixture = fixture().await;

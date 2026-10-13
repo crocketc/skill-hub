@@ -812,6 +812,314 @@ pub(crate) fn rollback_unstarted_managed_usage_change(
     database.operation_repository().update_sync(&record)
 }
 
+/// A managed sync can resume its database reconciliation only after the
+/// requested version tree and the newly-created target entry still match the
+/// journal. A partially committed reconciliation is also accepted so a crash
+/// between target rows can be retried idempotently.
+pub(crate) fn managed_usage_change_completion_available(
+    database: &Database,
+    library_runtime: &super::library_runtime::LibraryRuntime,
+    record: &OperationRecord,
+) -> AppResult<bool> {
+    if database
+        .operation_repository()
+        .get_sync(record.operation_id)?
+        .as_ref()
+        != Some(record)
+        || record.kind != MANAGED_USAGE_CHANGE_KIND
+        || record.phase != OperationPhase::NeedsRecovery
+    {
+        return Ok(false);
+    }
+    let Ok(journal) =
+        serde_json::from_value::<ManagedUsageChangeJournal>(record.recovery_data.clone())
+    else {
+        return Ok(false);
+    };
+    let Some(result) = record
+        .result
+        .as_ref()
+        .and_then(|value| serde_json::from_value::<UsageChangeResult>(value.clone()).ok())
+    else {
+        return Ok(false);
+    };
+    if journal.request.operation_id != record.operation_id
+        || journal.prepared.operation_id != record.operation_id
+        || journal.plans.is_empty()
+        || journal.plans.len() != journal.prepared.entry_evidence.len()
+        || journal.plans.len() != journal.completed.len()
+        || result.operation_id != record.operation_id
+        || result.prepared_id != journal.prepared.prepared_id
+        || !result.recovery_required
+        || result.item_results != journal.completed
+        || result.derived_skill_id.is_some()
+        || result.recovery_operation_id.is_some()
+    {
+        return Ok(false);
+    }
+    let Ok(library) = library_runtime.snapshot() else {
+        return Ok(false);
+    };
+    let deployments = database.deployment_repository().list_all()?;
+    let relations = database.relationship_repository().list_relations()?;
+    let target_paths = database.target_repository().paths_by_id()?;
+    let filesystem = DeploymentFilesystem::new();
+    let mut has_resumable_target = false;
+
+    for (index, (plan, item)) in journal.plans.iter().zip(&journal.completed).enumerate() {
+        if item.status != UsageChangeItemStatus::RecoveryRequired {
+            continue;
+        }
+        has_resumable_target = true;
+        let relation_id = format!("managed:{}", plan.deployment_id);
+        let Some(original_deployment) = plan.original_deployment.as_ref() else {
+            return Ok(false);
+        };
+        let Some(original_relation) = plan.original_relation.as_ref() else {
+            return Ok(false);
+        };
+        if journal.request.action != UsageChangeAction::Sync
+            || item.action != UsageChangeImpactAction::Synchronize
+            || item.relation_ids != [relation_id.clone()]
+            || item.skill_id != original_deployment.skill_id
+            || item
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("usage_change_failure_fact_unrecorded:"))
+            || original_deployment.id != plan.deployment_id
+            || original_deployment.mode != DeploymentMode::ManagedCopy
+            || original_deployment.runtime_name.is_empty()
+            || original_relation.relation_id != relation_id
+            || plan.created_entry_identity.is_none()
+            || !plan.backup_created
+        {
+            return Ok(false);
+        }
+        if super::validate_deployment_runtime_name(original_deployment).is_err() {
+            return Ok(false);
+        }
+
+        let Some(current_deployment) = deployments
+            .iter()
+            .find(|deployment| deployment.id == plan.deployment_id)
+        else {
+            return Ok(false);
+        };
+        let Some(current_relation) = relations
+            .iter()
+            .find(|relation| relation.relation_id == relation_id && relation.active)
+        else {
+            return Ok(false);
+        };
+        let Some(target_root) = target_paths.get(&original_deployment.target_id) else {
+            return Ok(false);
+        };
+        if skillhub_core::physical_id_for_path(target_root).as_deref()
+            != Some(original_deployment.target_id.as_str())
+        {
+            return Ok(false);
+        }
+        let destination = Path::new(target_root).join(&original_deployment.runtime_name);
+        let deployment_hash =
+            match deployment_hash_for_version(&library.store, &plan.subject_version_id) {
+                Ok((manifest, hash)) if manifest.skill_id == original_deployment.skill_id => hash,
+                _ => return Ok(false),
+            };
+        if Path::new(&plan.destination) != destination.as_path()
+            || entry_fingerprint(&destination).ok().flatten().as_deref()
+                != Some(deployment_hash.as_str())
+        {
+            return Ok(false);
+        }
+        if filesystem
+            .recovery_entry_identity(DeploymentMode::ManagedCopy, &destination)
+            .ok()
+            .as_deref()
+            != plan.created_entry_identity.as_deref()
+        {
+            return Ok(false);
+        }
+
+        let mut reconciled_deployment = original_deployment.clone();
+        reconciled_deployment.version_id = plan.subject_version_id.clone();
+        reconciled_deployment.expected_hash = deployment_hash.clone();
+        reconciled_deployment.observed_hash = Some(deployment_hash.clone());
+        let mut reconciled_relation = original_relation.clone();
+        reconciled_relation.content_fingerprint = deployment_hash;
+        reconciled_relation.match_state = skillhub_core::ObservedMatchState::ContentVerified;
+        reconciled_relation.health_reasons = Some(Vec::new());
+        reconciled_relation.active = true;
+        reconciled_relation.released_at = None;
+        let relation_is_reconciled =
+            relation_matches_except_observed_at(current_relation, &reconciled_relation);
+
+        if current_deployment == original_deployment {
+            let mut failed_relation = original_relation.clone();
+            let mut reasons = failed_relation.health_reasons.take().unwrap_or_default();
+            if !reasons
+                .contains(&skillhub_core::relationship::RelationHealthReason::OperationFailed)
+            {
+                reasons.push(skillhub_core::relationship::RelationHealthReason::OperationFailed);
+            }
+            reasons.sort_by_key(|reason| *reason as u8);
+            reasons.dedup();
+            failed_relation.health_reasons = Some(reasons);
+            if !relation_matches_except_observed_at(current_relation, &failed_relation) {
+                return Ok(false);
+            }
+        } else if current_deployment != &reconciled_deployment || !relation_is_reconciled {
+            return Ok(false);
+        }
+
+        let evidence = &journal.prepared.entry_evidence[index];
+        if evidence.path != plan.destination
+            || evidence.physical_source_ids != [original_deployment.target_id.clone()]
+            || evidence.skill_id != original_deployment.skill_id
+        {
+            return Ok(false);
+        }
+    }
+    Ok(has_resumable_target)
+}
+
+pub(crate) fn complete_managed_usage_change_recovery(
+    database: &Database,
+    library_runtime: &super::library_runtime::LibraryRuntime,
+    operation_id: OperationId,
+) -> AppResult<()> {
+    let mut record = database
+        .operation_repository()
+        .get_sync(operation_id)?
+        .ok_or_else(|| operation_conflict("managed_usage_change_preview_missing"))?;
+    if !managed_usage_change_completion_available(database, library_runtime, &record)? {
+        return Err(operation_conflict(
+            "managed_usage_change_recovery_state_changed",
+        ));
+    }
+    let mut journal: ManagedUsageChangeJournal =
+        serde_json::from_value(record.recovery_data.clone())
+            .map_err(|_| operation_conflict("managed_usage_change_journal_invalid"))?;
+    let mut result: UsageChangeResult = record
+        .result
+        .as_ref()
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .ok_or_else(|| operation_conflict("managed_usage_change_receipt_missing"))?;
+
+    for (index, plan) in journal.plans.iter().enumerate() {
+        if journal.completed[index].status != UsageChangeItemStatus::RecoveryRequired {
+            continue;
+        }
+        // Recheck after every per-target transaction. If a later transaction
+        // fails or the process exits, the already-reconciled rows are accepted
+        // as a verified intermediate state on the next recovery attempt.
+        if !managed_usage_change_completion_available(database, library_runtime, &record)? {
+            return Err(operation_conflict(
+                "managed_usage_change_recovery_state_changed",
+            ));
+        }
+        let original = plan
+            .original_deployment
+            .as_ref()
+            .ok_or_else(|| operation_conflict("managed_usage_change_deployment_missing"))?;
+        let current = database
+            .deployment_repository()
+            .list_all()?
+            .into_iter()
+            .find(|deployment| deployment.id == plan.deployment_id)
+            .ok_or_else(|| operation_conflict("managed_usage_change_deployment_missing"))?;
+        if current == *original {
+            let library = library_runtime.snapshot()?;
+            let (_, expected_hash) =
+                deployment_hash_for_version(&library.store, &plan.subject_version_id)?;
+            let destination = Path::new(&plan.destination);
+            if entry_fingerprint(destination)?.as_deref() != Some(expected_hash.as_str())
+                || DeploymentFilesystem::new()
+                    .recovery_entry_identity(DeploymentMode::ManagedCopy, destination)?
+                    != plan.created_entry_identity.as_deref().ok_or_else(|| {
+                        operation_conflict("managed_usage_change_entry_identity_missing")
+                    })?
+            {
+                return Err(operation_conflict(
+                    "managed_usage_change_recovery_state_changed",
+                ));
+            }
+            database
+                .deployment_repository()
+                .update_reconcile_facts_sync(
+                    plan.deployment_id,
+                    &plan.subject_version_id,
+                    &expected_hash,
+                    Some(&expected_hash),
+                )?;
+        }
+        journal.completed[index].status = UsageChangeItemStatus::Applied;
+        journal.completed[index].reason = None;
+        result.item_results[index] = journal.completed[index].clone();
+    }
+    result.recovery_required = false;
+    record.result = Some(serde_json::to_value(&result).map_err(serialization_error)?);
+    record.recovery_data = serde_json::to_value(&journal).map_err(serialization_error)?;
+    set_phase(
+        &mut record,
+        OperationPhase::Committed,
+        journal.plans.len() as u32,
+        journal.plans.len() as u32,
+    );
+    record.progress.message_code = "recovery.managed_usage_change.completed".to_owned();
+    record.error_code = None;
+    database.operation_repository().update_sync(&record)
+}
+
+fn relation_matches_except_observed_at(
+    current: &skillhub_core::relationship::DeploymentRelationFact,
+    expected: &skillhub_core::relationship::DeploymentRelationFact,
+) -> bool {
+    let mut expected = expected.clone();
+    expected.observed_at = current.observed_at;
+    current == &expected
+}
+
+fn deployment_hash_for_version(
+    store: &VersionStore,
+    version_id: &VersionId,
+) -> AppResult<(skillhub_core::VersionManifest, String)> {
+    let manifest = store.load_manifest(version_id)?;
+    let mut entries = BTreeMap::<String, String>::new();
+    entries.insert("dir:".to_owned(), String::new());
+    for entry in &manifest.entries {
+        let (object_id, bytes) = store.read_file(version_id, &entry.path, entry.size)?;
+        if object_id != entry.object_id || bytes.len() as u64 != entry.size {
+            return Err(operation_conflict("managed_usage_change_version_invalid"));
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        entries.insert(
+            format!("file:{}", entry.path),
+            format!("{:x}", hasher.finalize()),
+        );
+        let mut parent = Path::new(&entry.path).parent();
+        while let Some(path) = parent {
+            if path.as_os_str().is_empty() {
+                break;
+            }
+            entries.insert(
+                format!("dir:{}", path.to_string_lossy().replace('\\', "/")),
+                String::new(),
+            );
+            parent = path.parent();
+        }
+    }
+    let mut hasher = Sha256::new();
+    for (path, digest) in entries {
+        hasher.update(path.as_bytes());
+        hasher.update([0]);
+        hasher.update(digest.as_bytes());
+        hasher.update([0]);
+    }
+    Ok((manifest, format!("sha256:{:x}", hasher.finalize())))
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct UsageOriginalEntryAdoptionResult {
     pub(crate) skill_id: SkillId,

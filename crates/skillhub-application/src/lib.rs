@@ -21507,10 +21507,8 @@ impl RecoveryBackend for LocalRecoveryBackend {
                     {
                         vec![RecoveryAction::RollbackOperation]
                     }
-                    "managed_usage_change"
-                        if self.managed_usage_change_rollback_available(record) =>
-                    {
-                        vec![RecoveryAction::RollbackOperation]
+                    "managed_usage_change" => {
+                        self.managed_usage_change_recovery_actions(record)
                     }
                     "usage_manage_batch"
                         if usage_change_service::manage_batch_recovery_state(record, &records)
@@ -21676,9 +21674,6 @@ impl RecoveryBackend for LocalRecoveryBackend {
             };
         }
         if operation_kind.as_deref() == Some("managed_usage_change") {
-            if action != RecoveryAction::RollbackOperation {
-                return Err(unsupported("recovery.resolve.managed_usage_change"));
-            }
             let _mutation = self
                 .relation_migration_lock
                 .lock()
@@ -21687,10 +21682,22 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .database
                 .lock()
                 .map_err(|_| internal("recovery.resolve.managed_usage_change.database"))?;
-            return usage_change_service::rollback_unstarted_managed_usage_change(
-                &database,
-                operation_id,
-            );
+            return match action {
+                RecoveryAction::RollbackOperation => {
+                    usage_change_service::rollback_unstarted_managed_usage_change(
+                        &database,
+                        operation_id,
+                    )
+                }
+                RecoveryAction::CompleteOperation => {
+                    usage_change_service::complete_managed_usage_change_recovery(
+                        &database,
+                        &self.library_runtime,
+                        operation_id,
+                    )
+                }
+                _ => Err(unsupported("recovery.resolve.managed_usage_change")),
+            };
         }
         if operation_kind.as_deref() == Some("usage_derived_rename") {
             if action != RecoveryAction::CompleteOperation {
@@ -21959,18 +21966,31 @@ impl RecoveryBackend for LocalRecoveryBackend {
 }
 
 impl LocalRecoveryBackend {
-    fn managed_usage_change_rollback_available(
+    fn managed_usage_change_recovery_actions(
         &self,
         record: &skillhub_core::OperationRecord,
-    ) -> bool {
+    ) -> Vec<RecoveryAction> {
         let Ok(_mutation) = self.relation_migration_lock.lock() else {
-            return false;
+            return Vec::new();
         };
         let Ok(database) = self.database.lock() else {
-            return false;
+            return Vec::new();
         };
-        usage_change_service::managed_usage_change_rollback_available(&database, record)
+        if usage_change_service::managed_usage_change_completion_available(
+            &database,
+            &self.library_runtime,
+            record,
+        )
+        .unwrap_or(false)
+        {
+            vec![RecoveryAction::CompleteOperation]
+        } else if usage_change_service::managed_usage_change_rollback_available(&database, record)
             .unwrap_or(false)
+        {
+            vec![RecoveryAction::RollbackOperation]
+        } else {
+            Vec::new()
+        }
     }
 
     fn load_validated_deployment_recovery(
