@@ -812,8 +812,8 @@ pub(crate) fn rollback_unstarted_managed_usage_change(
     database.operation_repository().update_sync(&record)
 }
 
-/// A managed sync can resume its database reconciliation only after the
-/// requested version tree and the newly-created target entry still match the
+/// A managed sync or restore can resume its database reconciliation only after
+/// the requested version tree and newly-created target entry still match the
 /// journal. A partially committed reconciliation is also accepted so a crash
 /// between target rows can be retried idempotently.
 pub(crate) fn managed_usage_change_completion_available(
@@ -878,8 +878,24 @@ pub(crate) fn managed_usage_change_completion_available(
         let Some(original_relation) = plan.original_relation.as_ref() else {
             return Ok(false);
         };
-        if journal.request.action != UsageChangeAction::Sync
-            || item.action != UsageChangeImpactAction::Synchronize
+        let expected_impact = match journal.request.action {
+            UsageChangeAction::Sync => UsageChangeImpactAction::Synchronize,
+            UsageChangeAction::Restore => UsageChangeImpactAction::Restore,
+            _ => return Ok(false),
+        };
+        let action_state_is_recoverable = match journal.request.action {
+            UsageChangeAction::Sync => {
+                original_deployment.mode == DeploymentMode::ManagedCopy && plan.backup_created
+            }
+            UsageChangeAction::Restore => {
+                plan.observed_before.is_none()
+                    && plan.observed_identity.is_none()
+                    && !plan.backup_created
+                    && !journal.prepared.entry_evidence[index].exists
+            }
+            _ => false,
+        };
+        if item.action != expected_impact
             || item.relation_ids != [relation_id.clone()]
             || item.skill_id != original_deployment.skill_id
             || item
@@ -887,11 +903,10 @@ pub(crate) fn managed_usage_change_completion_available(
                 .as_deref()
                 .is_some_and(|reason| reason.starts_with("usage_change_failure_fact_unrecorded:"))
             || original_deployment.id != plan.deployment_id
-            || original_deployment.mode != DeploymentMode::ManagedCopy
             || original_deployment.runtime_name.is_empty()
             || original_relation.relation_id != relation_id
             || plan.created_entry_identity.is_none()
-            || !plan.backup_created
+            || !action_state_is_recoverable
         {
             return Ok(false);
         }
@@ -932,7 +947,7 @@ pub(crate) fn managed_usage_change_completion_available(
             return Ok(false);
         }
         if filesystem
-            .recovery_entry_identity(DeploymentMode::ManagedCopy, &destination)
+            .recovery_entry_identity(original_deployment.mode, &destination)
             .ok()
             .as_deref()
             != plan.created_entry_identity.as_deref()
@@ -953,21 +968,20 @@ pub(crate) fn managed_usage_change_completion_available(
         let relation_is_reconciled =
             relation_matches_except_observed_at(current_relation, &reconciled_relation);
 
-        if current_deployment == original_deployment {
-            let mut failed_relation = original_relation.clone();
-            let mut reasons = failed_relation.health_reasons.take().unwrap_or_default();
-            if !reasons
-                .contains(&skillhub_core::relationship::RelationHealthReason::OperationFailed)
-            {
-                reasons.push(skillhub_core::relationship::RelationHealthReason::OperationFailed);
-            }
-            reasons.sort_by_key(|reason| *reason as u8);
-            reasons.dedup();
-            failed_relation.health_reasons = Some(reasons);
-            if !relation_matches_except_observed_at(current_relation, &failed_relation) {
-                return Ok(false);
-            }
-        } else if current_deployment != &reconciled_deployment || !relation_is_reconciled {
+        let mut failed_relation = original_relation.clone();
+        let mut reasons = failed_relation.health_reasons.take().unwrap_or_default();
+        if !reasons.contains(&skillhub_core::relationship::RelationHealthReason::OperationFailed) {
+            reasons.push(skillhub_core::relationship::RelationHealthReason::OperationFailed);
+        }
+        reasons.sort_by_key(|reason| *reason as u8);
+        reasons.dedup();
+        failed_relation.health_reasons = Some(reasons);
+        let relation_is_failed =
+            relation_matches_except_observed_at(current_relation, &failed_relation);
+        let before_reconcile = current_deployment == original_deployment && relation_is_failed;
+        let after_reconcile =
+            current_deployment == &reconciled_deployment && relation_is_reconciled;
+        if !before_reconcile && !after_reconcile {
             return Ok(false);
         }
 
@@ -975,6 +989,8 @@ pub(crate) fn managed_usage_change_completion_available(
         if evidence.path != plan.destination
             || evidence.physical_source_ids != [original_deployment.target_id.clone()]
             || evidence.skill_id != original_deployment.skill_id
+            || (journal.request.action == UsageChangeAction::Restore
+                && (evidence.exists || evidence.content_fingerprint.is_some()))
         {
             return Ok(false);
         }
@@ -1035,7 +1051,7 @@ pub(crate) fn complete_managed_usage_change_recovery(
             let destination = Path::new(&plan.destination);
             if entry_fingerprint(destination)?.as_deref() != Some(expected_hash.as_str())
                 || DeploymentFilesystem::new()
-                    .recovery_entry_identity(DeploymentMode::ManagedCopy, destination)?
+                    .recovery_entry_identity(original.mode, destination)?
                     != plan.created_entry_identity.as_deref().ok_or_else(|| {
                         operation_conflict("managed_usage_change_entry_identity_missing")
                     })?
@@ -4863,7 +4879,7 @@ impl LocalApplicationFacade {
                         )
                 })
                 .map_err(|error| {
-                    if backup_ready {
+                    if backup_ready || action == UsageChangeAction::Restore {
                         (error, true)
                     } else {
                         (error, false)
