@@ -130,6 +130,21 @@ async fn skill_content(
     file.markdown
 }
 
+fn reject_unlink_operation_commit(facade: &LocalApplicationFacade) {
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_unlink_operation_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = 'unlink_update_source' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected unlink operation commit failure'); END;",
+        )
+        .expect("install operation commit failure trigger");
+}
+
 #[tokio::test]
 async fn unlink_preserves_import_events_and_content() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -208,6 +223,58 @@ async fn unlink_preserves_import_events_and_content() {
         1,
         "unlink must not remove import history"
     );
+}
+
+#[tokio::test]
+async fn unlink_source_rolls_back_when_operation_journal_commit_fails() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("skillhub.sqlite");
+    let library_root = workspace.path().join("library");
+    let source_root = workspace.path().join("source");
+    let facade = facade_with_library(&database_path, &library_root);
+    let skill_id = import_skill(&facade, &source_root).await;
+    let cache_database = Database::open(&database_path).expect("open source cache database");
+    cache_database
+        .source_repository()
+        .record_update_check(
+            &UpstreamCheckResult::new(skill_id, SourceState::UpdateAvailable)
+                .with_candidate_identity(Some("candidate-rollback".into())),
+        )
+        .expect("record update candidate");
+    cache_database
+        .source_repository()
+        .ignore_update(skill_id, "candidate-rollback", &upstream().url)
+        .expect("ignore update candidate");
+    drop(cache_database);
+    let before_status = source_status(&facade, skill_id).await;
+    let expected_source_revision = before_status
+        .association_revision
+        .clone()
+        .expect("active update source revision");
+    assert_eq!(before_status.state, Some(SourceState::UpdateAvailable));
+    assert!(before_status.candidate_ignored);
+    reject_unlink_operation_commit(&facade);
+
+    let result = facade
+        .execute(AppCommand::UnlinkUpdateSource(UnlinkUpdateSource {
+            skill_id,
+            operation_id: OperationId::new(),
+            expected_source_revision,
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the unlink command"
+    );
+    let after_status = source_status(&facade, skill_id).await;
+    assert!(after_status.association.is_some());
+    assert_eq!(after_status.state, Some(SourceState::UpdateAvailable));
+    assert_eq!(
+        after_status.candidate_identity.as_deref(),
+        Some("candidate-rollback")
+    );
+    assert!(after_status.candidate_ignored);
 }
 
 #[tokio::test]

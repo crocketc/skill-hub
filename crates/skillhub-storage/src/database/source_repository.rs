@@ -1,11 +1,13 @@
 use super::Database;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use skillhub_core::source::{
     IgnoredSourceUpdate, SourceDescriptor, SourceKind, SourceLocator, SourceRecord, SourceRole,
     SourceState, UpstreamCheckResult,
 };
-use skillhub_core::{AppError, AppResult, ErrorCode, Severity, SkillId};
+use skillhub_core::{
+    AppError, AppResult, ErrorCode, OperationId, OperationPhase, OperationRecord, Severity, SkillId,
+};
 
 /// Persistence boundary for a Skill's active source relation.
 ///
@@ -237,28 +239,42 @@ impl<'a> SourceRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(error)?;
-        let Some(current_revision) = association_revision_from(&transaction, skill_id)? else {
-            clear_update_state(&transaction, skill_id)?;
-            transaction.commit().map_err(error)?;
-            return Ok(false);
-        };
-        if current_revision != expected_revision {
-            return Err(
-                AppError::new(ErrorCode::OperationConflict, Severity::Warning)
-                    .with_param("reason", "update_source_changed")
-                    .with_action(skillhub_core::RecoveryAction::Retry),
-            );
-        }
-
-        transaction
-            .execute(
-                "DELETE FROM skill_sources WHERE skill_id=?1",
-                [skill_id.to_string()],
-            )
-            .map_err(error)?;
-        clear_update_state(&transaction, skill_id)?;
+        let unlinked = unlink_tx(&transaction, skill_id, expected_revision)?;
         transaction.commit().map_err(error)?;
-        Ok(true)
+        Ok(unlinked)
+    }
+
+    pub fn unlink_with_operation(
+        &self,
+        skill_id: SkillId,
+        expected_revision: &str,
+        operation_id: OperationId,
+    ) -> AppResult<(bool, OperationRecord)> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| operation_conflict(operation_id))?;
+        if operation.kind != "unlink_update_source" || operation.phase != OperationPhase::Planned {
+            return Err(operation_conflict(operation_id));
+        }
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.message_code = "operation.unlink_update_source.committed".to_owned();
+        operation.error_code = None;
+
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(error)?;
+        let unlinked = unlink_tx(&transaction, skill_id, expected_revision)?;
+        super::operation_repository::OperationRepositorySqlite::commit_planned_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(error)?;
+        Ok((unlinked, operation))
     }
 
     pub fn set_revision(&self, skill_id: SkillId, revision: Option<&str>) -> AppResult<()> {
@@ -396,6 +412,33 @@ impl<'a> SourceRepository<'a> {
             .map(|_| ())
             .map_err(error)
     }
+}
+
+fn unlink_tx(
+    transaction: &Transaction<'_>,
+    skill_id: SkillId,
+    expected_revision: &str,
+) -> AppResult<bool> {
+    let Some(current_revision) = association_revision_from(transaction, skill_id)? else {
+        clear_update_state(transaction, skill_id)?;
+        return Ok(false);
+    };
+    if current_revision != expected_revision {
+        return Err(
+            AppError::new(ErrorCode::OperationConflict, Severity::Warning)
+                .with_param("reason", "update_source_changed")
+                .with_action(skillhub_core::RecoveryAction::Retry),
+        );
+    }
+
+    transaction
+        .execute(
+            "DELETE FROM skill_sources WHERE skill_id=?1",
+            [skill_id.to_string()],
+        )
+        .map_err(error)?;
+    clear_update_state(transaction, skill_id)?;
+    Ok(true)
 }
 
 fn clear_update_state(transaction: &rusqlite::Transaction<'_>, skill_id: SkillId) -> AppResult<()> {
@@ -559,4 +602,10 @@ pub(crate) fn decode_source(kind: &str, locator: &str) -> AppResult<SourceDescri
 
 fn error(error: rusqlite::Error) -> AppError {
     AppError::new(ErrorCode::InternalError, Severity::Error).with_param("source", error.to_string())
+}
+
+fn operation_conflict(operation_id: OperationId) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("operation_id", operation_id.to_string())
+        .with_action(skillhub_core::RecoveryAction::Retry)
 }

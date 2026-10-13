@@ -6447,20 +6447,29 @@ impl LocalApplicationFacade {
                     .with_param("skill_id", request.skill_id.to_string())
                     .with_action(RecoveryAction::ChooseAnotherName));
             }
-            database
-                .source_repository()
-                .unlink(request.skill_id, &request.expected_source_revision)?;
-            Ok(AppCommandResult::OperationSummary(
-                skillhub_core::OperationSummary {
-                    operation_id,
-                    phase: skillhub_core::OperationPhase::Committed,
-                    message_code: "source.unlinked".to_owned(),
-                    error_code: None,
-                },
-            ))
+            database.source_repository().unlink_with_operation(
+                request.skill_id,
+                &request.expected_source_revision,
+                operation_id,
+            )
         });
-        self.journal_settle(operation_id, "unlink_update_source", result.as_ref().err());
-        result
+        match result {
+            Ok((_unlinked, record)) => {
+                self.log_journal_record(&record);
+                Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "source.unlinked".to_owned(),
+                        error_code: None,
+                    },
+                ))
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "unlink_update_source", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     fn persist_upstream_check(
