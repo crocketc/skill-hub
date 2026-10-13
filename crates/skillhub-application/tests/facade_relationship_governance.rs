@@ -2267,7 +2267,7 @@ async fn commit_failure_removes_new_link_before_restoring_and_preserves_central_
             .params
             .get("journal_error")
             .and_then(|value| value.as_str()),
-        Some("internal.error")
+        Some("database.constraint")
     );
     assert!(!std::fs::symlink_metadata(&fixture.source)
         .expect("restored source metadata")
