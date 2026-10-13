@@ -3583,6 +3583,26 @@ impl LocalApplicationFacade {
         ));
     }
 
+    /// Starts a flow whose returned operation id is part of its public result.
+    /// The flow must not proceed when that durable identity cannot be created.
+    fn journal_begin_required(
+        &self,
+        operation_id: OperationId,
+        kind: &'static str,
+    ) -> AppResult<()> {
+        let record = journal_record(
+            operation_id,
+            kind,
+            skillhub_core::OperationPhase::Planned,
+            None,
+        );
+        self.with_database("operation_journal.insert", |database| {
+            database.operation_repository().insert_sync(&record)
+        })?;
+        self.log_journal_record(&record);
+        Ok(())
+    }
+
     /// Records the prepared, retryable state of a multi-step flow.
     fn journal_prepared(&self, operation_id: OperationId, kind: &'static str) {
         self.journal_insert(journal_record(
@@ -5635,8 +5655,10 @@ impl LocalApplicationFacade {
         actions: Vec<skillhub_core::UninstallAction>,
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
-        self.journal_begin(operation_id, "uninstall_skill");
-        let result = self.apply_uninstall_decision_flow(actions).await;
+        self.journal_begin_required(operation_id, "uninstall_skill")?;
+        let result = self
+            .apply_uninstall_decision_flow(actions, operation_id)
+            .await;
         match result.as_ref() {
             // The cancel decision answers with a rolled_back summary: the
             // journal records the same terminal state the caller sees.
@@ -5662,6 +5684,7 @@ impl LocalApplicationFacade {
     async fn apply_uninstall_decision_flow(
         &self,
         actions: Vec<skillhub_core::UninstallAction>,
+        operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         if actions.is_empty() {
             return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
@@ -5681,7 +5704,7 @@ impl LocalApplicationFacade {
                 .take();
             return Ok(AppCommandResult::OperationSummary(
                 skillhub_core::OperationSummary {
-                    operation_id: OperationId::new(),
+                    operation_id,
                     phase: skillhub_core::OperationPhase::RolledBack,
                     message_code: "uninstall.cancelled".into(),
                     error_code: None,
@@ -5751,7 +5774,7 @@ impl LocalApplicationFacade {
             .take();
         Ok(AppCommandResult::OperationSummary(
             skillhub_core::OperationSummary {
-                operation_id: OperationId::new(),
+                operation_id,
                 phase: skillhub_core::OperationPhase::Committed,
                 message_code: if ran_backup {
                     "uninstall.decision_applied_with_backup".into()

@@ -10,9 +10,9 @@ use skillhub_core::agent::{
     LogicalTarget, OperatingSystem, TargetScope,
 };
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, CommitDeployment, CreateIgnoreRule, CreateSkill,
-    ListDeployments, PrepareDeployment, PrepareImport, RemoveIgnoreRule, SaveMarkdownAsCopy,
-    SaveMarkdownContent, SaveSkillContent,
+    AppCommandResult, AppQueryResult, ApplyUninstallDecision, CommitDeployment, CreateIgnoreRule,
+    CreateSkill, ListDeployments, PrepareDeployment, PrepareImport, PrepareUninstall,
+    RemoveIgnoreRule, SaveMarkdownAsCopy, SaveMarkdownContent, SaveSkillContent,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{DeploymentMode, DeploymentPlan, TargetChange, TargetPlan};
@@ -499,6 +499,85 @@ async fn relink_source_copy_rolls_back_relation_when_journal_commit_fails() {
         .find(|record| record.kind == "relink_source_copy")
         .expect("failed relink remains in the journal");
     assert_eq!(operation.phase, OperationPhase::RolledBack);
+}
+
+#[tokio::test]
+async fn uninstall_summaries_reference_their_journaled_operation_ids() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+    let decisions = [
+        (
+            vec![skillhub_core::UninstallAction::Cancel],
+            OperationPhase::RolledBack,
+        ),
+        (
+            vec![skillhub_core::UninstallAction::LeaveTargetsIndependent],
+            OperationPhase::Committed,
+        ),
+    ];
+
+    for (actions, expected_phase) in decisions {
+        facade
+            .execute(AppCommand::PrepareUninstall(PrepareUninstall {
+                deployment_ids: Vec::new(),
+            }))
+            .await
+            .expect("prepare uninstall");
+        let result = facade
+            .execute(AppCommand::ApplyUninstallDecision(ApplyUninstallDecision {
+                actions,
+            }))
+            .await
+            .expect("apply uninstall decision");
+        let AppCommandResult::OperationSummary(summary) = result else {
+            panic!("expected operation summary");
+        };
+
+        let record = recent_operations(&facade)
+            .await
+            .into_iter()
+            .find(|record| record.operation_id == summary.operation_id)
+            .expect("returned operation id must identify its journal record");
+        assert_eq!(record.kind, "uninstall_skill");
+        assert_eq!(record.phase, expected_phase);
+    }
+}
+
+#[tokio::test]
+async fn uninstall_does_not_apply_decision_when_journal_begin_fails() {
+    let facade = LocalApplicationFacade::new(Database::open_in_memory().expect("database"));
+    facade
+        .execute(AppCommand::PrepareUninstall(PrepareUninstall {
+            deployment_ids: Vec::new(),
+        }))
+        .await
+        .expect("prepare uninstall");
+    facade
+        .database_for_tests()
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_uninstall_journal_begin
+             BEFORE INSERT ON operations
+             WHEN NEW.kind = 'uninstall_skill'
+             BEGIN SELECT RAISE(ABORT, 'injected uninstall journal begin failure'); END;",
+        )
+        .expect("install uninstall journal failure trigger");
+
+    let result = facade
+        .execute(AppCommand::ApplyUninstallDecision(ApplyUninstallDecision {
+            actions: vec![skillhub_core::UninstallAction::LeaveTargetsIndependent],
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "uninstall must stop if its operation cannot be journalled"
+    );
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .all(|record| record.kind != "uninstall_skill"));
 }
 
 #[tokio::test]
