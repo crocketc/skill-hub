@@ -15910,7 +15910,14 @@ impl LocalApplicationFacade {
             return Err(error);
         }
         // 单事务：新建关系 + 新历史事件（锚在旧关系 id 上）；旧关系与旧
-        // provenance event 原样保留。
+        // provenance event 原样保留。操作终态也在同一事务提交，避免关系已
+        // 建立但操作记录提交失败时仍向调用方报成功。
+        let committed_operation = journal_record(
+            operation_id,
+            "relink_source_copy",
+            skillhub_core::OperationPhase::Committed,
+            None,
+        );
         self.with_database("execute.relink_source_copy.commit", |database| {
             let display_name = database
                 .catalog_repository()
@@ -15946,10 +15953,15 @@ impl LocalApplicationFacade {
                     occurred_at: now_epoch_seconds(),
                 },
             )?;
+            skillhub_storage::OperationRepositorySqlite::commit_planned_tx(
+                &transaction,
+                &committed_operation,
+            )?;
             Database::commit_transaction(transaction)?;
             Ok(())
         })
         .inspect_err(journal_denied)?;
+        self.log_journal_record(&committed_operation);
         // 建立后的 Full 校验核对内容（结果如实落库：一致→Normal，分叉→
         // ContentChanged；校验结果不否定关系重建本身）。
         let _ = self.run_relationship_check(skillhub_core::api::RunRelationshipCheck {
@@ -15958,22 +15970,27 @@ impl LocalApplicationFacade {
                 relation_ids: vec![relation.relation_id.clone()],
             },
         });
-        let fact = self
-            .with_database("execute.relink_source_copy.reload", |database| {
-                Ok(database
-                    .relationship_repository()
-                    .list_source_copy_relations(false)?
-                    .into_iter()
-                    .find(|candidate| candidate.relation_id == relation.relation_id)
-                    .unwrap_or(relation))
-            })
-            .inspect_err(journal_denied)?;
-        self.journal_advance(
-            operation_id,
-            "relink_source_copy",
-            skillhub_core::OperationPhase::Committed,
-            None,
-        );
+        let fact = match self.with_database("execute.relink_source_copy.reload", |database| {
+            Ok(database
+                .relationship_repository()
+                .list_source_copy_relations(false)?
+                .into_iter()
+                .find(|candidate| candidate.relation_id == relation.relation_id)
+                .unwrap_or_else(|| relation.clone()))
+        }) {
+            Ok(fact) => fact,
+            Err(error) => {
+                // 关系与操作已在上面的事务一并提交；刷新读取失败不能再把
+                // 已完成的写入报告为失败或将其日志改成已回滚。
+                self.log_app_error(
+                    "execute.relink_source_copy.reload",
+                    Some(&operation_id),
+                    &[],
+                    &error,
+                );
+                relation
+            }
+        };
         Ok(AppCommandResult::SourceCopyRelationUpdated(fact))
     }
 

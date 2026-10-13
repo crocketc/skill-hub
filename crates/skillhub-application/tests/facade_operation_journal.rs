@@ -373,6 +373,135 @@ async fn relink_source_copy_preflight_failures_settle_without_recovery_gate() {
 }
 
 #[tokio::test]
+async fn relink_source_copy_rolls_back_relation_when_journal_commit_fails() {
+    let database = Database::open_in_memory().expect("database");
+    let skill = Skill::new(skillhub_core::SkillId::new(), "Archived source");
+    database
+        .catalog_repository()
+        .expect("catalog repository")
+        .insert(&skill)
+        .await
+        .expect("insert skill");
+    let old_source = tempfile::tempdir().expect("old source");
+    std::fs::write(old_source.path().join("SKILL.md"), "# Archived\n").expect("write old source");
+    let old_physical_id =
+        skillhub_core::physical_id_for_path(old_source.path()).expect("old source identity");
+    database
+        .provenance_repository()
+        .begin_import_batch("relink-batch", 1)
+        .expect("seed import batch");
+    database
+        .provenance_repository()
+        .append_provenance_event(&skillhub_core::import::ImportProvenanceEvent {
+            provenance_id: "relink-event".into(),
+            batch_id: "relink-batch".into(),
+            skill_id: skill.id(),
+            source_class: ImportSourceClass::UserLocal,
+            source: SourceDescriptor::new(
+                skillhub_core::source::SourceKind::Local,
+                skillhub_core::source::SourceLocator::local_path(old_source.path()),
+            ),
+            local_source_path: Some(old_source.path().to_string_lossy().into_owned()),
+            source_container_id: None,
+            physical_source_id: Some(old_physical_id.clone()),
+            agent_client_id: None,
+            content_fingerprint: "sha256:archived".into(),
+            imported_at: 1,
+        })
+        .expect("seed import provenance");
+    let archived = SourceCopyRelationFact {
+        relation_id: "relink-archived-relation".into(),
+        skill_id: skill.id(),
+        latest_provenance_id: "relink-event".into(),
+        source_class: ImportSourceClass::UserLocal,
+        source_path: old_source.path().to_string_lossy().into_owned(),
+        source_path_key: old_source.path().to_string_lossy().to_lowercase(),
+        physical_source_id: old_physical_id,
+        source_container_id: None,
+        directory_node_id: None,
+        agent_client_id: None,
+        expected_fingerprint: "sha256:archived".into(),
+        current_fingerprint: None,
+        decision: SourceCopyDecision::Retained,
+        health: SourceCopyHealth::OperationFailed,
+        health_reasons: None,
+        active: false,
+        last_verified_at: None,
+        archived_at: Some(1),
+        archive_reason: Some(SourceCopyArchiveReason::ExternalRemoved),
+    };
+    database
+        .relationship_repository()
+        .upsert_source_copy_relation(&archived, "fs", 1)
+        .expect("seed archived source relation");
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_relink_journal_commit
+             BEFORE UPDATE OF phase ON operations
+             WHEN OLD.kind = 'relink_source_copy' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected journal commit failure'); END;",
+        )
+        .expect("install operation journal failure trigger");
+    let library_root = tempfile::tempdir().expect("library root");
+    CentralLibrary::initialize(library_root.path()).expect("central library");
+    let facade = LocalApplicationFacade::new_with_library(database, library_root.path());
+    let restored = tempfile::tempdir().expect("restored source");
+    std::fs::write(
+        restored.path().join("SKILL.md"),
+        "---\nname: Archived source\n---\n# Archived source\n",
+    )
+    .expect("write restored skill");
+
+    let error = facade
+        .execute(AppCommand::RelinkSourceCopy(
+            skillhub_core::api::RelinkSourceCopy {
+                source_relation_id: archived.relation_id.clone(),
+                new_source_path: restored.path().to_string_lossy().into_owned(),
+            },
+        ))
+        .await
+        .expect_err("journal commit failure must fail the relink command");
+    assert_eq!(error.code, ErrorCode::InternalError);
+
+    let database = facade.database_for_tests();
+    let database = database.lock().expect("database lock");
+    let relations = database
+        .relationship_repository()
+        .list_source_copy_relations(false)
+        .expect("list source relations");
+    assert_eq!(
+        relations.len(),
+        1,
+        "new relation must roll back with journal"
+    );
+    assert_eq!(relations[0].relation_id, archived.relation_id);
+    assert!(
+        !relations[0].active,
+        "archived relation must remain archived"
+    );
+    let relink_history = database
+        .governance_history_repository()
+        .list_for_relation(&archived.relation_id)
+        .expect("list governance history")
+        .into_iter()
+        .filter(|event| event.action == "relink")
+        .count();
+    assert_eq!(
+        relink_history, 0,
+        "relink history must roll back with relation"
+    );
+    let operation = database
+        .operation_repository()
+        .list_sync()
+        .expect("list operation journal")
+        .into_iter()
+        .find(|record| record.kind == "relink_source_copy")
+        .expect("failed relink remains in the journal");
+    assert_eq!(operation.phase, OperationPhase::RolledBack);
+}
+
+#[tokio::test]
 async fn journalled_records_survive_a_restart_and_reach_the_new_facade() {
     let workspace = tempfile::tempdir().expect("workspace");
     let database_path = workspace.path().join("app.sqlite");
