@@ -2006,139 +2006,7 @@ impl LocalApplicationFacade {
             database.operation_repository().get_sync(operation_id)?
         };
         if let Some(record) = record {
-            if record.kind != "migrate_relation" && record.kind != "usage_manage" {
-                return Err(relation_operation_not_found(operation_id));
-            }
-            let journal_value = record
-                .recovery_data
-                .get("journal")
-                .cloned()
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship journal facts are missing")
-                })?;
-            let prepared_value = journal_value.get("prepared").cloned().ok_or_else(|| {
-                invalid_relation_migration("relationship journal prepared facts are missing")
-            })?;
-            let prepared: skillhub_core::PreparedRelationMigration =
-                serde_json::from_value(prepared_value).map_err(|_| {
-                    invalid_relation_migration("relationship journal facts are corrupt")
-                })?;
-            let expected_target_fingerprint = journal_value
-                .get("expected_target_fingerprint")
-                .and_then(|value| value.as_str())
-                .map(str::to_owned)
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship journal target fingerprint is missing")
-                })?;
-            let allow_content_replacement = journal_value
-                .get("allow_content_replacement")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-            let expected_link_representation = journal_value
-                .get("expected_link_representation")
-                .cloned()
-                .map(|value| {
-                    serde_json::from_value(value).map_err(|_| {
-                        invalid_relation_migration(
-                            "relationship journal link representation is corrupt",
-                        )
-                    })
-                })
-                .transpose()?
-                .ok_or_else(|| {
-                    invalid_relation_migration(
-                        "relationship journal link representation is missing",
-                    )
-                })?;
-            let source_relations = journal_value
-                .get("source_relations")
-                .cloned()
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship journal source relations are missing")
-                })
-                .and_then(|value| {
-                    serde_json::from_value(value).map_err(|_| {
-                        invalid_relation_migration(
-                            "relationship journal source relations are corrupt",
-                        )
-                    })
-                })?;
-            let safety = journal_value
-                .get("safety")
-                .cloned()
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship safety snapshot is missing")
-                })
-                .and_then(|value| {
-                    serde_json::from_value(value).map_err(|_| {
-                        invalid_relation_migration("relationship safety snapshot is corrupt")
-                    })
-                })?;
-            let stage = journal_value
-                .get("stage")
-                .cloned()
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship migration stage is missing")
-                })
-                .and_then(|value| {
-                    serde_json::from_value(value).map_err(|_| {
-                        invalid_relation_migration("relationship migration stage is corrupt")
-                    })
-                })?;
-            let backup = journal_value
-                .get("backup")
-                .cloned()
-                .ok_or_else(|| {
-                    invalid_relation_migration("relationship backup metadata is corrupt")
-                })
-                .and_then(RelationBackupMetadata::from_json)?;
-            let usage_preview = journal_value
-                .get("usage_preview")
-                .filter(|value| !value.is_null())
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|_| invalid_relation_migration("usage management preview is corrupt"))?;
-            let usage_result = journal_value
-                .get("usage_result")
-                .filter(|value| !value.is_null())
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|_| invalid_relation_migration("usage management result is corrupt"))?;
-            let usage_manage_relations = journal_value
-                .get("usage_manage_relations")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|_| {
-                    invalid_relation_migration("usage management relation facts are corrupt")
-                })?
-                .unwrap_or_default();
-            let journal = RelationMigrationJournal {
-                prepared,
-                operation_kind: record.kind.clone(),
-                request_fingerprint: record.request_fingerprint.clone(),
-                expected_target_fingerprint,
-                allow_content_replacement,
-                expected_link_representation,
-                source_relations,
-                safety,
-                stage,
-                backup,
-                usage_preview,
-                usage_manage_relations,
-                usage_result,
-            };
-            let result = record
-                .result
-                .map(|value| {
-                    serde_json::from_value(value).map_err(|_| {
-                        invalid_relation_migration("relationship journal result is corrupt")
-                    })
-                })
-                .transpose()?;
+            let (journal, result) = parse_relation_migration_record(&record)?;
             return Ok((journal, result, record.phase));
         }
 
@@ -3344,6 +3212,156 @@ fn relation_id_fingerprint(relation_id: &str) -> String {
 fn content_request_fingerprint(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     format!("sha256:{digest:x}")
+}
+
+pub(crate) fn relation_migration_recovery_action_available(
+    record: &skillhub_core::OperationRecord,
+) -> bool {
+    let Ok((journal, _)) = parse_relation_migration_record(record) else {
+        return false;
+    };
+    journal.backup.operation_id == record.operation_id
+        && journal.backup.path == journal.prepared.backup_path
+        && journal.backup.original_path == journal.prepared.relation.path
+        && journal.backup.original_fingerprint == journal.prepared.relation.content_fingerprint
+}
+
+fn parse_relation_migration_record(
+    record: &skillhub_core::OperationRecord,
+) -> AppResult<(RelationMigrationJournal, Option<RelationMigrationResult>)> {
+    if record.kind != "migrate_relation" && record.kind != "usage_manage" {
+        return Err(relation_operation_not_found(record.operation_id));
+    }
+    let journal_value = record
+        .recovery_data
+        .get("journal")
+        .cloned()
+        .ok_or_else(|| invalid_relation_migration("relationship journal facts are missing"))?;
+    let prepared_value = journal_value.get("prepared").cloned().ok_or_else(|| {
+        invalid_relation_migration("relationship journal prepared facts are missing")
+    })?;
+    let prepared: skillhub_core::PreparedRelationMigration = serde_json::from_value(prepared_value)
+        .map_err(|_| invalid_relation_migration("relationship journal facts are corrupt"))?;
+    if prepared.operation_id != record.operation_id
+        || prepared.relation_id != prepared.relation.relation_id
+        || prepared.relation_id.trim().is_empty()
+        || prepared.target_path.trim().is_empty()
+        || prepared.backup_path.trim().is_empty()
+        || prepared.current_content_fingerprint.trim().is_empty()
+    {
+        return Err(invalid_relation_migration(
+            "relationship prepared identity is inconsistent",
+        ));
+    }
+    let expected_target_fingerprint = journal_value
+        .get("expected_target_fingerprint")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            invalid_relation_migration("relationship journal target fingerprint is missing")
+        })?;
+    let allow_content_replacement = journal_value
+        .get("allow_content_replacement")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let expected_link_representation = journal_value
+        .get("expected_link_representation")
+        .cloned()
+        .map(|value| {
+            serde_json::from_value(value).map_err(|_| {
+                invalid_relation_migration("relationship journal link representation is corrupt")
+            })
+        })
+        .transpose()?
+        .ok_or_else(|| {
+            invalid_relation_migration("relationship journal link representation is missing")
+        })?;
+    let source_relations = journal_value
+        .get("source_relations")
+        .cloned()
+        .ok_or_else(|| {
+            invalid_relation_migration("relationship journal source relations are missing")
+        })
+        .and_then(|value| {
+            serde_json::from_value(value).map_err(|_| {
+                invalid_relation_migration("relationship journal source relations are corrupt")
+            })
+        })?;
+    let safety = journal_value
+        .get("safety")
+        .cloned()
+        .ok_or_else(|| invalid_relation_migration("relationship safety snapshot is missing"))
+        .and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|_| invalid_relation_migration("relationship safety snapshot is corrupt"))
+        })?;
+    let stage = journal_value
+        .get("stage")
+        .cloned()
+        .ok_or_else(|| invalid_relation_migration("relationship migration stage is missing"))
+        .and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|_| invalid_relation_migration("relationship migration stage is corrupt"))
+        })?;
+    let backup = journal_value
+        .get("backup")
+        .cloned()
+        .ok_or_else(|| invalid_relation_migration("relationship backup metadata is corrupt"))
+        .and_then(RelationBackupMetadata::from_json)?;
+    let usage_preview = journal_value
+        .get("usage_preview")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| invalid_relation_migration("usage management preview is corrupt"))?;
+    let usage_result = journal_value
+        .get("usage_result")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| invalid_relation_migration("usage management result is corrupt"))?;
+    let usage_manage_relations = journal_value
+        .get("usage_manage_relations")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| invalid_relation_migration("usage management relation facts are corrupt"))?
+        .unwrap_or_default();
+    let journal = RelationMigrationJournal {
+        prepared,
+        operation_kind: record.kind.clone(),
+        request_fingerprint: record.request_fingerprint.clone(),
+        expected_target_fingerprint,
+        allow_content_replacement,
+        expected_link_representation,
+        source_relations,
+        safety,
+        stage,
+        backup,
+        usage_preview,
+        usage_manage_relations,
+        usage_result,
+    };
+    let result = record
+        .result
+        .clone()
+        .map(|value| {
+            serde_json::from_value::<RelationMigrationResult>(value)
+                .map_err(|_| invalid_relation_migration("relationship journal result is corrupt"))
+        })
+        .transpose()?;
+    if result.as_ref().is_some_and(|result| {
+        result.operation_id != record.operation_id
+            || result.relation_id != journal.prepared.relation_id
+    }) {
+        return Err(invalid_relation_migration(
+            "relationship result identity is inconsistent",
+        ));
+    }
+    Ok((journal, result))
 }
 
 fn invalid_relation_migration(detail: impl Into<String>) -> AppError {

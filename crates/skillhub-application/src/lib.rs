@@ -18813,16 +18813,6 @@ fn pending_recovery_targets(
     serde_json::json!({ "pending_targets": pending })
 }
 
-fn has_relation_migration_recovery_journal(recovery_data: &serde_json::Value) -> bool {
-    recovery_data
-        .get("journal")
-        .and_then(|journal| journal.get("prepared"))
-        .cloned()
-        .is_some_and(|prepared| {
-            serde_json::from_value::<skillhub_core::PreparedRelationMigration>(prepared).is_ok()
-        })
-}
-
 fn parse_delete_recovery_candidate(
     operation_id: OperationId,
     phase: skillhub_core::OperationPhase,
@@ -21617,7 +21607,8 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         vec![RecoveryAction::RollbackOperation]
                     }
                     "migrate_relation" | "usage_manage"
-                        if has_relation_migration_recovery_journal(&record.recovery_data) =>
+                        if relationship_governance_service::
+                            relation_migration_recovery_action_available(record) =>
                     {
                         vec![RecoveryAction::RollbackOperation]
                     }

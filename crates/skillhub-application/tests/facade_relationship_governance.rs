@@ -2410,6 +2410,32 @@ async fn rollback_rejects_backup_metadata_tampering_without_restoring_or_writing
     mutate_relation_journal(&fixture, committed.operation_id, |backup| {
         backup["original_fingerprint"] = Value::String("sha256:tampered".into());
     });
+    {
+        let database = fixture.database.lock().expect("database");
+        let mut record = database
+            .operation_repository()
+            .get_sync(committed.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("mark interrupted");
+    }
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, committed.operation_id);
+    assert!(candidates[0].actions.is_empty());
+
     let rollback = fixture
         .facade
         .execute(AppCommand::RollbackRelationMigration(
@@ -3015,6 +3041,118 @@ async fn recovery_center_runs_the_relation_migration_rollback_handler() {
         .expect("read settled operation")
         .expect("operation remains recorded");
     assert_eq!(record.phase, OperationPhase::RolledBack);
+}
+
+#[tokio::test]
+async fn relation_migration_recovery_hides_action_when_full_journal_is_corrupt() {
+    let fixture = fixture().await;
+    if missing_symlink_capability() {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+
+    {
+        let database = fixture.database.lock().expect("database");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        record.recovery_data["journal"]["safety"] = serde_json::json!({"corrupt": true});
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("mark interrupted with corrupt journal");
+    }
+
+    let restarted = LocalApplicationFacade::new_with_library(
+        Database::open(&fixture.db_path).expect("reopen database"),
+        &fixture.library_root,
+    );
+    let AppQueryResult::RecoveryCandidates(candidates) = restarted
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, prepared.operation_id);
+    assert!(
+        candidates[0].actions.is_empty(),
+        "a malformed outer migration journal must not expose rollback"
+    );
+}
+
+#[tokio::test]
+async fn relation_migration_recovery_hides_action_when_prepared_identity_mismatches() {
+    let fixture = fixture().await;
+    if missing_symlink_capability() {
+        return;
+    }
+    let prepared = fixture
+        .facade
+        .execute(AppCommand::PrepareRelationMigration(
+            PrepareRelationMigration {
+                relation_id: fixture.relation_id.clone(),
+                target_mode: RelationMigrationTargetMode::ManagedLink,
+                backup_policy: RelationshipMigrationBackupPolicy::Required,
+                confirmation_token: Some("confirmed".into()),
+            },
+        ))
+        .await
+        .expect("prepare");
+    let AppCommandResult::PreparedRelationMigration(prepared) = prepared else {
+        panic!("expected prepared");
+    };
+
+    {
+        let database = fixture.database.lock().expect("database");
+        let mut record = database
+            .operation_repository()
+            .get_sync(prepared.operation_id)
+            .expect("read operation")
+            .expect("operation exists");
+        record.phase = OperationPhase::NeedsRecovery;
+        record.progress.phase = OperationPhase::NeedsRecovery;
+        record.recovery_data["journal"]["prepared"]["operation_id"] =
+            serde_json::json!(skillhub_core::OperationId::new().to_string());
+        database
+            .operation_repository()
+            .update_sync(&record)
+            .expect("mark interrupted with mismatched prepared identity");
+    }
+
+    let AppQueryResult::RecoveryCandidates(candidates) = fixture
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].operation_id, prepared.operation_id);
+    assert!(
+        candidates[0].actions.is_empty(),
+        "a prepared journal for another operation must not expose rollback"
+    );
 }
 
 #[tokio::test]
