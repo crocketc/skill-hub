@@ -1,7 +1,8 @@
 use super::Database;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, Transaction};
 use skillhub_core::{
-    AppError, AppResult, ErrorCode, IgnoreRule, IgnoreSubject, RecoveryAction, Severity,
+    AppError, AppResult, ErrorCode, IgnoreRule, IgnoreSubject, OperationId, OperationPhase,
+    OperationRecord, RecoveryAction, Severity,
 };
 
 const KEY: &str = "ignore_rules";
@@ -16,20 +17,7 @@ impl<'a> IgnoreRuleRepository<'a> {
     }
 
     pub fn list(&self) -> AppResult<Vec<IgnoreRule>> {
-        let value: Option<String> = self
-            .database
-            .connection
-            .query_row(
-                "SELECT value_json FROM settings WHERE key=?1",
-                [KEY],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(database_error)?;
-        value
-            .map(|json| serde_json::from_str(&json).map_err(|_| invalid_record()))
-            .transpose()
-            .map(|rules| rules.unwrap_or_default())
+        list_from(&self.database.connection)
     }
 
     /// Returns only persisted exact-path exclusions. Other ignore subjects have
@@ -62,24 +50,91 @@ impl<'a> IgnoreRuleRepository<'a> {
     }
 
     pub fn remove(&self, rule_id: &str) -> AppResult<()> {
-        let mut rules = self.list()?;
-        let Some(index) = rules.iter().position(|rule| rule.id == rule_id) else {
-            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
-                .with_param("field", "ignore_rule")
-                .with_action(RecoveryAction::Retry));
-        };
-        rules.remove(index);
-        self.save(&rules)
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        remove_from_transaction(&transaction, rule_id)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    pub fn remove_with_operation(
+        &self,
+        rule_id: &str,
+        operation_id: OperationId,
+    ) -> AppResult<OperationRecord> {
+        let mut operation = self
+            .database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .ok_or_else(|| operation_conflict(operation_id))?;
+        if operation.kind != "remove_ignore_rule" || operation.phase != OperationPhase::Planned {
+            return Err(operation_conflict(operation_id));
+        }
+        operation.phase = OperationPhase::Committed;
+        operation.progress.phase = OperationPhase::Committed;
+        operation.progress.message_code = "operation.remove_ignore_rule.committed".to_owned();
+        operation.error_code = None;
+
+        let transaction = self
+            .database
+            .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        remove_from_transaction(&transaction, rule_id)?;
+        super::operation_repository::OperationRepositorySqlite::commit_planned_tx(
+            &transaction,
+            &operation,
+        )?;
+        transaction.commit().map_err(database_error)?;
+        Ok(operation)
     }
 
     fn save(&self, rules: &[IgnoreRule]) -> AppResult<()> {
-        let json = serde_json::to_string(rules).map_err(|_| invalid_record())?;
-        self.database.connection.execute(
+        save_to_connection(&self.database.connection, rules)
+    }
+}
+
+fn list_from(connection: &rusqlite::Connection) -> AppResult<Vec<IgnoreRule>> {
+    let value: Option<String> = connection
+        .query_row(
+            "SELECT value_json FROM settings WHERE key=?1",
+            [KEY],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(database_error)?;
+    value
+        .map(|json| serde_json::from_str(&json).map_err(|_| invalid_record()))
+        .transpose()
+        .map(|rules| rules.unwrap_or_default())
+}
+
+fn save_to_connection(connection: &rusqlite::Connection, rules: &[IgnoreRule]) -> AppResult<()> {
+    let json = serde_json::to_string(rules).map_err(|_| invalid_record())?;
+    connection.execute(
             "INSERT INTO settings(key,value_json,updated_at) VALUES(?1,?2,strftime('%s','now')) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
             rusqlite::params![KEY, json],
         ).map_err(database_error)?;
-        Ok(())
-    }
+    Ok(())
+}
+
+fn remove_from_transaction(transaction: &Transaction<'_>, rule_id: &str) -> AppResult<()> {
+    let mut rules = list_from(transaction)?;
+    let Some(index) = rules.iter().position(|rule| rule.id == rule_id) else {
+        return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+            .with_param("field", "ignore_rule")
+            .with_action(RecoveryAction::Retry));
+    };
+    rules.remove(index);
+    save_to_connection(transaction, &rules)
+}
+
+fn operation_conflict(operation_id: OperationId) -> AppError {
+    AppError::new(ErrorCode::OperationConflict, Severity::Error)
+        .with_param("operation_id", operation_id.to_string())
+        .with_action(RecoveryAction::Retry)
 }
 
 fn now() -> i64 {

@@ -908,6 +908,57 @@ async fn remove_ignore_rule_is_journalled_as_a_committed_record() {
     assert_eq!(record.error_code, None);
 }
 
+#[tokio::test]
+async fn remove_ignore_rule_rolls_back_when_journal_commit_fails() {
+    let (facade, _library_root) = facade_with_library();
+    let created = facade
+        .execute(AppCommand::CreateIgnoreRule(CreateIgnoreRule {
+            subject: skillhub_core::IgnoreSubject::ExactSkill(skillhub_core::SkillId::new()),
+            reason: "not relevant".into(),
+            defer_until: None,
+        }))
+        .await
+        .expect("create ignore rule");
+    let AppCommandResult::IgnoreRule(rule) = created else {
+        panic!("expected ignore rule");
+    };
+    let database = facade.database_for_tests();
+    database
+        .lock()
+        .expect("database lock")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER reject_ignore_remove_operation_commit
+             BEFORE UPDATE ON operations
+             WHEN NEW.kind = 'remove_ignore_rule' AND NEW.phase = 'committed'
+             BEGIN SELECT RAISE(ABORT, 'injected ignore operation commit failure'); END;",
+        )
+        .expect("install operation commit failure trigger");
+
+    let result = facade
+        .execute(AppCommand::RemoveIgnoreRule(RemoveIgnoreRule {
+            rule_id: rule.id.clone(),
+        }))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "journal failure must fail the remove command"
+    );
+    let rules = database
+        .lock()
+        .expect("database lock")
+        .ignore_rule_repository()
+        .list()
+        .expect("list ignore rules after failed remove");
+    assert!(rules.iter().any(|existing| existing.id == rule.id));
+    assert!(recent_operations(&facade)
+        .await
+        .iter()
+        .any(|record| record.kind == "remove_ignore_rule"
+            && record.phase == OperationPhase::RolledBack));
+}
+
 /// DEV-101 + #11：`prepared`/`planned` 行的可提交状态只活在进程内存里——
 /// 上一个会话残留的这类行永远无法提交（prepared 缓存随进程消失），却会让
 /// 启动恢复闸门永远亮着。新会话打开时必须把它们结算为 `rolled_back`（四类

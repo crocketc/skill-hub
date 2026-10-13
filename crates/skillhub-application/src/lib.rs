@@ -16900,16 +16900,28 @@ impl LocalApplicationFacade {
     async fn remove_ignore_rule(&self, rule_id: String) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "remove_ignore_rule");
-        let result = self.ignore_service.remove(rule_id).await;
-        self.journal_settle(operation_id, "remove_ignore_rule", result.as_ref().err());
-        result.map(|()| {
-            AppCommandResult::OperationSummary(skillhub_core::OperationSummary {
-                operation_id,
-                phase: skillhub_core::OperationPhase::Committed,
-                message_code: "ignore.removed".to_owned(),
-                error_code: None,
-            })
-        })
+        let result = self.with_database("execute.remove_ignore_rule", |database| {
+            database
+                .ignore_rule_repository()
+                .remove_with_operation(&rule_id, operation_id)
+        });
+        match result {
+            Ok(record) => {
+                self.log_journal_record(&record);
+                Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "ignore.removed".to_owned(),
+                        error_code: None,
+                    },
+                ))
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "remove_ignore_rule", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     async fn reconcile_collect_changes(
