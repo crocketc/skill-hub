@@ -1,4 +1,5 @@
 import { emitPendingFactsChanged } from "./pendingEvents";
+import { queryClient } from "../app/queryClient";
 
 /**
  * 发现事实变更的应用内广播（2026-09-26）：启动期后台 Agent 重扫完成后，
@@ -12,6 +13,10 @@ const DISCOVERY_FACTS_CHANGED = "skillhub:discovery-facts-changed";
 export function notifyDiscoveryFactsChanged(): void {
   window.dispatchEvent(new CustomEvent(DISCOVERY_FACTS_CHANGED));
   emitPendingFactsChanged();
+  // 目录识别/能力变化会改变关系资格与概览计数。统一从事实广播处失效缓存，
+  // 确保当前页和稍后返回的页面都不会继续使用扫描前的关系投影。
+  void queryClient.invalidateQueries({ queryKey: ["relationships"] });
+  void queryClient.invalidateQueries({ queryKey: ["overview"] });
 }
 
 /** 订阅发现事实变更；返回取消订阅函数（供 useEffect 清理）。 */

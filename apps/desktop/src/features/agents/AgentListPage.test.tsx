@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
 import { notifyDeploymentFactsChanged } from "../../platform/deploymentEvents";
+import { notifyDiscoveryFactsChanged } from "../../platform/discoveryEvents";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { buildAgentDirectoryCardModels, type AgentCardModel } from "./agentCardModel";
 import { type AgentFacade, type AgentView } from "./api";
@@ -235,7 +236,9 @@ it("renders built-in directories as separate read-only cards with guidance", asy
 
 it("refreshes discovery facts and keeps every agent visible", async () => {
   const user = userEvent.setup();
-  const facade = facadeWith();
+  const facade = facadeWith({
+    rescan: vi.fn(async () => notifyDiscoveryFactsChanged()),
+  });
 
   renderListPage(facade);
 

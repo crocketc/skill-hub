@@ -5,7 +5,6 @@ import {
   queryApplication,
   type DiscoverySnapshot,
 } from "../../api/bindings";
-import { queryClient as appQueryClient } from "../../app/queryClient";
 import { notifyDiscoveryFactsChanged } from "../../platform/discoveryEvents";
 import { brandDisplayName, normalizeBrandKey } from "../../ui/BrandTag";
 import type { NotifyFunction } from "./backgroundScan";
@@ -50,7 +49,7 @@ function instanceKey(instance: { profile_id: string; client_id: string }): strin
  * discover_agent_targets，发现快照里出现新的品牌/客户端时发一条通知并
  * 广播刷新。设计约束：
  * - 异步后台执行，绝不阻塞首屏；
- * - 只在“确有新品牌/类型”时通知，日常启动保持安静；
+ * - 成功扫描后广播发现事实刷新；只在“确有新品牌/类型”时给用户显示通知；
  * - 刷新失败同样安静——Agent 页随时可手动重扫，启动期告警只会变成固定噪音；
  * - 每次应用会话只跑一次（语言切换等无关变化不重跑）。
  */
@@ -74,6 +73,9 @@ export function AgentDiscoveryRefreshBridge({
         const discover = runDiscovery ?? nativeRunDiscovery;
         const before = await read();
         const after = await discover();
+        // 重扫会刷新已识别目录的持久身份与能力，即使没有新增客户端也要
+        // 通知关系治理、Agent 与概览读取最新事实。
+        notifyDiscoveryFactsChanged();
         if (cancelled) return;
 
         const known = new Set(before.instances.map(instanceKey));
@@ -88,10 +90,6 @@ export function AgentDiscoveryRefreshBridge({
           detail: t("bootstrap.agentRefresh.newDetail", { count: fresh.length, brands }),
           action: { label: t("bootstrap.agentRefresh.action"), to: "/agents" },
         });
-        // Agent 页是本地 state：广播让它重读；概览的发现数走 react-query：
-        // 直接用应用级 queryClient 失效（本桥不依赖 Provider 挂载位置）。
-        notifyDiscoveryFactsChanged();
-        void appQueryClient.invalidateQueries({ queryKey: ["overview"] });
       } catch {
         // 静默：见组件注释。
       }

@@ -68,6 +68,8 @@ describe("AgentDiscoveryRefreshBridge", () => {
 
   it("stays silent when the snapshot did not grow new clients", async () => {
     const notify = vi.fn();
+    const factListener = vi.fn();
+    const unsubscribe = onDiscoveryFactsChanged(factListener);
     const same = snapshotWith([{ profile_id: "openai", client_id: "codex-cli", kind: "cli" }]);
 
     await renderBridge({
@@ -79,10 +81,14 @@ describe("AgentDiscoveryRefreshBridge", () => {
 
     await waitFor(() => expect(screen.queryByText(/新的 Agent/)).toBeNull());
     expect(notify).not.toHaveBeenCalled();
+    expect(factListener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 
   it("keeps startup quiet when the background discovery fails", async () => {
     const notify = vi.fn();
+    const factListener = vi.fn();
+    const unsubscribe = onDiscoveryFactsChanged(factListener);
 
     await renderBridge({
       notify,
@@ -94,6 +100,8 @@ describe("AgentDiscoveryRefreshBridge", () => {
     // 失败只静默：Agent 页随时可以手动重扫，启动期告警会变成固定噪音。
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(notify).not.toHaveBeenCalled();
+    expect(factListener).not.toHaveBeenCalled();
+    unsubscribe();
   });
 
   it("does not run before initialization completes", async () => {

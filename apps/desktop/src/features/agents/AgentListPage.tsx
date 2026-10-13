@@ -93,7 +93,6 @@ export function AgentListPage({
         total: 1,
         tracker,
       });
-      setRevision((current) => current + 1);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : t("agents.errors.unknown"));
     } finally {

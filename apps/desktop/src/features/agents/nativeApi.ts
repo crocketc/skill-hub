@@ -496,6 +496,7 @@ export const nativeAgentFacade: AgentFacade = {
   async rescan() {
     const result = await executeCommand({ type: "discover_agent_targets", payload: null });
     if (result.type !== "discovery_snapshot") throw unexpectedResult("discover_agent_targets");
+    notifyDiscoveryFactsChanged();
   },
   async createCustomAgent(values) {
     const id = `custom-${slugify(values.displayName)}`;

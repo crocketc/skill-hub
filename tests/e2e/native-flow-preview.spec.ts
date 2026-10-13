@@ -9,6 +9,8 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
   await page.addInitScript((projectDeployment: boolean) => {
     let callbackId = 0;
     let conflictResolved = false;
+    let relationshipDirectoryVerified = false;
+    let enableRelationshipDiscoveryRefresh = false;
     // 来源更新的会话内状态：检查后才出现可采用候选；采用后回到最新。
     let sourceUpdateState: { state: string; checked_at: string; upstream_label: string; candidate_identity: string } | null = null;
     let sourceAssociation: { skill_id: string; source: { kind: string; locator: Record<string, string> }; role: string; upstream: { url: string; branch: string; directory: string } | null; created_at: string } | null = null;
@@ -191,6 +193,7 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           | { kind: "git"; locator: { git_url: string } }
           | { kind: "local"; locator: { local_path: string } };
         skill_id?: string;
+        operation_id?: string;
         kind?: string;
       };
     };
@@ -219,8 +222,63 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
         const query = args.query!;
         switch (query.type) {
           case "get_bootstrap_snapshot": return ok("bootstrap_snapshot", bootstrap);
+          case "get_operation_details": {
+            const operationId = query.payload.operation_id ?? "op-import-1";
+            return ok("operation_details", {
+              operation_id: operationId,
+              kind: "import_skill",
+              phase: "committed",
+              progress: {
+                operation_id: operationId,
+                phase: "committed",
+                completed: 1,
+                total: 1,
+                message_code: "operation.completed",
+              },
+              error_code: null,
+              created_at: "1791489660",
+              object_name: "Fixture pack",
+              targets: [],
+            });
+          }
           case "get_discovery_snapshot": return ok("discovery_snapshot", discovery);
           case "get_agent_directory_projection": return ok("agent_directory_projection", agentDirectoryProjection);
+          case "get_relationship_overview": return ok("relationship_overview", {
+            scope: { type: "all" },
+            directory_nodes: [],
+            agent_directory_capabilities: [],
+            source_relations: [],
+            deployment_relations: [],
+            usage_relations: [{
+              relation_id: "rel:pdf-reader:codex-copy",
+              skill_id: "pdf-reader",
+              target: {
+                kind: "agent",
+                directory_id: relationshipDirectoryVerified ? "codex-physical" : null,
+                agent_client_id: "openai.codex-cli",
+                directory_role: relationshipDirectoryVerified ? "agent_user" : null,
+                recognition: relationshipDirectoryVerified ? "supported" : "unknown",
+              },
+              entry_key: relationshipDirectoryVerified
+                ? { directory_id: "codex-physical", relative_entry_path: "pdf-reader" }
+                : null,
+              form: "full_copy",
+              management: "unmanaged",
+              health_reasons: relationshipDirectoryVerified ? ["normal"] : ["unable_to_verify"],
+              decision: null,
+              decision_history_ids: [],
+              active: true,
+              file_representation: "copy",
+              link_target_path: null,
+              link_target_path_key: null,
+              link_target_directory_id: null,
+              physical_source_ids_evidence: [],
+              evidence_relation_ids: ["rel:pdf-reader:codex-copy"],
+            }],
+            conflict_cases: [],
+            pending_governance_tasks: [],
+            agent_execution_confirmed: false,
+          });
           case "get_usage_environment_statistics": return ok("usage_environment_statistics", {
             real_agent_count: 2,
             shared_directory_count: 0,
@@ -277,7 +335,7 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
                 relation: { kind: "deployment", fact: {
                   relation_id: "rel:pdf-reader:codex-copy", skill_id: "pdf-reader",
                   agent_client_id: "openai.codex-cli", path: "C:/Preview/.agents/skills/pdf-reader",
-                  path_key: "c:/preview/.agents/skills/pdf-reader", directory_node_id: "codex-physical",
+                  path_key: "c:/preview/.agents/skills/pdf-reader", directory_node_id: relationshipDirectoryVerified ? "codex-physical" : null,
                   relationship: "observed_copy", file_representation: "copy", ownership: "observed_unmanaged",
                   link_target_path: null, link_target_path_key: null, link_target_directory_id: null,
                   content_fingerprint: "sha256:preview-pdf-reader", origin: "import",
@@ -289,7 +347,9 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
                 impact: { other_consumer_agent_ids: [], other_skill_paths: [], backup_required: true, rollback_available: true },
                 governance: { governance_status: "pending", management_status: "not_taken_over", decision: "undecided", management_confirmed_at: null, health_reasons: [],
                   action_conditions: [{ action: "centralize_management", available: true, reasons: [] }] },
-                target_identity: null,
+                target_identity: relationshipDirectoryVerified
+                  ? { skill_id: "pdf-reader", target_kind: "agent", directory_node_id: "codex-physical", entry_path_key: "c:/preview/.agents/skills/pdf-reader" }
+                  : null,
                 evidence_relation_ids: ["rel:pdf-reader:codex-copy"],
               },
               {
@@ -463,7 +523,10 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
             unchanged_count: 0,
             errors: [{ path: "C:/Preview/missing", code: "directory.unreadable" }],
           });
-          case "discover_agent_targets": return ok("discovery_snapshot", discovery);
+          case "discover_agent_targets": {
+            if (enableRelationshipDiscoveryRefresh) relationshipDirectoryVerified = true;
+            return ok("discovery_snapshot", discovery);
+          }
           case "add_skill_repo":
           case "remove_skill_repo": return ok("skill_repos", repos);
           case "download_repo_skill": return ok("downloaded_repo_skill", { local_path: "C:/Preview/downloaded/pdf", runtime_name: "pdf-reader" });
@@ -563,6 +626,10 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
       },
     });
     Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", { configurable: true, value: { unregisterListener() {} } });
+    Object.defineProperty(window, "__enableRelationshipDiscoveryRefresh", {
+      configurable: true,
+      value: () => { enableRelationshipDiscoveryRefresh = true; },
+    });
   }, options.projectDeployment ?? false);
 }
 
@@ -974,6 +1041,29 @@ test("relationship module exposes in-page navigation with counts between the thr
   await expect(
     page.getByRole("link", { name: "Open conflict workspace (1 unconfirmed conflicts)" }),
   ).toHaveAttribute("href", "/relationships/decisions");
+});
+
+test("agent rescan refreshes relationship identity before governance actions become available", async ({ page }) => {
+  await installNativePreview(page);
+  await page.goto("/relationships/governance");
+
+  const relationId = "rel:pdf-reader:codex-copy";
+  const restriction = page.getByTestId(`governance-action-restriction-${relationId}`);
+  await expect(page.getByTestId("governance-row").first()).toBeVisible();
+  await expect(restriction).toBeVisible();
+
+  await page.evaluate(() => {
+    (window as unknown as { __enableRelationshipDiscoveryRefresh: () => void })
+      .__enableRelationshipDiscoveryRefresh();
+  });
+  await page.getByRole("link", { name: "Agents" }).click();
+  await page.getByRole("button", { name: "Rescan agents" }).click();
+  await expect(page.getByRole("button", { name: "Rescan agents" })).toBeEnabled();
+  await page.getByRole("link", { name: "Skill relations" }).click();
+  await page.getByRole("link", { name: "Relationship governance" }).click();
+
+  await expect(page.getByTestId(`governance-action-restriction-${relationId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`governance-actions-${relationId}`)).toBeVisible();
 });
 
 test("combination manager maintains members, renames, and guards duplicates", async ({ page }) => {

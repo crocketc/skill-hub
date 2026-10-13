@@ -8,6 +8,7 @@ import {
   type CustomAgent,
   type RelationshipOverview,
 } from "../../api/bindings";
+import { onDiscoveryFactsChanged } from "../../platform/discoveryEvents";
 import { nativeAgentFacade } from "./nativeApi";
 
 vi.mock("../../api/bindings", () => ({
@@ -774,9 +775,29 @@ it("reruns agent discovery through the native command", async () => {
   });
 });
 
+it("broadcasts changed relationship facts after a successful rescan", async () => {
+  command.mockResolvedValue({
+    type: "discovery_snapshot",
+    payload: emptySnapshot,
+  });
+  const listener = vi.fn();
+  const unsubscribe = onDiscoveryFactsChanged(listener);
+
+  await nativeAgentFacade.rescan();
+
+  expect(listener).toHaveBeenCalledTimes(1);
+  unsubscribe();
+});
+
 it("surfaces rescan failures instead of pretending the scan ran", async () => {
   command.mockRejectedValue(new Error("scan failed"));
+  const listener = vi.fn();
+  const unsubscribe = onDiscoveryFactsChanged(listener);
+
   await expect(nativeAgentFacade.rescan()).rejects.toThrow("scan failed");
+
+  expect(listener).not.toHaveBeenCalled();
+  unsubscribe();
 });
 
 it("loads the relationship overview scoped to the agent client", async () => {
