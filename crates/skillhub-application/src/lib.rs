@@ -23,6 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 pub use external_link::{ExternalLinkService, ExternalUrlOpener, SystemExternalUrlOpener};
 pub use local_open::{LocalOpenService, LocalPathOpener, SystemLocalPathOpener};
+use rusqlite::Transaction;
 use sha2::{Digest, Sha256};
 use skillhub_adapters::agent::discovery::{DiscoverAgents, DiscoveryRoots};
 use skillhub_adapters::app_update::github_releases::GithubReleaseProvider;
@@ -3804,6 +3805,33 @@ impl LocalApplicationFacade {
         database.operation_repository().update_sync(&record)?;
         self.log_journal_record(&record);
         Ok(())
+    }
+
+    fn committed_import_record(
+        database: &Database,
+        operation_id: OperationId,
+        object_name: &str,
+    ) -> AppResult<skillhub_core::OperationRecord> {
+        let mut record = database
+            .operation_repository()
+            .get_sync(operation_id)?
+            .filter(|record| {
+                record.kind == "import_skill"
+                    && matches!(
+                        record.phase,
+                        skillhub_core::OperationPhase::Prepared
+                            | skillhub_core::OperationPhase::Applying
+                    )
+            })
+            .ok_or_else(|| recovery_conflict("import_operation_not_prepared"))?;
+        record.phase = skillhub_core::OperationPhase::Committed;
+        record.progress.phase = record.phase;
+        record.progress.completed = record.progress.total;
+        record.progress.message_code = "operation.import_skill.committed".to_owned();
+        record.result = Some(serde_json::json!({ "object_name": object_name }));
+        record.recovery_data = serde_json::Value::Object(Default::default());
+        record.error_code = None;
+        Ok(record)
     }
 
     /// Reads the candidate runtime name of a staged import without holding
@@ -13357,14 +13385,17 @@ impl LocalApplicationFacade {
         request: &skillhub_core::CommitImport,
         batch_id: &str,
         candidate_key: &str,
+        object_name: &str,
         governance_tasks: Vec<skillhub_core::GovernanceTaskFact>,
         reason: &'static str,
     ) -> AppResult<AppCommandResult> {
-        self.with_database("execute.commit_import.governance_task", |database| {
-            Self::persist_import_governance_tasks(database, &governance_tasks)
-        })?;
-        self.with_database("execute.commit_import.skip_item", |database| {
-            database.provenance_repository().record_batch_item(
+        self.with_database("execute.commit_import.skip", |database| {
+            let record =
+                Self::committed_import_record(database, request.prepared_import_id, object_name)?;
+            let transaction = database.begin_transaction()?;
+            Self::persist_import_governance_tasks_tx(&transaction, &governance_tasks)?;
+            skillhub_storage::ProvenanceRepository::record_batch_item_tx(
+                &transaction,
                 &skillhub_storage::ImportBatchItemRecord {
                     batch_id: batch_id.to_owned(),
                     candidate_key: candidate_key.to_owned(),
@@ -13374,17 +13405,15 @@ impl LocalApplicationFacade {
                     status: skillhub_storage::ImportBatchItemStatus::Skipped,
                     reason: Some(reason.into()),
                 },
-            )
+            )?;
+            skillhub_storage::OperationRepositorySqlite::update_tx(&transaction, &record)?;
+            Database::commit_transaction(transaction)?;
+            Ok(())
         })?;
         self.forget_import_security_report(&request.prepared_import_id);
-        self.prepared_imports
-            .lock()
-            .map_err(|_| {
-                AppError::new(ErrorCode::InternalError, Severity::Error)
-                    .with_param("operation", "execute.commit_import")
-                    .with_action(RecoveryAction::Retry)
-            })?
-            .remove(&request.prepared_import_id);
+        if let Ok(mut prepared_imports) = self.prepared_imports.lock() {
+            prepared_imports.remove(&request.prepared_import_id);
+        }
         Ok(AppCommandResult::ImportSummary(Box::new(
             skillhub_core::ImportSummary {
                 operation_id: request.prepared_import_id,
@@ -13831,6 +13860,7 @@ impl LocalApplicationFacade {
                 request,
                 batch_id,
                 candidate_key,
+                &prepared.candidate.runtime_name,
                 governance_tasks,
                 "import.skipped_by_user",
             );
@@ -13853,6 +13883,7 @@ impl LocalApplicationFacade {
                 request,
                 batch_id,
                 candidate_key,
+                &prepared.candidate.runtime_name,
                 governance_tasks,
                 "import.skipped_by_security_decision",
             );
@@ -13906,8 +13937,13 @@ impl LocalApplicationFacade {
                         .with_action(RecoveryAction::Retry)
                 })?;
             let reuse_source_relation_id =
-                self.with_database("execute.commit_import.outcome", |database| {
-                    self.record_import_outcome(
+                self.with_database("execute.commit_import.reuse", |database| {
+                    let committed_record = Self::committed_import_record(
+                        database,
+                        request.prepared_import_id,
+                        &prepared.candidate.runtime_name,
+                    )?;
+                    let recorded = self.record_import_outcome_with_transaction(
                         database,
                         &ImportBatchSlot {
                             batch_id: batch_id.to_owned(),
@@ -13917,21 +13953,27 @@ impl LocalApplicationFacade {
                         skill_id,
                         &fingerprint,
                         false,
-                    )
-                    .map(|recorded| recorded.source_relation_id)
+                        |transaction, _| {
+                            Self::persist_import_governance_tasks_tx(
+                                transaction,
+                                &governance_tasks,
+                            )?;
+                            self.record_import_conflict_case(
+                                database,
+                                Some(transaction),
+                                prepared,
+                                request.decision,
+                                skill_id,
+                                Some(fingerprint.clone()),
+                            )?;
+                            skillhub_storage::OperationRepositorySqlite::update_tx(
+                                transaction,
+                                &committed_record,
+                            )
+                        },
+                    )?;
+                    Ok(recorded.source_relation_id)
                 })?;
-            self.with_database("execute.commit_import.governance_task", |database| {
-                Self::persist_import_governance_tasks(database, &governance_tasks)
-            })?;
-            self.with_database("execute.commit_import.conflict_case", |database| {
-                self.record_import_conflict_case(
-                    database,
-                    prepared,
-                    request.decision,
-                    skill_id,
-                    Some(fingerprint),
-                )
-            })?;
             self.forget_import_security_report(&request.prepared_import_id);
             self.prepared_imports
                 .lock()
@@ -14139,30 +14181,6 @@ impl LocalApplicationFacade {
                     ));
                 }
             }
-            // 导入即存证（单一 record_import_outcome）：在同一事务里追加
-            // 不可变事件、批次项，并按权威类别/物理身份 upsert 来源副本；
-            // Online/项目/集中库只写事件。失败视为导入失败并回滚库内
-            // 状态——“无存证的导入”不是完成的导入。
-            let outcome = self.record_import_outcome(
-                database,
-                &ImportBatchSlot {
-                    batch_id: batch_id.to_owned(),
-                    candidate_key: candidate_key.to_owned(),
-                },
-                &prepared.candidate,
-                skill_id,
-                &version.manifest.tree_hash,
-                true,
-            );
-            let recorded = match outcome {
-                Ok(recorded) => recorded,
-                Err(error) => {
-                    return Err(cleanup_import_error(
-                        error,
-                        cleanup_import_state(database, central, store, skill_id, &version),
-                    ));
-                }
-            };
             if request.decision == skillhub_core::ImportDecision::TakeOverAfterVerify {
                 // Takeover keeps the original source.  The separate original
                 // migration flow owns deletion and its explicit backup/rollback
@@ -14187,35 +14205,60 @@ impl LocalApplicationFacade {
                     ));
                 }
             }
-            if let Err(error) = Self::persist_import_governance_tasks(database, &governance_tasks) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, store, skill_id, &version),
-                ));
-            }
-            // Task 10：导入提交即落冲突组。失败视为导入失败并回滚库内
-            // 状态——"无冲突组的冲突导入"不是完成的导入。
-            if let Err(error) = self.record_import_conflict_case(
+            // Import outcome, governance facts, conflict case, observed relation,
+            // and terminal operation phase commit together. A failed write leaves
+            // the journal Applying so recovery can compensate the content writes.
+            let committed_record = match Self::committed_import_record(
                 database,
-                prepared,
-                request.decision,
-                skill_id,
-                Some(version.manifest.tree_hash.clone()),
+                request.prepared_import_id,
+                &final_runtime_name,
             ) {
-                return Err(cleanup_import_error(
-                    error,
-                    cleanup_import_state(database, central, store, skill_id, &version),
-                ));
-            }
+                Ok(record) => record,
+                Err(error) => {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            };
+            let recorded = match self.record_import_outcome_with_transaction(
+                database,
+                &ImportBatchSlot {
+                    batch_id: batch_id.to_owned(),
+                    candidate_key: candidate_key.to_owned(),
+                },
+                &prepared.candidate,
+                skill_id,
+                &version.manifest.tree_hash,
+                true,
+                |transaction, _| {
+                    Self::persist_import_governance_tasks_tx(transaction, &governance_tasks)?;
+                    self.record_import_conflict_case(
+                        database,
+                        Some(transaction),
+                        prepared,
+                        request.decision,
+                        skill_id,
+                        Some(version.manifest.tree_hash.clone()),
+                    )?;
+                    skillhub_storage::OperationRepositorySqlite::update_tx(
+                        transaction,
+                        &committed_record,
+                    )
+                },
+            ) {
+                Ok(recorded) => recorded,
+                Err(error) => {
+                    return Err(cleanup_import_error(
+                        error,
+                        cleanup_import_state(database, central, store, skill_id, &version),
+                    ));
+                }
+            };
             self.forget_import_security_report(&request.prepared_import_id);
-            self.prepared_imports
-                .lock()
-                .map_err(|_| {
-                    AppError::new(ErrorCode::InternalError, Severity::Error)
-                        .with_param("operation", "execute.commit_import")
-                        .with_action(RecoveryAction::Retry)
-                })?
-                .remove(&request.prepared_import_id);
+            if let Ok(mut prepared_imports) = self.prepared_imports.lock() {
+                prepared_imports.remove(&request.prepared_import_id);
+            }
             Ok(AppCommandResult::ImportSummary(Box::new(
                 skillhub_core::ImportSummary {
                     operation_id: request.prepared_import_id,
@@ -14320,12 +14363,12 @@ impl LocalApplicationFacade {
             .collect()
     }
 
-    fn persist_import_governance_tasks(
-        database: &Database,
+    fn persist_import_governance_tasks_tx(
+        transaction: &Transaction<'_>,
         tasks: &[skillhub_core::GovernanceTaskFact],
     ) -> AppResult<()> {
         for task in tasks {
-            database.governance_task_repository().create(task)?;
+            skillhub_storage::GovernanceTaskRepository::create_tx(transaction, task)?;
         }
         Ok(())
     }
@@ -14338,6 +14381,7 @@ impl LocalApplicationFacade {
     fn record_import_conflict_case(
         &self,
         database: &Database,
+        transaction: Option<&Transaction<'_>>,
         prepared: &skillhub_core::PreparedImport,
         decision: skillhub_core::ImportDecision,
         outcome_skill_id: skillhub_core::SkillId,
@@ -14376,7 +14420,18 @@ impl LocalApplicationFacade {
             .find(|case| case.conflict_id == fact.conflict_id);
         let merged =
             Self::merge_import_conflict_decision(fact, existing.as_ref(), now_epoch_seconds());
-        database.conflict_repository().create_case(&merged)
+        if existing
+            .as_ref()
+            .is_some_and(|existing| existing == &merged)
+        {
+            return Ok(());
+        }
+        match transaction {
+            Some(transaction) => {
+                skillhub_storage::ConflictRepository::create_case_tx(transaction, &merged)
+            }
+            None => database.conflict_repository().create_case(&merged),
+        }
     }
 
     /// 库内既有 Skill 的集中库可见路径；不可得（无运行时上下文或可见树
@@ -15072,7 +15127,8 @@ impl LocalApplicationFacade {
         Some(classified)
     }
 
-    fn record_import_outcome(
+    #[allow(clippy::too_many_arguments)]
+    fn record_import_outcome_with_transaction<F>(
         &self,
         database: &Database,
         slot: &ImportBatchSlot,
@@ -15080,7 +15136,11 @@ impl LocalApplicationFacade {
         final_skill_id: skillhub_core::SkillId,
         fingerprint: &str,
         establish_observed: bool,
-    ) -> AppResult<RecordedImportOutcome> {
+        finalize: F,
+    ) -> AppResult<RecordedImportOutcome>
+    where
+        F: FnOnce(&Transaction<'_>, &RecordedImportOutcome) -> AppResult<()>,
+    {
         let observed_key = observed_path_key(&candidate.absolute_root);
         let classification = self
             .import_source_classifications
@@ -15240,10 +15300,6 @@ impl LocalApplicationFacade {
             &provenance,
             false,
         )?;
-        skillhub_storage::Database::commit_transaction(transaction)?;
-        // 已观察部署关系：只在"指纹一致 + 归属明确"且本次是真正复制入库
-        // 的导入时建立（既有语义）；复用确认只补事件与关系事实，观察行
-        // 交给扫描以 canonical 形态建档。
         if let Some(client) = agent_client_id.as_ref() {
             if establish_observed
                 && Self::fingerprint_matches_current_version(database, final_skill_id, fingerprint)?
@@ -15253,19 +15309,30 @@ impl LocalApplicationFacade {
                     fingerprint: fingerprint.to_owned(),
                 };
                 let action = reconcile_observed_row(None, Some(&observation), Some(final_skill_id));
-                database.provenance_repository().apply_observed_row_action(
-                    client,
-                    &observation.path,
-                    &action,
-                    skillhub_core::ObservedOrigin::Import,
-                    now_epoch_seconds(),
-                )?;
+                if let skillhub_core::ObservedRowAction::EstablishVerified {
+                    skill_id,
+                    fingerprint,
+                } = action
+                {
+                    skillhub_storage::ProvenanceRepository::establish_observed_deployment_tx(
+                        &transaction,
+                        client,
+                        &observation.path,
+                        skill_id,
+                        &fingerprint,
+                        skillhub_core::ObservedOrigin::Import,
+                        now_epoch_seconds(),
+                    )?;
+                }
             }
         }
-        Ok(RecordedImportOutcome {
+        let recorded = RecordedImportOutcome {
             provenance: Some(provenance),
             source_relation_id,
-        })
+        };
+        finalize(&transaction, &recorded)?;
+        skillhub_storage::Database::commit_transaction(transaction)?;
+        Ok(recorded)
     }
 
     /// 稳定候选键 = acquisition identity + normalized relative skill root；

@@ -620,78 +620,26 @@ impl<'a> ProvenanceRepository<'a> {
         origin: ObservedOrigin,
         observed_at: i64,
     ) -> AppResult<()> {
-        let origin_code = match origin {
-            ObservedOrigin::Scan => "scan",
-            ObservedOrigin::Import => "import",
-        };
         match action {
             ObservedRowAction::Unchanged => Ok(()),
             ObservedRowAction::EstablishVerified {
                 skill_id,
                 fingerprint,
             } => {
-                let id = ObservedDeploymentId::new().to_string();
                 let transaction = self
                     .database
                     .connection
                     .unchecked_transaction()
                     .map_err(database_error)?;
-                transaction
-                    .execute(
-                        "INSERT INTO observed_deployments \
-                         (id, skill_id, client_id, original_path, path_key, content_fingerprint, match_state, origin, status, observed_at, released_at) \
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'content_verified', ?7, 'active', ?8, NULL) \
-                         ON CONFLICT(path_key) DO UPDATE SET \
-                         skill_id=excluded.skill_id, client_id=excluded.client_id, \
-                         content_fingerprint=excluded.content_fingerprint, match_state='content_verified', \
-                         status='active', observed_at=excluded.observed_at, released_at=NULL",
-                        params![
-                            id.clone(),
-                            skill_id.to_string(),
-                            client_id,
-                            original_path,
-                            observed_path_key(original_path),
-                            fingerprint,
-                            origin_code,
-                            observed_at,
-                        ],
-                    )
-                    .map_err(database_error)?;
-                let relation_id: String = transaction
-                    .query_row(
-                        "SELECT id FROM observed_deployments WHERE path_key=?1",
-                        [observed_path_key(original_path)],
-                        |row| row.get(0),
-                    )
-                    .map_err(database_error)?;
-                let relationship_changed =
-                    super::relationship_repository::upsert_deployment_relation_tx(
-                        &transaction,
-                        &DeploymentRelationFact {
-                            relation_id,
-                            skill_id: Some(*skill_id),
-                            agent_client_id: client_id.to_owned(),
-                            path: original_path.to_owned(),
-                            path_key: String::new(),
-                            directory_node_id: None,
-                            relationship: RelationshipType::Unknown,
-                            file_representation: FileRepresentation::Unknown,
-                            ownership: OwnershipState::ObservedUnmanaged,
-                            link_target_path: None,
-                            link_target_path_key: None,
-                            link_target_directory_id: None,
-                            content_fingerprint: fingerprint.clone(),
-                            origin,
-                            match_state: ObservedMatchState::ContentVerified,
-                            health_reasons: Some(Vec::new()),
-                            active: true,
-                            observed_at,
-                            released_at: None,
-                        },
-                    )?;
-                if relationship_changed {
-                    super::relationship_repository::bump_relationship_revision_tx(&transaction)?;
-                }
+                Self::establish_observed_deployment_tx(
+                    &transaction,
+                    client_id,
+                    original_path,
+                    *skill_id,
+                    fingerprint,
+                    origin,
+                    observed_at,
+                )?;
                 transaction.commit().map_err(database_error)
             }
             ObservedRowAction::MarkUnreliable {
@@ -804,6 +752,81 @@ impl<'a> ProvenanceRepository<'a> {
                 transaction.commit().map_err(database_error)
             }
         }
+    }
+
+    /// Adds a content-verified observed deployment to a caller-owned write.
+    /// Import uses this so provenance, the observed relation, governance facts,
+    /// and the operation's terminal journal state share one commit boundary.
+    pub fn establish_observed_deployment_tx(
+        transaction: &Transaction<'_>,
+        client_id: &str,
+        original_path: &str,
+        skill_id: SkillId,
+        fingerprint: &str,
+        origin: ObservedOrigin,
+        observed_at: i64,
+    ) -> AppResult<()> {
+        let origin_code = match origin {
+            ObservedOrigin::Scan => "scan",
+            ObservedOrigin::Import => "import",
+        };
+        let id = ObservedDeploymentId::new().to_string();
+        transaction
+            .execute(
+                "INSERT INTO observed_deployments \
+                 (id, skill_id, client_id, original_path, path_key, content_fingerprint, match_state, origin, status, observed_at, released_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'content_verified', ?7, 'active', ?8, NULL) \
+                 ON CONFLICT(path_key) DO UPDATE SET \
+                 skill_id=excluded.skill_id, client_id=excluded.client_id, \
+                 content_fingerprint=excluded.content_fingerprint, match_state='content_verified', \
+                 status='active', observed_at=excluded.observed_at, released_at=NULL",
+                params![
+                    id,
+                    skill_id.to_string(),
+                    client_id,
+                    original_path,
+                    observed_path_key(original_path),
+                    fingerprint,
+                    origin_code,
+                    observed_at,
+                ],
+            )
+            .map_err(database_error)?;
+        let relation_id: String = transaction
+            .query_row(
+                "SELECT id FROM observed_deployments WHERE path_key=?1",
+                [observed_path_key(original_path)],
+                |row| row.get(0),
+            )
+            .map_err(database_error)?;
+        let relationship_changed = super::relationship_repository::upsert_deployment_relation_tx(
+            transaction,
+            &DeploymentRelationFact {
+                relation_id,
+                skill_id: Some(skill_id),
+                agent_client_id: client_id.to_owned(),
+                path: original_path.to_owned(),
+                path_key: String::new(),
+                directory_node_id: None,
+                relationship: RelationshipType::Unknown,
+                file_representation: FileRepresentation::Unknown,
+                ownership: OwnershipState::ObservedUnmanaged,
+                link_target_path: None,
+                link_target_path_key: None,
+                link_target_directory_id: None,
+                content_fingerprint: fingerprint.to_owned(),
+                origin,
+                match_state: ObservedMatchState::ContentVerified,
+                health_reasons: Some(Vec::new()),
+                active: true,
+                observed_at,
+                released_at: None,
+            },
+        )?;
+        if relationship_changed {
+            super::relationship_repository::bump_relationship_revision_tx(transaction)?;
+        }
+        Ok(())
     }
 
     /// 释放一条未受管观察记录：observed_deployments 置为 released，对应

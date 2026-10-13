@@ -1,6 +1,6 @@
 use super::Database;
 use async_trait::async_trait;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use skillhub_core::{
@@ -52,6 +52,32 @@ impl<'a> OperationRepositorySqlite<'a> {
         let changed = self
             .database
             .connection
+            .execute(
+                "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1",
+                params![
+                    record.operation_id.to_string(),
+                    state_code(record.phase),
+                    phase_code(record.phase),
+                    record.request_fingerprint,
+                    progress,
+                    inverse,
+                    record.error_code.map(|value| value.as_str()),
+                    now(),
+                ],
+            )
+            .map_err(error)?;
+        if changed == 0 {
+            return Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+                .with_param("operation_id", record.operation_id.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Caller-transaction seam for committing an operation phase atomically
+    /// with the database facts produced by that operation.
+    pub fn update_tx(transaction: &Transaction<'_>, record: &OperationRecord) -> AppResult<()> {
+        let (progress, inverse) = encode_record(record)?;
+        let changed = transaction
             .execute(
                 "UPDATE operations SET state=?2,phase=?3,request_fingerprint=?4,progress_json=?5,inverse_json=?6,error_code=?7,updated_at=?8 WHERE operation_id=?1",
                 params![

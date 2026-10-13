@@ -1327,16 +1327,24 @@ impl<'a> ConflictRepository<'a> {
         if self.list_cases()?.iter().any(|existing| existing == case) {
             return Ok(());
         }
-        let member_skill_ids = serde_json::to_string(&case.member_skill_ids)
-            .map_err(|error| serialization_error(error.to_string()))?;
-        let evidence = serde_json::to_string(&case.evidence)
-            .map_err(|error| serialization_error(error.to_string()))?;
         let tx = self
             .database
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        tx.execute(
+        Self::create_case_tx(&tx, case)?;
+        tx.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for saving a conflict case with related import
+    /// facts. Callers should skip this write when the persisted case is
+    /// unchanged, matching [`Self::create_case`] revision behavior.
+    pub fn create_case_tx(transaction: &Transaction<'_>, case: &ConflictCaseFact) -> AppResult<()> {
+        let member_skill_ids = serde_json::to_string(&case.member_skill_ids)
+            .map_err(|error| serialization_error(error.to_string()))?;
+        let evidence = serde_json::to_string(&case.evidence)
+            .map_err(|error| serialization_error(error.to_string()))?;
+        transaction.execute(
             "INSERT INTO conflict_cases (conflict_id, kind, classification, member_skill_ids_json, evidence_json, user_decision, decided_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(conflict_id) DO UPDATE SET kind=excluded.kind, classification=excluded.classification,
@@ -1352,13 +1360,14 @@ impl<'a> ConflictRepository<'a> {
                 case.decided_at,
             ],
         ).map_err(database_error)?;
-        tx.execute(
-            "DELETE FROM conflict_case_members WHERE conflict_id=?1",
-            [&case.conflict_id],
-        )
-        .map_err(database_error)?;
+        transaction
+            .execute(
+                "DELETE FROM conflict_case_members WHERE conflict_id=?1",
+                [&case.conflict_id],
+            )
+            .map_err(database_error)?;
         for (index, member) in case.members.iter().enumerate() {
-            tx.execute(
+            transaction.execute(
                 "INSERT INTO conflict_case_members (member_id, conflict_id, skill_id, version_id, provenance_id, directory_node_id, path, fingerprint)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
@@ -1373,8 +1382,7 @@ impl<'a> ConflictRepository<'a> {
                 ],
             ).map_err(database_error)?;
         }
-        bump_relationship_revision_tx(&tx)?;
-        tx.commit().map_err(database_error)
+        bump_relationship_revision_tx(transaction)
     }
 
     pub fn list_cases(&self) -> AppResult<Vec<ConflictCaseFact>> {
@@ -1721,6 +1729,30 @@ impl<'a> GovernanceTaskRepository<'a> {
     pub fn create(&self, task: &GovernanceTaskFact) -> AppResult<()> {
         self.database
             .connection
+            .execute(
+                "INSERT INTO governance_tasks (task_id, kind, subject_id, detail, resolved, created_at, resolved_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(task_id) DO UPDATE SET kind=excluded.kind, subject_id=excluded.subject_id,
+                 detail=excluded.detail, resolved=excluded.resolved, created_at=excluded.created_at,
+                 resolved_at=excluded.resolved_at",
+                params![
+                    task.task_id,
+                    governance_task_kind_code(task.kind),
+                    task.subject_id,
+                    task.detail,
+                    i64::from(task.resolved),
+                    task.created_at,
+                    task.resolved_at,
+                ],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    /// Caller-transaction seam for saving a governance task with the import
+    /// outcome and operation phase that caused it.
+    pub fn create_tx(transaction: &Transaction<'_>, task: &GovernanceTaskFact) -> AppResult<()> {
+        transaction
             .execute(
                 "INSERT INTO governance_tasks (task_id, kind, subject_id, detail, resolved, created_at, resolved_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)

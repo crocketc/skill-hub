@@ -617,6 +617,310 @@ async fn failed_import_compensation_retains_recovery_snapshot_for_restart() {
 }
 
 #[tokio::test]
+async fn failed_reuse_conflict_write_does_not_leave_partial_import_outcome() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Atomic reuse\n");
+    let first = prepare(&facade, source.path(), "Atomic reuse").await;
+    let imported = commit_copy(&facade, &first).await;
+    let skill_id = imported.items[0].skill_id.expect("imported skill");
+
+    let reuse = prepare(&facade, source.path(), "Atomic reuse").await;
+    assert_eq!(
+        reuse.analysis.duplicate_kind,
+        Some(DuplicateKind::ExactContent)
+    );
+    let operation_id = reuse.id;
+    let database = Database::open(&database_path).expect("second database connection");
+    database
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_import_conflict_case BEFORE INSERT ON conflict_cases
+             WHEN NEW.conflict_id LIKE 'import-conflict:%'
+             BEGIN SELECT RAISE(ABORT, 'injected conflict persistence failure'); END;",
+        )
+        .expect("install conflict write failure");
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: operation_id,
+            decision: ImportDecision::ReuseExisting,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: reuse
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
+            security_decision: None,
+        }))
+        .await
+        .expect_err("conflict persistence failure aborts reuse");
+    assert_eq!(error.severity, skillhub_core::Severity::Error);
+
+    let database = Database::open(&database_path).expect("database after failed reuse");
+    let events = database
+        .provenance_repository()
+        .list_provenance_events_for_skill(skill_id)
+        .expect("list provenance events");
+    assert_eq!(
+        events.len(),
+        1,
+        "failed reuse must not leave its provenance event committed"
+    );
+    let partial_successes: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM import_batch_items
+             WHERE batch_id=?1 AND status='succeeded'",
+            [format!("implicit-{operation_id}")],
+            |row| row.get(0),
+        )
+        .expect("count partial successful batch rows");
+    assert_eq!(
+        partial_successes, 0,
+        "failed reuse has no successful batch row"
+    );
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("read operation")
+            .expect("operation exists")
+            .phase,
+        skillhub_core::OperationPhase::RolledBack
+    );
+}
+
+#[tokio::test]
+async fn failed_skip_batch_write_does_not_leave_governance_tasks() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let source = tempfile::tempdir().expect("source");
+    write_skill(source.path(), "# Atomic skip\n");
+    let first = prepare(&facade, source.path(), "Atomic skip").await;
+    commit_copy(&facade, &first).await;
+    Database::open(&database_path)
+        .expect("second database connection")
+        .connection_for_test()
+        .execute("DELETE FROM governance_tasks", [])
+        .expect("clear first import tasks for isolated failure injection");
+
+    let skip = prepare(&facade, source.path(), "Atomic skip").await;
+    let create_todo = skillhub_core::ImportGovernanceAction::CreateTodo;
+    let group_actions = skip
+        .analysis
+        .governance_groups
+        .iter()
+        .map(|group| {
+            assert!(group.available_actions.contains(&create_todo));
+            (group.group_id.clone(), create_todo)
+        })
+        .collect();
+    assert!(
+        !skip.analysis.governance_groups.is_empty(),
+        "duplicate import has a governance group"
+    );
+    let operation_id = skip.id;
+    Database::open(&database_path)
+        .expect("second database connection")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_skipped_batch_item BEFORE INSERT ON import_batch_items
+             WHEN NEW.status='skipped'
+             BEGIN SELECT RAISE(ABORT, 'injected skipped item failure'); END;",
+        )
+        .expect("install skipped item failure");
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: operation_id,
+            decision: ImportDecision::Skip,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions,
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
+            security_decision: None,
+        }))
+        .await
+        .expect_err("skipped batch item failure aborts skip");
+    assert_eq!(error.severity, skillhub_core::Severity::Error);
+
+    let database = Database::open(&database_path).expect("database after failed skip");
+    let tasks: i64 = database
+        .connection_for_test()
+        .query_row("SELECT COUNT(*) FROM governance_tasks", [], |row| {
+            row.get(0)
+        })
+        .expect("count governance tasks");
+    assert_eq!(tasks, 0, "failed skip must roll back its governance tasks");
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("read operation")
+            .expect("operation exists")
+            .phase,
+        skillhub_core::OperationPhase::RolledBack
+    );
+}
+
+#[tokio::test]
+async fn failed_new_import_conflict_write_does_not_leave_successful_provenance() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let database_path = workspace.path().join("db.sqlite");
+    let library_root = workspace.path().join("library");
+    let database = Database::open(&database_path).expect("database");
+    CentralLibrary::initialize(&library_root).expect("initialize library");
+    let facade = LocalApplicationFacade::new_with_library(database, &library_root);
+    let first_source = tempfile::tempdir().expect("first source");
+    write_skill(first_source.path(), "# Atomic new import\n");
+    let first = prepare(&facade, first_source.path(), "Atomic new import").await;
+    commit_copy(&facade, &first).await;
+
+    let second_source = tempfile::tempdir().expect("second source");
+    write_skill(second_source.path(), "# Atomic new import\n");
+    let second = prepare(&facade, second_source.path(), "Atomic new import").await;
+    assert_eq!(
+        second.analysis.duplicate_kind,
+        Some(DuplicateKind::ExactContent)
+    );
+    assert!(
+        second
+            .analysis
+            .actions
+            .contains(&ImportDecision::CopyIntoLibrary),
+        "exact duplicate permits importing a separate managed skill"
+    );
+    let operation_id = second.id;
+    Database::open(&database_path)
+        .expect("second database connection")
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_new_import_conflict_case BEFORE INSERT ON conflict_cases
+             WHEN NEW.conflict_id LIKE 'import-conflict:%'
+             BEGIN SELECT RAISE(ABORT, 'injected conflict persistence failure'); END;
+             CREATE TRIGGER fail_new_import_compensation BEFORE DELETE ON skills
+             BEGIN SELECT RAISE(ABORT, 'injected import compensation failure'); END;",
+        )
+        .expect("install import write and compensation failures");
+
+    let error = facade
+        .execute(AppCommand::CommitImport(skillhub_core::CommitImport {
+            prepared_import_id: operation_id,
+            decision: ImportDecision::CopyIntoLibrary,
+            governance_decision: skillhub_core::ImportGovernanceDecision {
+                group_actions: second
+                    .analysis
+                    .governance_groups
+                    .iter()
+                    .map(|group| (group.group_id.clone(), group.default_action))
+                    .collect(),
+                item_overrides: Default::default(),
+            },
+            batch_id: None,
+            candidate_key: None,
+            runtime_name_override: None,
+            batch_signature: None,
+            security_decision: None,
+        }))
+        .await
+        .expect_err("conflict persistence failure aborts new import");
+    assert_eq!(error.severity, skillhub_core::Severity::Critical);
+
+    let database = Database::open(&database_path).expect("database after failed import");
+    let events: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM import_provenance_events_v19",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count all provenance events");
+    assert_eq!(
+        events, 1,
+        "failed new import must not leave a successful provenance event"
+    );
+    assert_eq!(
+        database
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("read operation")
+            .expect("operation exists")
+            .phase,
+        skillhub_core::OperationPhase::NeedsRecovery
+    );
+    assert!(database
+        .operation_repository()
+        .get_sync(operation_id)
+        .expect("read recovery checkpoint")
+        .expect("operation exists")
+        .recovery_data
+        .get("target_version_id")
+        .is_some());
+    drop(facade);
+    Database::open(&database_path)
+        .expect("remove injected failures")
+        .connection_for_test()
+        .execute_batch(
+            "DROP TRIGGER fail_new_import_conflict_case;
+             DROP TRIGGER fail_new_import_compensation;",
+        )
+        .expect("clear failure injection");
+    let facade = LocalApplicationFacade::open_with_library(&database_path, &library_root)
+        .expect("reopen import needing recovery");
+    let AppQueryResult::RecoveryCandidates(candidates) = facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list recovery candidates")
+    else {
+        panic!("expected recovery candidates");
+    };
+    assert!(candidates.iter().any(|candidate| {
+        candidate.operation_id == operation_id
+            && candidate.actions == vec![skillhub_core::RecoveryAction::RollbackOperation]
+    }));
+    facade
+        .execute(AppCommand::ResolveRecovery(
+            skillhub_core::ResolveRecovery {
+                operation_id,
+                action: skillhub_core::RecoveryAction::RollbackOperation,
+            },
+        ))
+        .await
+        .expect("retry import rollback after restart");
+    assert_eq!(
+        Database::open(&database_path)
+            .expect("database after recovery")
+            .operation_repository()
+            .get_sync(operation_id)
+            .expect("read recovered operation")
+            .expect("operation exists")
+            .phase,
+        skillhub_core::OperationPhase::RolledBack
+    );
+}
+
+#[tokio::test]
 async fn repeated_reuse_imports_keep_one_conflict_group_without_user_decision() {
     let workspace = tempfile::tempdir().expect("workspace");
     let facade = facade_with(workspace.path());
