@@ -11048,7 +11048,10 @@ fn rename_skill_frontmatter(path: &Path, runtime_name: &str) -> AppResult<()> {
     fs::write(path, renamed).map_err(subject_rename_io_error)
 }
 
-fn rename_skill_frontmatter_content(content: &str, runtime_name: &str) -> AppResult<String> {
+pub(crate) fn rename_skill_frontmatter_content(
+    content: &str,
+    runtime_name: &str,
+) -> AppResult<String> {
     let mut lines = content
         .split_inclusive('\n')
         .map(str::to_owned)

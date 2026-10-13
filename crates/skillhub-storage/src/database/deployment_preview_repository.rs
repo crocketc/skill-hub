@@ -103,6 +103,33 @@ impl<'a> DeploymentPreviewRepository<'a> {
             .filter(|snapshot| snapshot.status == "active" && snapshot.expires_at > now))
     }
 
+    /// Persists workflow checkpoints in an active preview without consuming
+    /// the preview. Checkpoints let a retry resume a multi-step mutation after
+    /// a process exits between committed child operations.
+    pub fn update_active_payload(&self, preview_id: &str, payload_json: &str) -> AppResult<()> {
+        if payload_json.trim().is_empty() {
+            return Err(skillhub_core::AppError::new(
+                skillhub_core::ErrorCode::InvalidInput,
+                skillhub_core::Severity::Error,
+            )
+            .with_param("field", "payload_json")
+            .with_action(skillhub_core::RecoveryAction::Retry));
+        }
+        let changed = self
+            .database
+            .connection
+            .execute(
+                "UPDATE deployment_preview_snapshots SET payload_json=?2
+                 WHERE preview_id=?1 AND status='active'",
+                params![preview_id, payload_json],
+            )
+            .map_err(database_error)?;
+        if changed == 0 {
+            return Err(self.unknown_or_consumed(preview_id));
+        }
+        Ok(())
+    }
+
     /// Marks an active snapshot consumed.  A missing id or a second consume
     /// is refused: replay goes through the recorded commit result instead.
     pub fn consume(&self, preview_id: &str) -> AppResult<()> {

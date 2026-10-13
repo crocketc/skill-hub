@@ -63,6 +63,35 @@ fn expired_snapshots_are_never_returned_as_active() {
 }
 
 #[test]
+fn checkpoint_updates_active_snapshot_without_consuming_it() {
+    let db = Database::open_in_memory().unwrap();
+    db.deployment_preview_repository()
+        .insert(&snapshot("preview-checkpoint", 0, 900, "active"))
+        .unwrap();
+
+    let repository = db.deployment_preview_repository();
+    repository
+        .update_active_payload("preview-checkpoint", r#"{"checkpoint":true}"#)
+        .unwrap();
+
+    let updated = repository
+        .get_active("preview-checkpoint", 100)
+        .unwrap()
+        .expect("checkpoint must not consume its preview");
+    assert_eq!(updated.payload_json, r#"{"checkpoint":true}"#);
+    assert_eq!(updated.status, "active");
+
+    repository.consume("preview-checkpoint").unwrap();
+    assert!(repository
+        .update_active_payload("preview-checkpoint", r#"{"late":true}"#)
+        .is_err());
+    assert!(repository.update_active_payload("missing", "{}").is_err());
+    assert!(repository
+        .update_active_payload("preview-checkpoint", " ")
+        .is_err());
+}
+
+#[test]
 fn consuming_is_one_way_and_unknown_ids_are_refused() {
     let db = Database::open_in_memory().unwrap();
     db.deployment_preview_repository()

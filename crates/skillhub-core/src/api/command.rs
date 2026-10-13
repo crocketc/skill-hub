@@ -795,6 +795,16 @@ pub struct DeploymentPairCommitResult {
     /// Stable managed deployment row produced or retained by this pair.
     #[serde(default)]
     pub deployment_id: Option<DeploymentId>,
+    /// Actual Skill identity after rename-and-deploy; differs from the
+    /// requested Skill when the selected scope requires a derived subject.
+    #[serde(default)]
+    pub result_skill_id: Option<SkillId>,
+    /// Runtime name applied by rename-and-deploy.
+    #[serde(default)]
+    pub runtime_name: Option<String>,
+    /// Physical targets changed by this pair. Empty for skip/exclude/block.
+    #[serde(default)]
+    pub affected_target_ids: Vec<String>,
     /// Present only when a conflict action replaced a managed occupant.
     #[serde(default)]
     pub replaced: Option<DeploymentConflictReplacementSummary>,

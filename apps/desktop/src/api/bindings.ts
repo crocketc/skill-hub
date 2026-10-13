@@ -1046,6 +1046,15 @@ export type DeploymentPairCommitResult = {
 	operation_id: OperationId | null,
 	/**  Stable managed deployment row produced or retained by this pair. */
 	deployment_id?: DeploymentId | null,
+	/**
+	 *  Actual Skill identity after rename-and-deploy; differs from the
+	 *  requested Skill when the selected scope requires a derived subject.
+	 */
+	result_skill_id?: SkillId | null,
+	/**  Runtime name applied by rename-and-deploy. */
+	runtime_name?: string | null,
+	/**  Physical targets changed by this pair. Empty for skip/exclude/block. */
+	affected_target_ids?: string[],
 	/**  Present only when a conflict action replaced a managed occupant. */
 	replaced?: DeploymentConflictReplacementSummary | null,
 	error: TargetOperationError | null,

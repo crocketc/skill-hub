@@ -95,6 +95,9 @@ fn deployment_pair_commit_result_carries_replacement_receipt_and_reads_legacy_ro
         outcome: skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
         operation_id: Some(OperationId::new()),
         deployment_id: Some(deployment_id),
+        result_skill_id: None,
+        runtime_name: None,
+        affected_target_ids: Vec::new(),
         replaced: Some(skillhub_core::api::DeploymentConflictReplacementSummary {
             previous_skill_id,
             previous_skill_display_name: Some("Previous skill".to_owned()),
@@ -105,6 +108,9 @@ fn deployment_pair_commit_result_carries_replacement_receipt_and_reads_legacy_ro
     };
     let value = serde_json::to_value(result).unwrap();
     assert_eq!(value["deployment_id"], deployment_id.to_string());
+    assert_eq!(value["result_skill_id"], serde_json::Value::Null);
+    assert_eq!(value["runtime_name"], serde_json::Value::Null);
+    assert_eq!(value["affected_target_ids"], serde_json::json!([]));
     assert_eq!(
         value["replaced"]["previous_skill_id"],
         previous_skill_id.to_string()
@@ -120,6 +126,9 @@ fn deployment_pair_commit_result_carries_replacement_receipt_and_reads_legacy_ro
     let decoded: skillhub_core::api::DeploymentPairCommitResult =
         serde_json::from_value(legacy).expect("old recorded results retain compatibility");
     assert_eq!(decoded.deployment_id, None);
+    assert_eq!(decoded.result_skill_id, None);
+    assert_eq!(decoded.runtime_name, None);
+    assert!(decoded.affected_target_ids.is_empty());
     assert_eq!(decoded.replaced, None);
 }
 

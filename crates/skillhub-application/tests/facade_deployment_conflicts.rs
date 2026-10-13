@@ -3,6 +3,7 @@ use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CommitDeploymentPreview,
     DeploymentBatchPreview, DeploymentBatchPreviewRequestItem, DeploymentPairSelection,
     GetDeploymentBatchPreview, GetDeploymentPlan, ListDeployments, PrepareDeployment,
+    SaveAsCopyInheritance, SaveAsCopyOrigin, SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{
@@ -21,6 +22,7 @@ struct Harness {
     _library_root: tempfile::TempDir,
     target_root: tempfile::TempDir,
     other_target_root: tempfile::TempDir,
+    third_target_root: tempfile::TempDir,
     source_skill: Skill,
     source_version: skillhub_core::VersionId,
     occupant_skill: Skill,
@@ -65,17 +67,20 @@ async fn harness() -> Harness {
             .save_portable_skill(skill, Some(&version.id))
             .expect("save portable skill");
         database
-            .connection_for_test()
-            .execute(
-                "INSERT INTO versions (id, skill_id, content_hash, manifest_json, created_at) VALUES (?1, ?2, 'hash', '{}', 0)",
-                rusqlite::params![version.id.to_string(), skill.id().to_string()],
-            )
-            .expect("insert version row");
+            .record_current_version(skill.id(), &version)
+            .expect("record current version");
+        VersionStore::from_library(&library)
+            .set_current(skill.id(), &version.id)
+            .expect("set version store current pointer");
+        library
+            .materialize_current_skill(skill, &version.id)
+            .expect("materialize current skill");
         versions.push(version.id);
     }
 
     let target_root = tempfile::tempdir().expect("target root");
     let other_target_root = tempfile::tempdir().expect("other target root");
+    let third_target_root = tempfile::tempdir().expect("third target root");
     let physical_id =
         skillhub_core::physical_id_for_path(target_root.path()).expect("target identity");
     let other_physical_id = skillhub_core::physical_id_for_path(other_target_root.path())
@@ -84,11 +89,15 @@ async fn harness() -> Harness {
     let policy = PathPolicy::from_roots([
         AllowedRoot::new(target_root.path()).unwrap(),
         AllowedRoot::new(other_target_root.path()).unwrap(),
+        AllowedRoot::new(third_target_root.path()).unwrap(),
     ])
     .unwrap();
+    let third_physical_id = skillhub_core::physical_id_for_path(third_target_root.path())
+        .expect("third target identity");
     let facts: Vec<TargetFact> = [
         ("claude-global", target_root.path(), physical_id),
         ("codex-global", other_target_root.path(), other_physical_id),
+        ("gemini-global", third_target_root.path(), third_physical_id),
     ]
     .into_iter()
     .map(|(logical_id, path, identity)| {
@@ -111,6 +120,7 @@ async fn harness() -> Harness {
         _library_root: library_root,
         target_root,
         other_target_root,
+        third_target_root,
         source_skill,
         source_version: versions[0].clone(),
         occupant_skill,
@@ -174,6 +184,76 @@ async fn deploy_occupant(harness: &Harness) -> skillhub_core::DeploymentId {
         .into_iter()
         .find(|deployment| deployment.target_id == main_target_id)
         .expect("main target occupant deployment")
+        .id
+}
+
+async fn deploy_skill_to_target(
+    harness: &Harness,
+    skill_id: skillhub_core::SkillId,
+    version_id: &skillhub_core::VersionId,
+    runtime_name: &str,
+    logical_target_id: &str,
+) -> skillhub_core::DeploymentId {
+    let response = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: skillhub_core::DeploymentPlanRequest {
+                skill_id,
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.to_owned(),
+                logical_target_ids: vec![logical_target_id.to_owned()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = response else {
+        panic!("expected deployment plan");
+    };
+    let response = harness
+        .facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = response else {
+        panic!("expected prepared deployment");
+    };
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("commit deployment");
+    let AppCommandResult::DeploymentSummary(summary) = response else {
+        panic!("expected deployment summary");
+    };
+    assert!(
+        summary.committed,
+        "deployment failed: {:?}",
+        summary.targets
+    );
+    let response = harness
+        .facade
+        .query(RootAppQuery::ListDeployments(ListDeployments {
+            skill_id: Some(skill_id),
+        }))
+        .await
+        .expect("list deployments");
+    let AppQueryResult::Deployments(deployments) = response else {
+        panic!("expected deployments");
+    };
+    let root = match logical_target_id {
+        "claude-global" => harness.target_root.path(),
+        "codex-global" => harness.other_target_root.path(),
+        "gemini-global" => harness.third_target_root.path(),
+        _ => panic!("unexpected target"),
+    };
+    let target_id = skillhub_core::physical_id_for_path(root).expect("target identity");
+    deployments
+        .into_iter()
+        .find(|deployment| deployment.target_id == target_id)
+        .expect("deployment row")
         .id
 }
 
@@ -272,7 +352,9 @@ async fn managed_replacement_transfers_only_the_selected_deployment() {
     };
     assert_eq!(
         result.pairs[0].outcome,
-        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
+        "rename receipt: {:?}",
+        result.pairs[0]
     );
     assert!(result.pairs[0].operation_id.is_some());
     assert_eq!(result.pairs[0].deployment_id, Some(occupant_id));
@@ -450,4 +532,486 @@ async fn link_preference_requires_confirmation_before_copy_fallback_replacement(
         skillhub_core::api::DeploymentPairCommitOutcome::Deployed
     );
     assert_eq!(committed.pairs[0].deployment_id, Some(occupant_id));
+}
+
+#[tokio::test]
+async fn rename_and_deploy_is_offered_for_managed_conflicts() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+
+    assert!(pair
+        .conflict
+        .as_ref()
+        .expect("managed conflict")
+        .available_actions
+        .contains(&DeploymentConflictAction::RenameAndDeploy));
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id: pair.pair_id.clone(),
+                    disposition: DeploymentPairDisposition::RenameAndDeploy {
+                        runtime_name: "replacement-renamed".to_owned(),
+                    },
+                    confirm_fallback: false,
+                }],
+            },
+        ))
+        .await
+        .expect("commit renamed deployment");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs.len(),
+        1,
+        "each selected pair must have one result"
+    );
+    assert_eq!(result.pairs[0].pair_id, pair.pair_id);
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
+        "rename receipt: {:?}",
+        result.pairs[0]
+    );
+    assert_eq!(
+        result.pairs[0].result_skill_id,
+        Some(harness.source_skill.id())
+    );
+    assert_eq!(
+        result.pairs[0].runtime_name.as_deref(),
+        Some("replacement-renamed")
+    );
+    assert_eq!(result.pairs[0].affected_target_ids.len(), 1);
+    assert!(deployments(&harness).iter().any(|row| {
+        row.1 == harness.source_skill.id().to_string()
+            && row.3 == "replacement-renamed"
+            && row.4 == skillhub_core::physical_id_for_path(harness.target_root.path()).unwrap()
+    }));
+    assert_eq!(
+        std::fs::read_to_string(
+            harness
+                .target_root
+                .path()
+                .join("replacement-renamed/SKILL.md")
+        )
+        .expect("renamed deployment contents"),
+        skill_markdown("replacement-renamed", "replacement contents")
+    );
+    assert_eq!(
+        std::fs::read_to_string(harness.target_root.path().join("shared-runtime/SKILL.md"))
+            .expect("conflicting occupant remains untouched"),
+        skill_markdown("shared-runtime", "original contents")
+    );
+}
+
+#[tokio::test]
+async fn rename_and_deploy_derives_subject_when_source_has_an_unselected_use() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    let original_deployment = deploy_skill_to_target(
+        &harness,
+        harness.source_skill.id(),
+        &harness.source_version,
+        "shared-runtime",
+        "gemini-global",
+    )
+    .await;
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id: pair.pair_id.clone(),
+                    disposition: DeploymentPairDisposition::RenameAndDeploy {
+                        runtime_name: "replacement-local".to_owned(),
+                    },
+                    confirm_fallback: false,
+                }],
+            },
+        ))
+        .await
+        .expect("commit derived deployment");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+    );
+    let main_target_id = skillhub_core::physical_id_for_path(harness.target_root.path())
+        .expect("main target identity");
+    let rows = deployments(&harness);
+    let derived = rows
+        .iter()
+        .find(|row| row.3 == "replacement-local" && row.4 == main_target_id)
+        .expect("derived deployment row");
+    assert_eq!(
+        result.pairs[0].result_skill_id.map(|id| id.to_string()),
+        Some(derived.1.clone())
+    );
+    assert_eq!(
+        result.pairs[0].runtime_name.as_deref(),
+        Some("replacement-local")
+    );
+    assert_eq!(
+        result.pairs[0].affected_target_ids,
+        vec![main_target_id.clone()]
+    );
+    assert_ne!(derived.1, harness.source_skill.id().to_string());
+    let original = rows
+        .iter()
+        .find(|row| row.0 == original_deployment.to_string())
+        .expect("original deployment remains");
+    assert_eq!(original.1, harness.source_skill.id().to_string());
+    assert_eq!(original.2, "deployed");
+    assert_eq!(original.3, "shared-runtime");
+    assert_eq!(
+        std::fs::read_to_string(
+            harness
+                .third_target_root
+                .path()
+                .join("shared-runtime/SKILL.md")
+        )
+        .expect("original source contents remain"),
+        skill_markdown("shared-runtime", "replacement contents")
+    );
+    let connection = rusqlite::Connection::open_with_flags(
+        harness.database_dir.path().join("skillhub.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("read connection");
+    let (origin_skill_id, origin_version_id): (String, String) = connection
+        .query_row(
+            "SELECT origin_skill_id,origin_version_id FROM skill_lineage WHERE skill_id=?1",
+            [&derived.1],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("derived lineage");
+    assert_eq!(origin_skill_id, harness.source_skill.id().to_string());
+    assert_eq!(origin_version_id, harness.source_version.as_str());
+}
+
+#[tokio::test]
+async fn retry_after_derived_copy_commit_reuses_the_saved_subject() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    deploy_skill_to_target(
+        &harness,
+        harness.source_skill.id(),
+        &harness.source_version,
+        "shared-runtime",
+        "gemini-global",
+    )
+    .await;
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let selection = DeploymentPairSelection {
+        pair_id: pair.pair_id.clone(),
+        disposition: DeploymentPairDisposition::RenameAndDeploy {
+            runtime_name: "replacement-local".to_owned(),
+        },
+        confirm_fallback: false,
+    };
+
+    // Recreate the durable boundary where Save As Copy committed but the
+    // preview workflow had not yet stored its final result.
+    let library = CentralLibrary::initialize(harness._library_root.path()).expect("library");
+    let store = VersionStore::from_library(&library);
+    let (expected_identity, markdown) = store
+        .read_file(&harness.source_version, "SKILL.md", 1_048_576)
+        .expect("source markdown");
+    let renamed_markdown = String::from_utf8(markdown)
+        .expect("UTF-8 source markdown")
+        .replace("name: shared-runtime", "name: replacement-local");
+    let saved = harness
+        .facade
+        .execute(AppCommand::SaveMarkdownAsCopy(SaveMarkdownAsCopy {
+            skill_id: harness.source_skill.id(),
+            path: "SKILL.md".to_owned(),
+            markdown: renamed_markdown,
+            expected_identity,
+            origin: Some(SaveAsCopyOrigin {
+                source_skill_id: harness.source_skill.id(),
+                source_version_id: harness.source_version.clone(),
+            }),
+            inheritance: SaveAsCopyInheritance::None,
+            target_display_name: None,
+            target_runtime_name: Some("replacement-local".to_owned()),
+        }))
+        .await
+        .expect("save derived subject");
+    let AppCommandResult::SavedSkillCopy(saved) = saved else {
+        panic!("expected saved copy");
+    };
+
+    let database =
+        skillhub_storage::Database::open(harness.database_dir.path().join("skillhub.sqlite"))
+            .expect("database");
+    let copy_operation = database
+        .operation_repository()
+        .list_sync()
+        .expect("operation rows")
+        .into_iter()
+        .find(|record| {
+            record.kind == "save_markdown_as_copy"
+                && record.phase == skillhub_core::OperationPhase::Committed
+                && record.recovery_data["skill_id"] == saved.skill_id.to_string()
+        })
+        .expect("committed derived-copy operation");
+    let payload_json = serde_json::json!({
+        "pairs": preview.pairs,
+        "rename_dispatches": [{
+            "idempotency_key": preview_commit_key_for_test(&preview.preview_id, &selection),
+            "pair_ids": [pair.pair_id],
+            "source_skill_id": harness.source_skill.id(),
+            "source_version_id": harness.source_version,
+            "runtime_name": "replacement-local",
+            "branch": "derived",
+            "operation_id": copy_operation.operation_id,
+            "prepared_usage_change_id": null,
+            "result_skill_id": null,
+            "result_version_id": null,
+        }],
+    });
+    let encoded_payload = serde_json::to_string(&payload_json).expect("encode payload");
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployment_preview_snapshots SET payload_json=?1 WHERE preview_id=?2",
+            rusqlite::params![encoded_payload, preview.preview_id],
+        )
+        .expect("persist interrupted preview checkpoint");
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![selection],
+            },
+        ))
+        .await
+        .expect("resume derived deployment");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+    );
+    assert_eq!(result.pairs[0].result_skill_id, Some(saved.skill_id));
+    let lineage_count: i64 = database
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM skill_lineage WHERE origin_skill_id=?1 AND origin_version_id=?2",
+            rusqlite::params![
+                harness.source_skill.id().to_string(),
+                harness.source_version.as_str()
+            ],
+            |row| row.get(0),
+        )
+        .expect("count derived subjects");
+    assert_eq!(
+        lineage_count, 1,
+        "retry must not create another derived Skill"
+    );
+}
+
+#[tokio::test]
+async fn retry_after_original_subject_rename_uses_its_committed_version() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let selection = DeploymentPairSelection {
+        pair_id: pair.pair_id.clone(),
+        disposition: DeploymentPairDisposition::RenameAndDeploy {
+            runtime_name: "replacement-renamed".to_owned(),
+        },
+        confirm_fallback: false,
+    };
+    let first_response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id.clone(),
+                pairs: vec![selection.clone()],
+            },
+        ))
+        .await
+        .expect("commit original subject rename");
+    let AppCommandResult::DeploymentPreviewCommitResult(first_result) = first_response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        first_result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+    );
+
+    // Simulate an exit after the original-subject rename child committed but
+    // before the parent copied the child receipt into its checkpoint.
+    let database =
+        skillhub_storage::Database::open(harness.database_dir.path().join("skillhub.sqlite"))
+            .expect("database");
+    let mut payload: serde_json::Value = database
+        .connection_for_test()
+        .query_row(
+            "SELECT payload_json FROM deployment_preview_snapshots WHERE preview_id=?1",
+            [&preview.preview_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|raw| serde_json::from_str(&raw).expect("stored preview payload"))
+        .expect("preview snapshot");
+    assert_eq!(payload["rename_dispatches"][0]["branch"], "original");
+    payload["rename_dispatches"][0]["result_skill_id"] = serde_json::Value::Null;
+    payload["rename_dispatches"][0]["result_version_id"] = serde_json::Value::Null;
+    let encoded_payload = serde_json::to_string(&payload).expect("encode payload");
+    let idempotency_key = preview_commit_key_for_test(&preview.preview_id, &selection);
+    database
+        .connection_for_test()
+        .execute(
+            "UPDATE deployment_preview_snapshots SET payload_json=?1, status='active' WHERE preview_id=?2",
+            rusqlite::params![encoded_payload, preview.preview_id],
+        )
+        .expect("restore interrupted preview");
+    database
+        .connection_for_test()
+        .execute(
+            "DELETE FROM deployment_preview_commits WHERE idempotency_key=?1",
+            [&idempotency_key],
+        )
+        .expect("remove final commit receipt");
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![selection],
+            },
+        ))
+        .await
+        .expect("resume original subject deployment");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+    );
+    assert_eq!(
+        result.pairs[0].result_skill_id,
+        Some(harness.source_skill.id())
+    );
+    assert_eq!(
+        result.pairs[0].runtime_name.as_deref(),
+        Some("replacement-renamed")
+    );
+    assert_eq!(
+        deployments(&harness)
+            .iter()
+            .filter(|row| row.1 == harness.source_skill.id().to_string()
+                && row.3 == "replacement-renamed")
+            .count(),
+        1,
+        "retry must reuse the original deployed target"
+    );
+}
+
+fn preview_commit_key_for_test(preview_id: &str, selection: &DeploymentPairSelection) -> String {
+    format!(
+        "{}\n{}|disposition:{}|confirm:{}",
+        preview_id,
+        selection.pair_id,
+        serde_json::to_string(&selection.disposition).expect("serialize disposition"),
+        selection.confirm_fallback
+    )
+}
+
+#[tokio::test]
+async fn occupied_new_runtime_name_blocks_rename_without_changing_subject_or_targets() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    let occupied = harness.target_root.path().join("replacement-local");
+    std::fs::create_dir(&occupied).expect("create occupied candidate name");
+    std::fs::write(occupied.join("keep.txt"), "leave this entry untouched")
+        .expect("write occupied candidate contents");
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id: pair.pair_id.clone(),
+                    disposition: DeploymentPairDisposition::RenameAndDeploy {
+                        runtime_name: "replacement-local".to_owned(),
+                    },
+                    confirm_fallback: false,
+                }],
+            },
+        ))
+        .await
+        .expect("occupied rename is reported per pair");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+    );
+    assert_eq!(
+        result.pairs[0].error.as_ref().map(|error| error.code),
+        Some(skillhub_core::ErrorCode::TargetExists)
+    );
+    let connection = rusqlite::Connection::open_with_flags(
+        harness.database_dir.path().join("skillhub.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("read connection");
+    let runtime_name: String = connection
+        .query_row(
+            "SELECT runtime_name FROM skills WHERE id=?1",
+            [harness.source_skill.id().to_string()],
+            |row| row.get(0),
+        )
+        .expect("read source runtime name");
+    assert_eq!(runtime_name, "Replacement");
+    assert_eq!(
+        std::fs::read_to_string(occupied.join("keep.txt")).expect("preserved occupant"),
+        "leave this entry untouched"
+    );
+    assert_eq!(deployments(&harness).len(), 2);
 }

@@ -171,6 +171,9 @@ pub struct LocalApplicationFacade {
     /// Serializes the preview validation and cross-store write sequence for a
     /// current-version adoption.
     version_adoption_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Serializes preview commits so a persisted rename checkpoint has one
+    /// writer while its child operations are being resumed or settled.
+    deployment_preview_lock: Arc<tokio::sync::Mutex<()>>,
     /// Serializes writes to facts captured by version-adoption previews.
     version_adoption_facts_lock: tokio::sync::Mutex<()>,
     prepared_uninstall: Mutex<Option<skillhub_core::UninstallImpact>>,
@@ -3002,6 +3005,7 @@ impl LocalApplicationFacade {
         let startup_journal_sweep = Self::sweep_stale_journal(&database);
         let library_runtime = Arc::new(library_runtime::LibraryRuntime::new());
         let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let deployment_preview_lock = Arc::new(tokio::sync::Mutex::new(()));
         let relation_migration_lock = Arc::new(Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
@@ -3060,6 +3064,7 @@ impl LocalApplicationFacade {
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock,
             version_adoption_lock,
+            deployment_preview_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -3127,6 +3132,7 @@ impl LocalApplicationFacade {
             library_runtime::LibraryContext::from_library(central),
         )));
         let version_adoption_lock = Arc::new(tokio::sync::Mutex::new(()));
+        let deployment_preview_lock = Arc::new(tokio::sync::Mutex::new(()));
         let relation_migration_lock = Arc::new(Mutex::new(()));
         let backend = Arc::new(LocalDeploymentBackend::new(
             database.clone(),
@@ -3183,6 +3189,7 @@ impl LocalApplicationFacade {
             relation_migration_results: Mutex::new(HashMap::new()),
             relation_migration_lock,
             version_adoption_lock,
+            deployment_preview_lock,
             version_adoption_facts_lock: tokio::sync::Mutex::new(()),
             prepared_uninstall: Mutex::new(None),
             scan_service: Mutex::new(ScanService::new()),
@@ -12518,8 +12525,11 @@ impl LocalApplicationFacade {
             .collect::<Vec<_>>();
 
         let preview_id = OperationId::new().to_string();
-        let payload = serde_json::to_string(&pairs)
-            .map_err(|_| internal("query.get_deployment_batch_preview"))?;
+        let payload = serde_json::to_string(&StoredDeploymentPreview {
+            pairs: pairs.clone(),
+            rename_dispatches: Vec::new(),
+        })
+        .map_err(|_| internal("query.get_deployment_batch_preview"))?;
         self.with_database("query.get_deployment_batch_preview", |database| {
             database.deployment_preview_repository().insert(
                 &skillhub_storage::DeploymentPreviewSnapshot {
@@ -12900,6 +12910,7 @@ impl LocalApplicationFacade {
         &self,
         request: skillhub_core::api::CommitDeploymentPreview,
     ) -> AppResult<AppCommandResult> {
+        let _preview_commit_guard = self.deployment_preview_lock.lock().await;
         let mut requested_pair_ids = HashSet::new();
         for requested in &request.pairs {
             if requested.pair_id.trim().is_empty() {
@@ -12941,9 +12952,8 @@ impl LocalApplicationFacade {
             .ok_or_else(|| {
                 target_changed_error("the preview snapshot is unknown, expired or consumed")
             })?;
-        let stored_pairs: Vec<skillhub_core::api::DeploymentPairPreview> =
-            serde_json::from_str(&snapshot.payload_json)
-                .map_err(|_| internal("execute.commit_deployment_preview"))?;
+        let mut stored_preview = decode_deployment_preview_payload(&snapshot.payload_json)?;
+        let stored_pairs = stored_preview.pairs.clone();
         for requested in &request.pairs {
             let Some(pair) = stored_pairs
                 .iter()
@@ -12971,7 +12981,47 @@ impl LocalApplicationFacade {
             == Some(skillhub_adapters::deployment::LinkUnavailableCause::Permission);
         let mut fresh: Vec<(String, skillhub_core::TargetPlan)> = Vec::new();
         let mut results: Vec<skillhub_core::api::DeploymentPairCommitResult> = Vec::new();
+        let mut rename_groups: BTreeMap<
+            String,
+            Vec<(
+                skillhub_core::api::DeploymentPairPreview,
+                skillhub_core::api::DeploymentPairSelection,
+            )>,
+        > = BTreeMap::new();
+        for requested in &request.pairs {
+            if !matches!(
+                requested.disposition,
+                skillhub_core::deployment::DeploymentPairDisposition::RenameAndDeploy { .. }
+            ) {
+                continue;
+            }
+            let pair = stored_pairs
+                .iter()
+                .find(|pair| pair.pair_id == requested.pair_id)
+                .expect("pair identity validated above")
+                .clone();
+            rename_groups
+                .entry(pair.skill_id.to_string())
+                .or_default()
+                .push((pair, requested.clone()));
+        }
+        let mut renamed_pair_ids = HashSet::new();
+        for (_, group) in rename_groups {
+            renamed_pair_ids.extend(group.iter().map(|(pair, _)| pair.pair_id.clone()));
+            results.extend(
+                self.commit_rename_deploy_group(
+                    &request.preview_id,
+                    &idempotency_key,
+                    &mut stored_preview,
+                    group,
+                )
+                .await,
+            );
+        }
         for pair in &stored_pairs {
+            if renamed_pair_ids.contains(&pair.pair_id) {
+                continue;
+            }
             let requested = request
                 .pairs
                 .iter()
@@ -13305,6 +13355,932 @@ impl LocalApplicationFacade {
         Ok(AppCommandResult::DeploymentPreviewCommitResult(result))
     }
 
+    fn persist_deployment_preview_payload(
+        &self,
+        preview_id: &str,
+        stored_preview: &StoredDeploymentPreview,
+    ) -> AppResult<()> {
+        let payload_json = serde_json::to_string(stored_preview)
+            .map_err(|_| internal("execute.commit_deployment_preview"))?;
+        self.with_database("execute.commit_deployment_preview.checkpoint", |database| {
+            database
+                .deployment_preview_repository()
+                .update_active_payload(preview_id, &payload_json)
+        })
+    }
+
+    fn save_rename_dispatch_checkpoint(
+        &self,
+        preview_id: &str,
+        stored_preview: &mut StoredDeploymentPreview,
+        checkpoint: RenameDispatchCheckpoint,
+    ) -> AppResult<()> {
+        if let Some(existing) = stored_preview.rename_dispatches.iter_mut().find(|item| {
+            item.idempotency_key == checkpoint.idempotency_key
+                && item.pair_ids == checkpoint.pair_ids
+                && item.source_skill_id == checkpoint.source_skill_id
+        }) {
+            *existing = checkpoint;
+        } else {
+            stored_preview.rename_dispatches.push(checkpoint);
+        }
+        self.persist_deployment_preview_payload(preview_id, stored_preview)
+    }
+
+    fn completed_rename_dispatch_checkpoint(
+        &self,
+        library: &library_runtime::LibraryContext,
+        checkpoint: &RenameDispatchCheckpoint,
+    ) -> AppResult<Option<(skillhub_core::SkillId, skillhub_core::VersionId)>> {
+        let operation = self.with_database("execute.rename_deploy.resume_child", |database| {
+            database
+                .operation_repository()
+                .get_sync(checkpoint.operation_id)
+        })?;
+        let Some(operation) = operation else {
+            return Ok(None);
+        };
+        match operation.phase {
+            skillhub_core::OperationPhase::RolledBack
+            | skillhub_core::OperationPhase::Planned
+            | skillhub_core::OperationPhase::Prepared => return Ok(None),
+            skillhub_core::OperationPhase::Applying
+            | skillhub_core::OperationPhase::Verifying
+            | skillhub_core::OperationPhase::NeedsRecovery => {
+                return Err(recovery_conflict("rename_dispatch_child_needs_resolution")
+                    .with_param("operation_id", checkpoint.operation_id.to_string())
+                    .with_action(RecoveryAction::Retry));
+            }
+            skillhub_core::OperationPhase::Committed => {}
+        }
+
+        match checkpoint.branch {
+            RenameDispatchBranch::Derived => {
+                if operation.kind != "save_markdown_as_copy" {
+                    return Err(recovery_conflict("rename_dispatch_copy_child_kind_changed"));
+                }
+                let skill_id: skillhub_core::SkillId = serde_json::from_value(
+                    operation.recovery_data["skill_id"].clone(),
+                )
+                .map_err(|_| recovery_conflict("rename_dispatch_copy_receipt_missing_skill"))?;
+                let version_id: skillhub_core::VersionId = serde_json::from_value(
+                    operation.recovery_data["version_id"].clone(),
+                )
+                .map_err(|_| recovery_conflict("rename_dispatch_copy_receipt_missing_version"))?;
+                if checkpoint
+                    .result_skill_id
+                    .is_some_and(|value| value != skill_id)
+                    || checkpoint
+                        .result_version_id
+                        .as_ref()
+                        .is_some_and(|value| value != &version_id)
+                {
+                    return Err(recovery_conflict("rename_dispatch_copy_receipt_changed"));
+                }
+                Ok(Some((skill_id, version_id)))
+            }
+            RenameDispatchBranch::Original => {
+                let current = library
+                    .current(checkpoint.source_skill_id)?
+                    .ok_or_else(|| recovery_conflict("rename_dispatch_current_version_missing"))?;
+                let skill =
+                    self.with_database("execute.rename_deploy.resume_original", |database| {
+                        database
+                            .catalog_repository()?
+                            .get_sync(checkpoint.source_skill_id)?
+                            .ok_or_else(|| recovery_conflict("rename_dispatch_source_missing"))
+                    })?;
+                let (_, markdown) = library.read_file(&current, "SKILL.md", 1_048_576)?;
+                if skill.runtime_name() != checkpoint.runtime_name
+                    || read_frontmatter_name(&String::from_utf8_lossy(&markdown)).as_deref()
+                        != Some(checkpoint.runtime_name.as_str())
+                    || checkpoint
+                        .result_version_id
+                        .as_ref()
+                        .is_some_and(|value| value != &current)
+                {
+                    return Err(target_changed_error(
+                        "the renamed source no longer matches the saved preview checkpoint",
+                    ));
+                }
+                Ok(Some((checkpoint.source_skill_id, current)))
+            }
+        }
+    }
+
+    async fn resolve_rename_dispatch_subject(
+        &self,
+        stored_preview: &mut StoredDeploymentPreview,
+        entries: &[(
+            skillhub_core::api::DeploymentPairPreview,
+            skillhub_core::api::DeploymentPairSelection,
+        )],
+        request: RenameDispatchResolutionRequest<'_>,
+    ) -> AppResult<(
+        skillhub_core::SkillId,
+        skillhub_core::VersionId,
+        OperationId,
+    )> {
+        let (first_pair, _) = entries
+            .first()
+            .ok_or_else(|| internal("execute.rename_deploy.empty_group"))?;
+        let skill_id = first_pair.skill_id;
+        let library = self.library_runtime.snapshot()?;
+        let checkpoint_index = stored_preview.rename_dispatches.iter().position(|item| {
+            item.idempotency_key == request.idempotency_key
+                && item.pair_ids == request.pair_ids
+                && item.source_skill_id == skill_id
+        });
+        let mut checkpoint =
+            checkpoint_index.map(|index| stored_preview.rename_dispatches[index].clone());
+
+        if let Some(existing) = checkpoint.as_mut() {
+            if existing.runtime_name != request.runtime_name
+                || existing.source_version_id != first_pair.version_id
+            {
+                return Err(target_changed_error(
+                    "the rename checkpoint no longer matches",
+                ));
+            }
+            if let Some((result_skill_id, result_version_id)) =
+                self.completed_rename_dispatch_checkpoint(&library, existing)?
+            {
+                existing.result_skill_id = Some(result_skill_id);
+                existing.result_version_id = Some(result_version_id.clone());
+                self.save_rename_dispatch_checkpoint(
+                    request.preview_id,
+                    stored_preview,
+                    existing.clone(),
+                )?;
+                return Ok((result_skill_id, result_version_id, existing.operation_id));
+            }
+            let child_phase =
+                self.with_database("execute.rename_deploy.resume_phase", |database| {
+                    Ok(database
+                        .operation_repository()
+                        .get_sync(existing.operation_id)?
+                        .map(|record| record.phase))
+                })?;
+            if matches!(
+                child_phase,
+                Some(
+                    skillhub_core::OperationPhase::Applying
+                        | skillhub_core::OperationPhase::Verifying
+                        | skillhub_core::OperationPhase::NeedsRecovery
+                )
+            ) {
+                return Err(recovery_conflict("rename_dispatch_child_needs_resolution")
+                    .with_param("operation_id", existing.operation_id.to_string())
+                    .with_action(RecoveryAction::Retry));
+            }
+            if child_phase == Some(skillhub_core::OperationPhase::RolledBack) {
+                existing.operation_id = OperationId::new();
+                existing.prepared_usage_change_id = None;
+                existing.result_skill_id = None;
+                existing.result_version_id = None;
+                self.save_rename_dispatch_checkpoint(
+                    request.preview_id,
+                    stored_preview,
+                    existing.clone(),
+                )?;
+            }
+        }
+
+        let source_version = library
+            .current(skill_id)?
+            .filter(|version| version == &first_pair.version_id)
+            .ok_or_else(|| target_changed_error("the source version changed after preview"))?;
+        let (all_deployments, relations) =
+            self.with_database("execute.rename_deploy.usage_scope", |database| {
+                Ok((
+                    database.deployment_repository().list_all()?,
+                    database.relationship_repository().list_relations()?,
+                ))
+            })?;
+        let active_deployments = all_deployments
+            .into_iter()
+            .filter(|item| item.skill_id == skill_id && item.state == DeploymentState::Deployed)
+            .collect::<Vec<_>>();
+        let expected_relations = active_deployments
+            .iter()
+            .filter(|item| item.managed)
+            .map(|item| format!("managed:{}", item.id))
+            .collect::<BTreeSet<_>>();
+        if active_deployments.iter().any(|item| !item.managed)
+            || relations.iter().any(|relation| {
+                relation.active
+                    && relation.skill_id == Some(skill_id)
+                    && !expected_relations.contains(&relation.relation_id)
+            })
+            || expected_relations.iter().any(|relation_id| {
+                !relations.iter().any(|relation| {
+                    relation.active
+                        && relation.skill_id == Some(skill_id)
+                        && relation.relation_id == *relation_id
+                        && relation.ownership
+                            == skillhub_core::relationship::OwnershipState::SkillhubManaged
+                })
+            })
+        {
+            return Err(target_changed_error(
+                "the source Skill has unmanaged or unverified active uses",
+            ));
+        }
+
+        let derive_subject = active_deployments
+            .iter()
+            .any(|item| !request.selected_target_ids.contains(&item.target_id));
+        let branch = if derive_subject {
+            RenameDispatchBranch::Derived
+        } else {
+            RenameDispatchBranch::Original
+        };
+        let mut checkpoint = match checkpoint {
+            Some(checkpoint) if checkpoint.branch == branch => checkpoint,
+            Some(_) => {
+                return Err(target_changed_error(
+                    "the active-use scope changed after the rename checkpoint",
+                ));
+            }
+            None => RenameDispatchCheckpoint {
+                idempotency_key: request.idempotency_key.to_owned(),
+                pair_ids: request.pair_ids.to_vec(),
+                source_skill_id: skill_id,
+                source_version_id: source_version.clone(),
+                runtime_name: request.runtime_name.to_owned(),
+                branch,
+                operation_id: OperationId::new(),
+                prepared_usage_change_id: None,
+                result_skill_id: None,
+                result_version_id: None,
+            },
+        };
+        if checkpoint_index.is_none() {
+            self.save_rename_dispatch_checkpoint(
+                request.preview_id,
+                stored_preview,
+                checkpoint.clone(),
+            )?;
+        }
+
+        let result = match branch {
+            RenameDispatchBranch::Derived => {
+                let (expected_identity, bytes) =
+                    library.read_file(&source_version, "SKILL.md", 1_048_576)?;
+                let markdown = String::from_utf8(bytes).map_err(|_| {
+                    AppError::new(ErrorCode::InvalidInput, Severity::Error)
+                        .with_param("reason", "skill_markdown_not_utf8")
+                        .with_action(RecoveryAction::InspectTarget)
+                })?;
+                let markdown = usage_change_service::rename_skill_frontmatter_content(
+                    &markdown,
+                    request.runtime_name,
+                )?;
+                let operation_exists = self.with_database(
+                    "execute.rename_deploy.copy_operation_exists",
+                    |database| {
+                        Ok(database
+                            .operation_repository()
+                            .get_sync(checkpoint.operation_id)?
+                            .is_some())
+                    },
+                )?;
+                if !operation_exists {
+                    self.journal_begin(checkpoint.operation_id, "save_markdown_as_copy");
+                }
+                match self.save_markdown_as_copy_flow(
+                    SaveMarkdownAsCopy {
+                        skill_id,
+                        path: "SKILL.md".to_owned(),
+                        markdown,
+                        expected_identity,
+                        origin: Some(SaveAsCopyOrigin {
+                            source_skill_id: skill_id,
+                            source_version_id: source_version,
+                        }),
+                        inheritance: SaveAsCopyInheritance::None,
+                        target_display_name: None,
+                        target_runtime_name: Some(request.runtime_name.to_owned()),
+                    },
+                    checkpoint.operation_id,
+                )? {
+                    AppCommandResult::SavedSkillCopy(saved) if saved.lineage_registered => {
+                        (saved.skill_id, saved.version_id)
+                    }
+                    _ => return Err(internal("execute.rename_deploy.derived_copy_result")),
+                }
+            }
+            RenameDispatchBranch::Original => {
+                let prepared_id = match checkpoint.prepared_usage_change_id {
+                    Some(prepared_id) => prepared_id,
+                    None => {
+                        let prepared =
+                            self.prepare_usage_change(skillhub_core::api::PrepareUsageChange {
+                                operation_id: checkpoint.operation_id,
+                                action:
+                                    skillhub_core::relationship::UsageChangeAction::RenameSubject,
+                                relation_ids: Vec::new(),
+                                problem_id: None,
+                                skill_id: Some(skill_id),
+                                requested_form: None,
+                                copy_disposition: None,
+                                content_basis: None,
+                                retain_entry_key: None,
+                                selected_entry_keys: Vec::new(),
+                                runtime_name: Some(request.runtime_name.to_owned()),
+                                base_version_id: None,
+                                selected_relation_ids: Vec::new(),
+                                confirmed_shared_relation_ids: Vec::new(),
+                                non_recognized_destination: None,
+                            })?;
+                        checkpoint.prepared_usage_change_id = Some(prepared.prepared_id);
+                        self.save_rename_dispatch_checkpoint(
+                            request.preview_id,
+                            stored_preview,
+                            checkpoint.clone(),
+                        )?;
+                        prepared.prepared_id
+                    }
+                };
+                let committed = self
+                    .commit_usage_change_command(skillhub_core::api::CommitUsageChange {
+                        operation_id: checkpoint.operation_id,
+                        prepared_id,
+                    })
+                    .await?;
+                if committed.recovery_required {
+                    return Err(
+                        recovery_conflict("rename_dispatch_subject_needs_resolution")
+                            .with_param("operation_id", checkpoint.operation_id.to_string())
+                            .with_action(RecoveryAction::Retry),
+                    );
+                }
+                let current = self
+                    .library_runtime
+                    .snapshot()?
+                    .current(skill_id)?
+                    .ok_or_else(|| internal("execute.rename_deploy.current_version_missing"))?;
+                (skill_id, current)
+            }
+        };
+        checkpoint.result_skill_id = Some(result.0);
+        checkpoint.result_version_id = Some(result.1.clone());
+        self.save_rename_dispatch_checkpoint(
+            request.preview_id,
+            stored_preview,
+            checkpoint.clone(),
+        )?;
+        Ok((result.0, result.1, checkpoint.operation_id))
+    }
+
+    async fn commit_rename_deploy_group(
+        &self,
+        preview_id: &str,
+        idempotency_key: &str,
+        stored_preview: &mut StoredDeploymentPreview,
+        entries: Vec<(
+            skillhub_core::api::DeploymentPairPreview,
+            skillhub_core::api::DeploymentPairSelection,
+        )>,
+    ) -> Vec<skillhub_core::api::DeploymentPairCommitResult> {
+        use skillhub_core::api::DeploymentPairCommitOutcome as Outcome;
+        use skillhub_core::deployment::DeploymentPairDisposition as Disposition;
+
+        let fail = |error: AppError, outcome: Outcome| {
+            entries
+                .iter()
+                .map(|(pair, _)| pair_result(pair, outcome, None, Some(error.clone().into())))
+                .collect::<Vec<_>>()
+        };
+        let Some((first_pair, _)) = entries.first() else {
+            return Vec::new();
+        };
+        let names = entries
+            .iter()
+            .filter_map(|(_, selection)| match &selection.disposition {
+                Disposition::RenameAndDeploy { runtime_name } => Some(runtime_name.clone()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        if names.len() != 1 {
+            return fail(
+                target_changed_error(
+                    "one Skill must use the same new name across selected targets",
+                ),
+                Outcome::Blocked,
+            );
+        }
+        let runtime_name = names.into_iter().next().expect("one rename name");
+        if let Err(error) = skillhub_core::deployment::validate_runtime_name(&runtime_name) {
+            return fail(error, Outcome::Blocked);
+        }
+        let skill_id = first_pair.skill_id;
+        if entries.iter().any(|(pair, _)| {
+            pair.skill_id != skill_id
+                || pair.version_id != first_pair.version_id
+                || pair.runtime_name.eq_ignore_ascii_case(&runtime_name)
+        }) {
+            return fail(
+                target_changed_error(
+                    "the source Skill or version changed, or the new name is unchanged",
+                ),
+                Outcome::Blocked,
+            );
+        }
+
+        let mut pair_ids = entries
+            .iter()
+            .map(|(pair, _)| pair.pair_id.clone())
+            .collect::<Vec<_>>();
+        pair_ids.sort();
+        let overlapping_checkpoint = stored_preview.rename_dispatches.iter().position(|item| {
+            item.source_skill_id == skill_id
+                && item
+                    .pair_ids
+                    .iter()
+                    .any(|pair_id| pair_ids.contains(pair_id))
+        });
+        if let Some(index) = overlapping_checkpoint {
+            let checkpoint = &stored_preview.rename_dispatches[index];
+            if checkpoint.idempotency_key != idempotency_key
+                || checkpoint.pair_ids != pair_ids
+                || checkpoint.source_version_id != first_pair.version_id
+                || checkpoint.runtime_name != runtime_name
+            {
+                return fail(
+                    target_changed_error(
+                        "a different rename decision already started for these targets",
+                    ),
+                    Outcome::Blocked,
+                );
+            }
+        }
+
+        let resumed_subject = if let Some(checkpoint) =
+            stored_preview.rename_dispatches.iter().find(|checkpoint| {
+                checkpoint.idempotency_key == idempotency_key
+                    && checkpoint.pair_ids == pair_ids
+                    && checkpoint.source_skill_id == skill_id
+            }) {
+            let library = match self.library_runtime.snapshot() {
+                Ok(library) => library,
+                Err(error) => return fail(error, Outcome::Failed),
+            };
+            match self.completed_rename_dispatch_checkpoint(&library, checkpoint) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    let outcome = if error.code == ErrorCode::TargetChanged {
+                        Outcome::Blocked
+                    } else {
+                        Outcome::Failed
+                    };
+                    return fail(error, outcome);
+                }
+            }
+        } else {
+            None
+        };
+
+        let mut selected_target_ids = BTreeSet::new();
+        let mut modes = BTreeMap::new();
+        for (pair, selection) in &entries {
+            let mode = pair.mode.or(pair.fallback_mode);
+            if pair.disposition
+                != skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired
+                || mode.is_none()
+                || (pair.mode.is_none()
+                    && pair.fallback_mode.is_some()
+                    && !selection.confirm_fallback)
+            {
+                return fail(
+                    target_changed_error("the renamed target is no longer executable"),
+                    Outcome::Blocked,
+                );
+            }
+            let Some(occupant) = pair
+                .conflict
+                .as_ref()
+                .and_then(|fact| fact.occupants.first())
+            else {
+                return fail(
+                    target_changed_error("the conflict occupant is missing"),
+                    Outcome::Blocked,
+                );
+            };
+            selected_target_ids.insert(occupant.physical_target_id.clone());
+            let clean = match self.revalidate_stored_conflict(pair) {
+                Ok(targets) => targets,
+                Err(error) => return fail(error, Outcome::Blocked),
+            };
+            let already_deployed =
+                if let Some((resumed_skill_id, resumed_version_id)) = resumed_subject.as_ref() {
+                    match self.with_database("execute.rename_deploy.resume_existing", |database| {
+                        Ok(database
+                            .deployment_repository()
+                            .list_all()?
+                            .into_iter()
+                            .any(|item| {
+                                item.skill_id == *resumed_skill_id
+                                    && item.version_id == *resumed_version_id
+                                    && item.target_id == occupant.physical_target_id
+                                    && item.runtime_name == runtime_name
+                                    && item.managed
+                                    && item.state == DeploymentState::Deployed
+                            }))
+                    }) {
+                        Ok(found) => found,
+                        Err(error) => return fail(error, Outcome::Failed),
+                    }
+                } else {
+                    false
+                };
+            if !already_deployed {
+                if let Err(error) = self.preflight_rename_dispatch_target(
+                    pair,
+                    &runtime_name,
+                    skill_id,
+                    &pair.version_id,
+                    mode.expect("checked"),
+                    clean,
+                ) {
+                    let outcome = if matches!(
+                        error.code,
+                        ErrorCode::TargetChanged
+                            | ErrorCode::TargetExists
+                            | ErrorCode::InvalidInput
+                    ) {
+                        Outcome::Blocked
+                    } else {
+                        Outcome::Failed
+                    };
+                    return fail(error, outcome);
+                }
+            }
+            modes.insert(pair.pair_id.clone(), mode.expect("checked"));
+        }
+
+        let (result_skill_id, result_version_id, mutation_operation_id) = match self
+            .resolve_rename_dispatch_subject(
+                stored_preview,
+                &entries,
+                RenameDispatchResolutionRequest {
+                    preview_id,
+                    idempotency_key,
+                    pair_ids: &pair_ids,
+                    selected_target_ids: &selected_target_ids,
+                    runtime_name: &runtime_name,
+                },
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                let outcome = if matches!(
+                    error.code,
+                    ErrorCode::TargetChanged | ErrorCode::TargetExists | ErrorCode::InvalidInput
+                ) {
+                    Outcome::Blocked
+                } else {
+                    Outcome::Failed
+                };
+                let operation_id = error
+                    .params
+                    .get("operation_id")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|value| value.parse().ok());
+                return entries
+                    .iter()
+                    .map(|(pair, _)| {
+                        pair_result(pair, outcome, operation_id, Some(error.clone().into()))
+                    })
+                    .collect();
+            }
+        };
+
+        let mut results = Vec::with_capacity(entries.len());
+        for (pair, _) in entries {
+            let target_id = pair
+                .conflict
+                .as_ref()
+                .and_then(|fact| fact.occupants.first())
+                .map(|item| item.physical_target_id.clone())
+                .expect("validated target");
+            let mode = modes[&pair.pair_id];
+            let existing = self.with_database("execute.rename_deploy.existing", |database| {
+                Ok(database
+                    .deployment_repository()
+                    .list_all()?
+                    .into_iter()
+                    .find(|item| {
+                        item.skill_id == result_skill_id
+                            && item.version_id == result_version_id
+                            && item.target_id == target_id
+                            && item.runtime_name == runtime_name
+                            && item.managed
+                            && item.state == DeploymentState::Deployed
+                    }))
+            });
+            match existing {
+                Ok(Some(deployment)) => {
+                    let mut result =
+                        pair_result(&pair, Outcome::Deployed, Some(mutation_operation_id), None);
+                    result.deployment_id = Some(deployment.id);
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    result.affected_target_ids = vec![target_id];
+                    results.push(result);
+                    continue;
+                }
+                Err(error) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(mutation_operation_id),
+                        Some(error.into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+                Ok(None) => {}
+            }
+            let target = match self.plan_renamed_dispatch_target(
+                &pair,
+                &runtime_name,
+                result_skill_id,
+                &result_version_id,
+                mode,
+            ) {
+                Ok(target) => target,
+                Err(error) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(mutation_operation_id),
+                        Some(error.into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+            };
+            let prepared = match self
+                .prepare_deployment(skillhub_core::DeploymentPlan {
+                    skill_id: result_skill_id,
+                    version_id: result_version_id.clone(),
+                    runtime_name: runtime_name.clone(),
+                    mode: target.mode,
+                    warnings: target.warnings.clone(),
+                    targets: vec![target],
+                    conflicts: Vec::new(),
+                })
+                .await
+            {
+                Ok(AppCommandResult::PreparedDeployment(prepared)) => *prepared,
+                Ok(_) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(mutation_operation_id),
+                        Some(internal("execute.rename_deploy.prepare_result").into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+                Err(error) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(mutation_operation_id),
+                        Some(error.into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+            };
+            let summary = match self.commit_deployment(prepared.id).await {
+                Ok(AppCommandResult::DeploymentSummary(summary)) => *summary,
+                Ok(_) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(prepared.id),
+                        Some(internal("execute.rename_deploy.commit_result").into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+                Err(error) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(prepared.id),
+                        Some(error.into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                    continue;
+                }
+            };
+            let target_succeeded = summary.targets.iter().any(|item| {
+                item.physical_target_id == target_id
+                    && item.status == skillhub_core::TargetOperationStatus::Succeeded
+            });
+            let deployment_id = if target_succeeded {
+                self.with_database("execute.rename_deploy.deployment_id", |database| {
+                    Ok(database
+                        .deployment_repository()
+                        .list_all()?
+                        .into_iter()
+                        .find(|item| {
+                            item.skill_id == result_skill_id
+                                && item.version_id == result_version_id
+                                && item.target_id == target_id
+                                && item.runtime_name == runtime_name
+                                && item.managed
+                                && item.state == DeploymentState::Deployed
+                        })
+                        .map(|item| item.id))
+                })
+            } else {
+                Ok(None)
+            };
+            match deployment_id {
+                Ok(Some(id)) if target_succeeded => {
+                    let mut result =
+                        pair_result(&pair, Outcome::Deployed, Some(summary.operation_id), None);
+                    result.deployment_id = Some(id);
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    result.affected_target_ids = vec![target_id];
+                    results.push(result);
+                }
+                Ok(_) => {
+                    let error = summary
+                        .targets
+                        .iter()
+                        .find(|item| item.physical_target_id == target_id)
+                        .and_then(|item| item.error.clone())
+                        .unwrap_or_else(|| internal("execute.rename_deploy.target_missing").into());
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(summary.operation_id),
+                        Some(error),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                }
+                Err(error) => {
+                    let mut result = pair_result(
+                        &pair,
+                        Outcome::Failed,
+                        Some(summary.operation_id),
+                        Some(error.into()),
+                    );
+                    result.result_skill_id = Some(result_skill_id);
+                    result.runtime_name = Some(runtime_name.clone());
+                    results.push(result);
+                }
+            }
+        }
+        results
+    }
+
+    fn preflight_rename_dispatch_target(
+        &self,
+        pair: &skillhub_core::api::DeploymentPairPreview,
+        runtime_name: &str,
+        skill_id: skillhub_core::SkillId,
+        version_id: &skillhub_core::VersionId,
+        mode: DeploymentMode,
+        mut verified: Vec<VerifiedTarget>,
+    ) -> AppResult<()> {
+        self.with_database("execute.rename_deploy.preflight", |database| {
+            attach_target_occupancy_with(database, runtime_name, &mut verified)
+        })?;
+        if verified.iter().any(|target| !target.existing().is_empty()) {
+            return Err(AppError::new(ErrorCode::TargetExists, Severity::Error)
+                .with_param("runtime_name", runtime_name.to_owned())
+                .with_action(RecoveryAction::ChooseAnotherName));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(skill_id.to_string())
+            .join(version_id.as_str());
+        let plan = DeploymentPlanner.plan(DeploymentPlanInput {
+            skill_id,
+            version_id: version_id.clone(),
+            runtime_name: runtime_name.to_owned(),
+            source_path: source_path.to_string_lossy().into_owned(),
+            targets: verified,
+            mode_override: Some(mode),
+            security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+        })?;
+        let target = plan
+            .targets
+            .first()
+            .ok_or_else(|| target_changed_error("the renamed target no longer resolves"))?;
+        let physical_id = pair
+            .conflict
+            .as_ref()
+            .and_then(|fact| fact.occupants.first())
+            .map(|item| item.physical_target_id.as_str())
+            .unwrap_or_default();
+        if plan.targets.len() != 1
+            || !target.conflicts.is_empty()
+            || target.physical_target_id != physical_id
+            || target.target_path != pair.target_path
+        {
+            return Err(target_changed_error(
+                "the new runtime name no longer plans to the selected target",
+            ));
+        }
+        Ok(())
+    }
+
+    fn plan_renamed_dispatch_target(
+        &self,
+        pair: &skillhub_core::api::DeploymentPairPreview,
+        runtime_name: &str,
+        skill_id: skillhub_core::SkillId,
+        version_id: &skillhub_core::VersionId,
+        mode: DeploymentMode,
+    ) -> AppResult<skillhub_core::TargetPlan> {
+        let mut verified = self.revalidate_stored_conflict(pair)?;
+        self.with_database("execute.rename_deploy.replan", |database| {
+            attach_target_occupancy_with(database, runtime_name, &mut verified)
+        })?;
+        if verified.iter().any(|target| !target.existing().is_empty()) {
+            return Err(target_changed_error(
+                "the selected new runtime name became occupied after preview",
+            ));
+        }
+        let security = self.with_database("execute.rename_deploy.security", |database| {
+            deployment_security_assessment(database, skill_id, version_id)
+        })?;
+        if security.danger_untrusted {
+            return Err(target_changed_error(
+                "the renamed Skill version is blocked by its security assessment",
+            ));
+        }
+        let library = self.library_runtime.snapshot()?;
+        let source_path = library
+            .root
+            .join("versions")
+            .join(skill_id.to_string())
+            .join(version_id.as_str());
+        let mut target = DeploymentPlanner
+            .plan(DeploymentPlanInput {
+                skill_id,
+                version_id: version_id.clone(),
+                runtime_name: runtime_name.to_owned(),
+                source_path: source_path.to_string_lossy().into_owned(),
+                targets: verified,
+                mode_override: Some(mode),
+                security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+            })?
+            .targets
+            .into_iter()
+            .next()
+            .ok_or_else(|| target_changed_error("the renamed target no longer resolves"))?;
+        let physical_id = pair
+            .conflict
+            .as_ref()
+            .and_then(|fact| fact.occupants.first())
+            .map(|item| item.physical_target_id.as_str())
+            .unwrap_or_default();
+        if !target.conflicts.is_empty()
+            || target.skill_id != skill_id
+            || target.version_id != *version_id
+            || target.runtime_name != runtime_name
+            || target.physical_target_id != physical_id
+            || target.target_path != pair.target_path
+        {
+            return Err(target_changed_error(
+                "the renamed deployment no longer matches the selected target",
+            ));
+        }
+        for warning in security.warnings {
+            if !target.warnings.contains(&warning) {
+                target.warnings.push(warning);
+            }
+        }
+        Ok(target)
+    }
+
     fn revalidate_stored_conflict(
         &self,
         pair: &skillhub_core::api::DeploymentPairPreview,
@@ -13541,15 +14517,24 @@ impl LocalApplicationFacade {
             return Ok(preview);
         }
         let occupant = &preview.occupants[0];
+        if !matches!(
+            occupant.ownership,
+            ExistingOwnership::Managed | ExistingOwnership::Unknown
+        ) || occupant.physical_target_id != physical_target_id
+            || occupant.runtime_name != runtime_name
+            || occupant.target_path != Path::new(target_path).join(runtime_name).to_string_lossy()
+        {
+            return Ok(preview);
+        }
+        preview
+            .available_actions
+            .push(skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy);
         if occupant.ownership != ExistingOwnership::Managed
             || occupant
                 .skill_id
                 .is_none_or(|skill_id| skill_id == eligibility.requested_skill_id)
             || occupant.deployment_id.is_none()
             || occupant.version_id.is_none()
-            || occupant.physical_target_id != physical_target_id
-            || occupant.runtime_name != runtime_name
-            || occupant.target_path != Path::new(target_path).join(runtime_name).to_string_lossy()
             || occupant.consumers.len() != 1
         {
             return Ok(preview);
@@ -13584,6 +14569,7 @@ impl LocalApplicationFacade {
         {
             preview.available_actions = vec![
                 skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+                skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy,
                 skillhub_core::deployment::DeploymentConflictAction::Skip,
             ];
         }
@@ -20127,6 +21113,60 @@ const VERSION_ADOPTION_PREVIEW_TTL_SECONDS: i64 = 900;
 const EXPORT_PREVIEW_TTL_SECONDS: i64 = 900;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredDeploymentPreview {
+    pairs: Vec<skillhub_core::api::DeploymentPairPreview>,
+    #[serde(default)]
+    rename_dispatches: Vec<RenameDispatchCheckpoint>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RenameDispatchBranch {
+    Derived,
+    Original,
+}
+
+/// Durable receipt tying a preview's rename choice to the copy/rename child
+/// operation. It is checkpointed before the child starts so a retry can look
+/// up a committed child instead of creating a second subject.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RenameDispatchCheckpoint {
+    idempotency_key: String,
+    pair_ids: Vec<String>,
+    source_skill_id: skillhub_core::SkillId,
+    source_version_id: skillhub_core::VersionId,
+    runtime_name: String,
+    branch: RenameDispatchBranch,
+    operation_id: OperationId,
+    prepared_usage_change_id: Option<OperationId>,
+    result_skill_id: Option<skillhub_core::SkillId>,
+    result_version_id: Option<skillhub_core::VersionId>,
+}
+
+struct RenameDispatchResolutionRequest<'a> {
+    preview_id: &'a str,
+    idempotency_key: &'a str,
+    pair_ids: &'a [String],
+    selected_target_ids: &'a BTreeSet<String>,
+    runtime_name: &'a str,
+}
+
+fn decode_deployment_preview_payload(payload_json: &str) -> AppResult<StoredDeploymentPreview> {
+    if let Ok(payload) = serde_json::from_str::<StoredDeploymentPreview>(payload_json) {
+        return Ok(payload);
+    }
+    let pairs =
+        serde_json::from_str::<Vec<skillhub_core::api::DeploymentPairPreview>>(payload_json)
+            .map_err(|_| internal("execute.commit_deployment_preview"))?;
+    Ok(StoredDeploymentPreview {
+        pairs,
+        rename_dispatches: Vec::new(),
+    })
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 struct VersionAdoptionSnapshot {
     skill_id: skillhub_core::SkillId,
     previous_version_id: Option<skillhub_core::VersionId>,
@@ -20613,6 +21653,9 @@ fn pair_result(
         outcome,
         operation_id,
         deployment_id: None,
+        result_skill_id: None,
+        runtime_name: None,
+        affected_target_ids: Vec::new(),
         replaced: None,
         error,
     }
