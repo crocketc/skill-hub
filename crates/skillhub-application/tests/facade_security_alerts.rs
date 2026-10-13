@@ -10,11 +10,14 @@
 
 use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
-    AppCommandResult, AppQueryResult, GetDeploymentPlan, GetSkill, ListSkills, PrepareImport,
-    TrustSkillSecurity, TrustSkillSecurityOutcome,
+    AppCommandResult, AppQueryResult, CommitDeployment, CommitDeploymentPreview,
+    CommitDeploymentPreviewPair, DeploymentBatchPreviewRequestItem, GetDeploymentBatchPreview,
+    GetDeploymentPlan, GetSkill, ListSkills, PrepareDeployment, PrepareImport, TrustSkillSecurity,
+    TrustSkillSecurityOutcome,
 };
 use skillhub_core::application::ImportSecurityDecision;
 use skillhub_core::check::ProductLevel;
+use skillhub_core::deployment::DeploymentPreference;
 use skillhub_core::pending::WorkKind;
 use skillhub_core::{
     AppCommand, AppQuery, ApplicationFacade, DeploymentCapability, DeploymentMode,
@@ -155,6 +158,34 @@ async fn deployment_plan_error(
         .expect_err("alerted skill must not be deployable")
 }
 
+async fn deployment_batch_preview(
+    facade: &LocalApplicationFacade,
+    skill_id: skillhub_core::SkillId,
+    version_id: skillhub_core::VersionId,
+    runtime_name: &str,
+) -> skillhub_core::api::DeploymentBatchPreview {
+    let result = facade
+        .query(AppQuery::GetDeploymentBatchPreview(
+            GetDeploymentBatchPreview {
+                items: vec![DeploymentBatchPreviewRequestItem {
+                    skill_id,
+                    version_id: Some(version_id),
+                    runtime_name: Some(runtime_name.to_owned()),
+                    logical_target_ids: vec!["agent-codex".into()],
+                    preference: DeploymentPreference::Automatic,
+                }],
+                confirmations: Default::default(),
+                exclusions: Vec::new(),
+            },
+        ))
+        .await
+        .expect("batch deployment preview");
+    let AppQueryResult::DeploymentBatchPreview(preview) = result else {
+        panic!("expected batch deployment preview");
+    };
+    preview
+}
+
 async fn pending_kinds(facade: &LocalApplicationFacade) -> Vec<skillhub_core::pending::WorkItem> {
     let result = facade
         .query(AppQuery::GetPendingWorkspace)
@@ -211,6 +242,24 @@ async fn danger_proceed_import_lands_alert_blocks_dispatch_and_pends_todo() {
         Some("danger")
     );
 
+    let preview = deployment_batch_preview(
+        &facade,
+        skill_id,
+        current_version.clone(),
+        &detail.runtime_name,
+    )
+    .await;
+    assert_eq!(preview.pairs.len(), 1);
+    assert_eq!(
+        preview.pairs[0].disposition,
+        skillhub_core::deployment::DeploymentPreviewDisposition::Blocked,
+        "批量预览必须在可执行前显示危险门禁"
+    );
+    assert_eq!(
+        serde_json::to_value(preview.pairs[0].block_reason).expect("serialize block reason"),
+        serde_json::json!("security_alert")
+    );
+
     let todos = pending_kinds(&facade).await;
     let alert_item = todos
         .iter()
@@ -233,9 +282,9 @@ async fn danger_proceed_import_lands_alert_blocks_dispatch_and_pends_todo() {
     assert!(!alert_item.can_defer);
 }
 
-/// ① 全部警告级导入后同样进入预警状态（不拦截导入，但不可派发）。
+/// ① 警告级导入后保留预警与待办，但不要求信任即可派发；风险在计划与批量预览可见。
 #[tokio::test]
-async fn warning_import_also_enters_the_alert_state() {
+async fn warning_import_stays_visible_but_does_not_block_dispatch() {
     let workspace = tempfile::tempdir().expect("workspace");
     let facade = facade_with_targets(workspace.path());
     write_skill(&workspace.path().join("warning"), WARNING_BODY);
@@ -248,18 +297,35 @@ async fn warning_import_also_enters_the_alert_state() {
     let detail = skill_detail(&facade, skill_id).await;
     assert_eq!(detail.security_alert, Some(ProductLevel::Warning));
 
-    let error = deployment_plan_error(
-        &facade,
-        skill_id,
-        detail.current_version.as_ref().expect("imported version"),
-        &detail.runtime_name,
-    )
-    .await;
-    assert_eq!(error.code, ErrorCode::DeploymentSecurityAlertBlocked);
-    assert_eq!(
-        error.params.get("level").and_then(|v| v.as_str()),
-        Some("warning")
+    let version = detail.current_version.clone().expect("imported version");
+    let plan = facade
+        .query(AppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id,
+                version_id: version.clone(),
+                runtime_name: detail.runtime_name.clone(),
+                logical_target_ids: vec!["agent-codex".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("warning security finding stays dispatchable");
+    let AppQueryResult::DeploymentPlan(plan) = plan else {
+        panic!("expected deployment plan");
+    };
+    assert!(plan
+        .warnings
+        .contains(&"deployment.securityWarnings.warningAllowed".to_owned()));
+
+    let preview = deployment_batch_preview(&facade, skill_id, version, &detail.runtime_name).await;
+    assert_eq!(preview.pairs.len(), 1);
+    assert_ne!(
+        preview.pairs[0].disposition,
+        skillhub_core::deployment::DeploymentPreviewDisposition::Blocked
     );
+    assert!(preview.pairs[0]
+        .warnings
+        .contains(&"deployment.securityWarnings.warningAllowed".to_owned()));
 
     let todos = pending_kinds(&facade).await;
     let alert_item = todos
@@ -308,6 +374,289 @@ async fn clean_import_does_not_alert_and_dispatch_stays_open() {
         .await
         .expect("clean skill stays deployable");
     assert!(matches!(plan, AppQueryResult::DeploymentPlan(_)));
+}
+
+/// 缺失或版本不匹配的检查记录不能伪装成通过，也不扩大成隐式派发门禁。
+#[tokio::test]
+async fn missing_version_check_is_visible_but_does_not_block_batch_preview() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_targets(workspace.path());
+    write_skill(&workspace.path().join("clean"), CLEAN_BODY);
+
+    let summary = import_candidate(&facade, workspace.path(), "clean", "clean-notes", None)
+        .await
+        .expect("clean import");
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    let detail = skill_detail(&facade, skill_id).await;
+    let unrelated_version = skillhub_core::VersionId::parse(&format!("sha256:{}", "f".repeat(64)))
+        .expect("valid version id");
+
+    let preview =
+        deployment_batch_preview(&facade, skill_id, unrelated_version, &detail.runtime_name).await;
+    assert_eq!(preview.pairs.len(), 1);
+    assert_ne!(
+        preview.pairs[0].disposition,
+        skillhub_core::deployment::DeploymentPreviewDisposition::Blocked
+    );
+    assert!(preview.pairs[0]
+        .warnings
+        .contains(&"deployment.securityWarnings.notChecked".to_owned()));
+}
+
+/// 运行中、失败和规则集过期均显示为未完成，不伪装通过或新增隐式阻断。
+#[tokio::test]
+async fn incomplete_basic_checks_are_visible_without_implicit_blocking() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_targets(workspace.path());
+    write_skill(&workspace.path().join("clean"), CLEAN_BODY);
+    let summary = import_candidate(&facade, workspace.path(), "clean", "clean-notes", None)
+        .await
+        .expect("clean import");
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    let detail = skill_detail(&facade, skill_id).await;
+    let version = detail.current_version.clone().expect("imported version");
+    drop(facade);
+
+    let cases = [
+        (
+            skillhub_core::check::CheckRunPhase::Running,
+            Some("basic-v1"),
+            "deployment.securityWarnings.checkInProgress",
+        ),
+        (
+            skillhub_core::check::CheckRunPhase::Failed,
+            Some("basic-v1"),
+            "deployment.securityWarnings.checkIncomplete",
+        ),
+        (
+            skillhub_core::check::CheckRunPhase::Completed,
+            Some("obsolete-ruleset"),
+            "deployment.securityWarnings.checkIncomplete",
+        ),
+    ];
+
+    for (phase, ruleset_id, warning) in cases {
+        let database = Database::open(workspace.path().join("db.sqlite")).expect("open database");
+        let mut check = database
+            .check_repository()
+            .current_for_version_sync(skill_id, &version, skillhub_core::check::CheckKind::Basic)
+            .expect("read basic check")
+            .expect("import check exists");
+        check.phase = phase;
+        check.ruleset_id = ruleset_id.map(str::to_owned);
+        check.failure_code = (phase == skillhub_core::check::CheckRunPhase::Failed)
+            .then(|| "synthetic_failure".to_owned());
+        database
+            .check_repository()
+            .update_sync(&check)
+            .expect("update check state");
+        drop(database);
+
+        let facade = facade_with_targets(workspace.path());
+        let preview =
+            deployment_batch_preview(&facade, skill_id, version.clone(), &detail.runtime_name)
+                .await;
+        assert_ne!(
+            preview.pairs[0].disposition,
+            skillhub_core::deployment::DeploymentPreviewDisposition::Blocked,
+            "incomplete checks are visible without adding a deployment blocker"
+        );
+        assert!(
+            preview.pairs[0].warnings.contains(&warning.to_owned()),
+            "phase={phase:?}, ruleset_id={ruleset_id:?}, warnings={:?}",
+            preview.pairs[0].warnings
+        );
+
+        let plan = facade
+            .query(AppQuery::GetDeploymentPlan(GetDeploymentPlan {
+                request: DeploymentPlanRequest {
+                    skill_id,
+                    version_id: version.clone(),
+                    runtime_name: detail.runtime_name.clone(),
+                    logical_target_ids: vec!["agent-codex".into()],
+                    mode_override: Some(DeploymentMode::ManagedCopy),
+                },
+            }))
+            .await
+            .expect("incomplete check does not block direct plan");
+        let AppQueryResult::DeploymentPlan(plan) = plan else {
+            panic!("expected deployment plan");
+        };
+        assert!(plan.warnings.contains(&warning.to_owned()));
+    }
+}
+
+/// 单项计划创建后，若同一内容版本出现新的警告，提交必须要求重新读取风险提示。
+#[tokio::test]
+async fn direct_deployment_refuses_a_plan_with_stale_security_warnings() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_targets(workspace.path());
+    write_skill(&workspace.path().join("clean"), CLEAN_BODY);
+    let summary = import_candidate(&facade, workspace.path(), "clean", "clean-notes", None)
+        .await
+        .expect("clean import");
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    let detail = skill_detail(&facade, skill_id).await;
+    let version = detail.current_version.clone().expect("imported version");
+    let plan = facade
+        .query(AppQuery::GetDeploymentPlan(GetDeploymentPlan {
+            request: DeploymentPlanRequest {
+                skill_id,
+                version_id: version.clone(),
+                runtime_name: detail.runtime_name.clone(),
+                logical_target_ids: vec!["agent-codex".into()],
+                mode_override: Some(DeploymentMode::ManagedCopy),
+            },
+        }))
+        .await
+        .expect("clean deployment plan");
+    let AppQueryResult::DeploymentPlan(plan) = plan else {
+        panic!("expected deployment plan");
+    };
+    drop(facade);
+
+    let database = Database::open(workspace.path().join("db.sqlite")).expect("open database");
+    let mut check = database
+        .check_repository()
+        .current_for_version_sync(skill_id, &version, skillhub_core::check::CheckKind::Basic)
+        .expect("read basic check")
+        .expect("import check exists");
+    let mut warning = skillhub_core::check::Finding::new(
+        "late-warning",
+        "test.warning",
+        skillhub_core::Severity::Warning,
+    );
+    warning.product_level = Some(ProductLevel::Warning);
+    check.findings.push(warning);
+    database
+        .check_repository()
+        .update_sync(&check)
+        .expect("add warning after plan");
+    drop(database);
+
+    let facade = facade_with_targets(workspace.path());
+    let prepared = facade
+        .execute(AppCommand::PrepareDeployment(PrepareDeployment { plan }))
+        .await
+        .expect("prepare deployment");
+    let AppCommandResult::PreparedDeployment(prepared) = prepared else {
+        panic!("expected prepared deployment");
+    };
+    let result = facade
+        .execute(AppCommand::CommitDeployment(CommitDeployment {
+            prepared_deployment_id: prepared.id,
+        }))
+        .await
+        .expect("stale security is an accounted refusal");
+    let AppCommandResult::DeploymentSummary(summary) = result else {
+        panic!("expected deployment summary");
+    };
+
+    assert!(!summary.committed);
+    assert_eq!(
+        summary.targets[0].error_code.as_deref(),
+        Some("deployment.target_changed")
+    );
+    assert!(
+        !workspace
+            .path()
+            .join("deploy-target")
+            .join(&detail.runtime_name)
+            .exists(),
+        "a plan without the current warning must not write the target"
+    );
+}
+
+/// 预览之后检查结论变化时，提交端必须要求刷新预览，不能沿用旧安全事实。
+#[tokio::test]
+async fn changed_security_assessment_blocks_a_stale_preview_before_writing() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let facade = facade_with_targets(workspace.path());
+    write_skill(&workspace.path().join("clean"), CLEAN_BODY);
+    let summary = import_candidate(&facade, workspace.path(), "clean", "clean-notes", None)
+        .await
+        .expect("clean import");
+    let skill_id = summary.items[0].skill_id.expect("imported skill id");
+    let detail = skill_detail(&facade, skill_id).await;
+    let version = detail.current_version.clone().expect("imported version");
+    drop(facade);
+
+    let database = Database::open(workspace.path().join("db.sqlite")).expect("open database");
+    let mut check = database
+        .check_repository()
+        .current_for_version_sync(skill_id, &version, skillhub_core::check::CheckKind::Basic)
+        .expect("read basic check")
+        .expect("import check exists");
+    let mut warning = skillhub_core::check::Finding::new(
+        "mutable-warning",
+        "test.warning",
+        skillhub_core::Severity::Warning,
+    );
+    warning.product_level = Some(ProductLevel::Warning);
+    check.findings.push(warning);
+    database
+        .check_repository()
+        .update_sync(&check)
+        .expect("add warning to the version check");
+    drop(database);
+
+    let facade = facade_with_targets(workspace.path());
+    let preview =
+        deployment_batch_preview(&facade, skill_id, version.clone(), &detail.runtime_name).await;
+    let pair = &preview.pairs[0];
+    assert!(pair
+        .warnings
+        .contains(&"deployment.securityWarnings.warningAllowed".to_owned()));
+    let pair_id = pair.pair_id.clone();
+    let preview_id = preview.preview_id.clone();
+    drop(facade);
+
+    let database = Database::open(workspace.path().join("db.sqlite")).expect("open database");
+    let mut check = database
+        .check_repository()
+        .current_for_version_sync(skill_id, &version, skillhub_core::check::CheckKind::Basic)
+        .expect("read basic check")
+        .expect("import check exists");
+    check.findings.clear();
+    database
+        .check_repository()
+        .update_sync(&check)
+        .expect("update basic check");
+    drop(database);
+
+    let facade = facade_with_targets(workspace.path());
+    let result = facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id,
+                pairs: vec![CommitDeploymentPreviewPair {
+                    pair_id,
+                    confirm_fallback: false,
+                    exclude: false,
+                }],
+            },
+        ))
+        .await
+        .expect("stale preview is reported as a pair blocker");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = result else {
+        panic!("expected deployment preview commit result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+    );
+    assert_eq!(
+        result.pairs[0].error.as_ref().map(|error| error.code),
+        Some(ErrorCode::TargetChanged)
+    );
+    assert!(
+        !workspace
+            .path()
+            .join("deploy-target")
+            .join(&detail.runtime_name)
+            .exists(),
+        "stale security facts must be rejected before target writes"
+    );
 }
 
 /// ③ 危险级被拒（缺决策）或显式"不导入"都不落库，也就不产生预警。

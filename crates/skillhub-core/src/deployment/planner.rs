@@ -597,6 +597,8 @@ pub enum DeploymentBlockReason {
     SharedImpactRequiresResolution,
     /// No deployment form, not even a managed copy, is executable.
     CopyUnavailable,
+    /// 此精确技能版本存在尚未完全信任的危险级安全发现。
+    SecurityAlert,
 }
 
 /// Resolved facts for one Skill × physical-target pair, gathered by the
@@ -879,6 +881,7 @@ fn block_reason_word(reason: DeploymentBlockReason) -> &'static str {
             "shared_impact_requires_resolution"
         }
         DeploymentBlockReason::CopyUnavailable => "copy_unavailable",
+        DeploymentBlockReason::SecurityAlert => "security_alert",
     }
 }
 

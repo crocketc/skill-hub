@@ -2072,7 +2072,7 @@
       "runtimeNameUnavailable": "The Skill name could not be read, so it cannot be added yet. Refresh and try again.",
       "planStale": "This preview is out of date; the target may have changed. Go back and preview again.",
       "targetNotWritable": "The target directory is not writable. Check its permissions and try again.",
-      "securityAlertBlocked": "This skill has an unhandled security alert; dispatch is blocked until it is handled. Handle it on the skill's security page or in pending work.",
+      "securityAlertBlocked": "This skill has an untrusted danger-level security finding and cannot be dispatched until it is reviewed. Open the skill's security page or pending work.",
       "securityAlertBlockedSecurityLink": "Open security handling",
       "securityAlertBlockedPendingLink": "Open pending work"
     },
@@ -2217,8 +2217,16 @@
       "target_occupied": "The target directory already contains an entry with the same name.",
       "path_unavailable": "The target directory is currently unreachable. Check the disk or network connection and retry.",
       "shared_impact_requires_resolution": "Other agents also read this shared directory; resolve the shared impact first.",
+      "security_alert": "This version has an untrusted danger-level security finding and cannot be dispatched yet.",
       "sharedImpactDetail": "Resolve the shared-directory impact in relationship governance before dispatching.",
       "committedBlocked": "This target was not executed and stays as it is."
+    },
+    "securityWarnings": {
+      "warningAllowed": "A warning-level security finding exists; dispatch is allowed. Details remain in Security checks.",
+      "notChecked": "This version has no basic security check result; this preview does not treat it as passed.",
+      "checkInProgress": "The basic security check for this version is still running; this preview does not treat it as passed.",
+      "checkIncomplete": "The basic security check is incomplete or uses an outdated rule set; this preview does not treat it as passed.",
+      "review": "View security checks"
     }
   },
   "security": {

@@ -209,6 +209,22 @@ impl<'a> SecurityAlertRepository<'a> {
             .transpose()
     }
 
+    /// 查询用户是否明确完全信任了这个精确内容版本。
+    pub fn is_version_trusted(&self, skill_id: SkillId, version_id: &VersionId) -> AppResult<bool> {
+        let trusted: Option<i64> = self
+            .database
+            .connection
+            .query_row(
+                "SELECT 1 FROM security_alerts \
+                 WHERE skill_id=?1 AND version_id=?2 AND decision_source='trust' AND state='trusted'",
+                params![skill_id.to_string(), version_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        Ok(trusted.is_some())
+    }
+
     /// 该 Skill 的全部预警与信任留痕（安全页/追溯用）。
     pub fn alerts_for_skill(&self, skill_id: SkillId) -> AppResult<Vec<SecurityAlertRecord>> {
         let mut statement = self

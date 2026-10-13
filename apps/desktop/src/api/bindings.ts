@@ -970,7 +970,9 @@ export type DeploymentBlockReason =
  */
 "shared_impact_requires_resolution" |
 /**  No deployment form, not even a managed copy, is executable. */
-"copy_unavailable";
+"copy_unavailable" |
+/**  此精确技能版本存在尚未完全信任的危险级安全发现。 */
+"security_alert";
 
 export type DeploymentCapability = {
 	copy: boolean,

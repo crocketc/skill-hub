@@ -151,7 +151,8 @@ export type DeploymentBlockReason =
   | "link_filesystem_unsupported"
   | "target_occupied"
   | "path_unavailable"
-  | "shared_impact_requires_resolution";
+  | "shared_impact_requires_resolution"
+  | "security_alert";
 
 /** 阻断原因 → 用户文案 i18n 键。原始错误码不进首屏。 */
 export function deploymentBlockReasonKey(reason: DeploymentBlockReason): string {

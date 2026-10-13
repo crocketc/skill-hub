@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { displayPath } from "../../platform/displayPath";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 import {
@@ -27,6 +28,8 @@ export function DeploymentImpactCard({ pair, targets }: DeploymentImpactCardProp
   const visibleWarnings = [...new Set(pair.warnings
     .filter((warning) => !isModeDescriptionWarning(warning))
     .map(userFacingDeploymentWarning))];
+  const hasSecurityContext = pair.blockReason === "security_alert"
+    || pair.warnings.some((warning) => warning.startsWith("deployment.securityWarnings."));
   // 首屏方式文案：selected_mode 说选中的方式；建议复制说回退方式。
   const modeWord = pair.disposition === "recommend_copy"
     ? (pair.fallbackMode ? t(userFacingDeploymentMode(pair.fallbackMode)) : null)
@@ -63,6 +66,9 @@ export function DeploymentImpactCard({ pair, targets }: DeploymentImpactCardProp
       {visibleWarnings.length > 0 ? <ul className="sh-deployment-impact-card__warnings">
         {visibleWarnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}
       </ul> : null}
+      {hasSecurityContext ? <Link to={`/library/${encodeURIComponent(pair.skillId)}/security`}>
+        {t("deployment.securityWarnings.review")}
+      </Link> : null}
       {/* DEV-99：「技术详情」只收纳用户可读的次要事实（部署方式、回退方式、
           目标能力说明）；内部 ID、原始错误 code/params 属于日志，不进界面。 */}
       {pair.mode || pair.fallbackMode ? (

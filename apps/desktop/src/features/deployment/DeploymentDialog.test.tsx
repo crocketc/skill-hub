@@ -75,15 +75,17 @@ function facadeFixture(pairs: DeploymentPairPreview[], overrides: Partial<BatchD
 async function renderDialog(facade: BatchDeploymentFacade, onCommitted?: (results: DeploymentResult[]) => void, tracker?: ReturnType<typeof createOperationTracker>) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
-    <I18nextProvider i18n={i18n}>
-      <DeploymentDialog
-        facade={facade}
-        onCommitted={onCommitted}
-        skillId="skill-pdf"
-        tracker={tracker}
-        versionId="current"
-      />
-    </I18nextProvider>,
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>
+        <DeploymentDialog
+          facade={facade}
+          onCommitted={onCommitted}
+          skillId="skill-pdf"
+          tracker={tracker}
+          versionId="current"
+        />
+      </I18nextProvider>
+    </MemoryRouter>,
   );
   return i18n;
 }
@@ -124,6 +126,39 @@ it("supports one or many Agent targets and reports each pair result", async () =
     expect.objectContaining({ targetId: "codex-cli", status: "succeeded" }),
     expect.objectContaining({ targetId: "claude-code", status: "failed" }),
   ]);
+});
+
+it("keeps warning-level security findings visible while allowing dispatch", async () => {
+  const user = userEvent.setup();
+  const facade = facadeFixture([
+    pair({ warnings: ["deployment.securityWarnings.warningAllowed"] }),
+  ]);
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByText("发现警告级安全问题，仍可派发。风险详情保留在安全检查中。"))
+    .toBeVisible();
+  const link = screen.getByRole("link", { name: "查看安全检查" });
+  expect(link.getAttribute("href")).toBe("/library/skill-pdf/security");
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeEnabled();
+});
+
+it("shows the security page link for a danger-level pair blocked by preview", async () => {
+  const user = userEvent.setup();
+  const facade = facadeFixture([
+    pair({ disposition: "blocked", mode: null, blockReason: "security_alert" }),
+  ]);
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByText("该版本存在尚未完全信任的危险级安全问题，暂不能派发。"))
+    .toBeVisible();
+  expect(screen.getByRole("link", { name: "查看安全检查" }).getAttribute("href"))
+    .toBe("/library/skill-pdf/security");
 });
 
 it("shows an empty state after target discovery completes", async () => {
@@ -564,7 +599,7 @@ it("guides to the security page and pending work when dispatch is blocked by a s
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
 
-  expect(await screen.findByText(/该技能存在待处理的安全预警，处理前不可派发/)).toBeVisible();
+  expect(await screen.findByText(/尚未完全信任的危险级安全问题，处理前不可派发/)).toBeVisible();
   fireEvent.click(screen.getByRole("link", { name: "前往安全页处理" }));
   expect(await screen.findByText("Security route")).toBeVisible();
 });

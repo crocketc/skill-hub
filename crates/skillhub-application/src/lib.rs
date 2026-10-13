@@ -958,40 +958,131 @@ fn inspect_reconcile_restore_target(
     Err(recovery_conflict("reconcile_restore_target_changed"))
 }
 
-/// W3-1（FB-003 裁决第 1 节）：派发门禁——该内容版本处于安全预警状态
-/// （危险级"仍要导入"或警告级导入后、未完全信任）时不可派发。拒绝错误
-/// 带技能名/级别等可读参数，并给出处理入口指引（详情安全页/待办），
-/// 不留死胡同。
-fn ensure_no_security_alert(
+/// W3-1（FB-003 裁决第 1 节）：只阻止精确版本中尚未完全信任的危险级结果。
+/// 警告和检查不完整状态作为风险提示保留，不额外阻止派发。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct DeploymentSecurityAssessment {
+    danger_untrusted: bool,
+    warnings: Vec<String>,
+}
+
+fn is_deployment_security_warning(warning: &str) -> bool {
+    warning.starts_with("deployment.securityWarnings.")
+}
+
+/// 直接计划、批量预览和提交复核共用同一份精确版本评估。
+/// 缺失、运行中、失败或规则集过期的基础检查会作为不确定状态展示，
+/// 不会伪装成通过，也不会静默扩大阻断范围。
+fn deployment_security_assessment(
     database: &Database,
     skill_id: skillhub_core::SkillId,
     version_id: &skillhub_core::VersionId,
-) -> AppResult<()> {
-    let level = database
+) -> AppResult<DeploymentSecurityAssessment> {
+    let alert_level = database
         .security_alert_repository()
         .active_alert_level(skill_id, version_id)?;
-    let Some(level) = level else {
-        return Ok(());
+    let trusted = database
+        .security_alert_repository()
+        .is_version_trusted(skill_id, version_id)?;
+    let basic_check = database.check_repository().current_for_version_sync(
+        skill_id,
+        version_id,
+        CheckKind::Basic,
+    )?;
+    let mut warnings = Vec::new();
+    let checked_level = match basic_check {
+        None => {
+            warnings.push("deployment.securityWarnings.notChecked".to_owned());
+            None
+        }
+        Some(run)
+            if run.phase == CheckRunPhase::Completed
+                && run.ruleset_id.as_deref() == Some("basic-v1") =>
+        {
+            run.findings
+                .iter()
+                .map(|finding| {
+                    finding.product_level.unwrap_or_else(|| {
+                        skillhub_core::check::ProductLevel::from_severity(finding.severity)
+                    })
+                })
+                .fold(None, |level, finding| {
+                    if finding == skillhub_core::check::ProductLevel::Danger {
+                        Some(skillhub_core::check::ProductLevel::Danger)
+                    } else {
+                        level.or(Some(skillhub_core::check::ProductLevel::Warning))
+                    }
+                })
+        }
+        Some(run) if run.phase == CheckRunPhase::Running => {
+            warnings.push("deployment.securityWarnings.checkInProgress".to_owned());
+            None
+        }
+        Some(_) => {
+            warnings.push("deployment.securityWarnings.checkIncomplete".to_owned());
+            None
+        }
     };
-    let level_text = match level {
-        skillhub_core::check::ProductLevel::Danger => "danger",
-        skillhub_core::check::ProductLevel::Warning => "warning",
-    };
+
+    let danger_untrusted = !trusted
+        && (alert_level == Some(skillhub_core::check::ProductLevel::Danger)
+            || checked_level == Some(skillhub_core::check::ProductLevel::Danger));
+    if !danger_untrusted
+        && (alert_level == Some(skillhub_core::check::ProductLevel::Warning)
+            || checked_level == Some(skillhub_core::check::ProductLevel::Warning))
+    {
+        warnings.push("deployment.securityWarnings.warningAllowed".to_owned());
+    }
+    Ok(DeploymentSecurityAssessment {
+        danger_untrusted,
+        warnings,
+    })
+}
+
+fn security_alert_blocked_error(
+    database: &Database,
+    skill_id: skillhub_core::SkillId,
+    version_id: &skillhub_core::VersionId,
+) -> AppResult<AppError> {
     let display_name = database
         .catalog_repository()?
-        .get_sync(skill_id)
-        .ok()
-        .flatten()
+        .get_sync(skill_id)?
         .map(|skill| skill.display_name().to_owned())
         .unwrap_or_else(|| skill_id.to_string());
-    Err(
+    Ok(
         AppError::new(ErrorCode::DeploymentSecurityAlertBlocked, Severity::Error)
             .with_param("skill_name", display_name)
             .with_param("skill_id", skill_id.to_string())
             .with_param("version_id", version_id.to_string())
-            .with_param("level", level_text)
+            .with_param("level", "danger")
             .with_action(RecoveryAction::ReviewSecurityFindings),
     )
+}
+
+fn ensure_deployment_security_matches_plan(
+    database: &Database,
+    plan: &DeploymentPlan,
+) -> AppResult<()> {
+    let assessment = deployment_security_assessment(database, plan.skill_id, &plan.version_id)?;
+    if assessment.danger_untrusted {
+        return Err(security_alert_blocked_error(
+            database,
+            plan.skill_id,
+            &plan.version_id,
+        )?);
+    }
+    let planned_security_warnings = plan
+        .warnings
+        .iter()
+        .filter(|warning| is_deployment_security_warning(warning))
+        .cloned()
+        .collect::<Vec<_>>();
+    if planned_security_warnings != assessment.warnings {
+        return Err(target_changed_error(
+            "the version security assessment changed since the plan",
+        ));
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -1001,14 +1092,13 @@ impl DeploymentBackend for LocalDeploymentBackend {
     /// registered targets, occupancy, capabilities and source version; any
     /// drift refuses the stale plan instead of being applied blindly.
     async fn revalidate(&self, plan: &DeploymentPlan) -> AppResult<DeploymentPlan> {
-        // W3-1（FB-003 裁决第 1 节）：派发 commit 前重验预警状态——计划
-        // 生成到落盘之间预警可能才落地，提交以当前事实为准。
+        // 重新核对计划生成后的精确版本安全事实，风险提示变化时要求重做计划。
         {
             let database = self
                 .database
                 .lock()
                 .map_err(|_| internal("deployment.revalidate"))?;
-            ensure_no_security_alert(&database, plan.skill_id, &plan.version_id)?;
+            ensure_deployment_security_matches_plan(&database, plan)?;
         }
         let index = self.revalidation_index()?;
         let library = self.library_runtime.snapshot()?;
@@ -12246,12 +12336,24 @@ impl LocalApplicationFacade {
         })
     }
     fn get_deployment_plan(&self, request: DeploymentPlanRequest) -> AppResult<AppQueryResult> {
-        // W3-1（FB-003 裁决第 1 节）：预警状态期间不可派发。计划查询与派发
-        // commit 的 revalidate 共用同一判据；planner 的惰性 CheckRun 路径
-        // 保持不动，不复用。
-        self.with_database("query.get_deployment_plan.security_gate", |database| {
-            ensure_no_security_alert(database, request.skill_id, &request.version_id)
-        })?;
+        // 安全资格读取精确版本的检查与信任事实。危险未信任时计划直接拒绝；
+        // 警告和未检查状态进入计划 warnings，由界面如实说明。
+        let security =
+            self.with_database("query.get_deployment_plan.security_gate", |database| {
+                let assessment = deployment_security_assessment(
+                    database,
+                    request.skill_id,
+                    &request.version_id,
+                )?;
+                if assessment.danger_untrusted {
+                    return Err(security_alert_blocked_error(
+                        database,
+                        request.skill_id,
+                        &request.version_id,
+                    )?);
+                }
+                Ok(assessment)
+            })?;
         let library = self.library_runtime.snapshot()?;
         let source_path = library
             .root
@@ -12266,8 +12368,13 @@ impl LocalApplicationFacade {
             request.resolve(&resolver, source_path)?
         };
         self.attach_target_occupancy(&input.runtime_name, &mut input.targets)?;
-        let plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
+        let mut plan = skillhub_core::DeploymentPlanner.plan_request(&input)?;
         self.enforce_deployment_name_boundary(&plan)?;
+        for warning in security.warnings {
+            if !plan.warnings.contains(&warning) {
+                plan.warnings.push(warning);
+            }
+        }
         Ok(AppQueryResult::DeploymentPlan(plan))
     }
 
@@ -12435,6 +12542,9 @@ impl LocalApplicationFacade {
                         .with_action(RecoveryAction::Retry)
                 })?,
         };
+        let security = self.with_database("query.get_deployment_batch_preview", |database| {
+            deployment_security_assessment(database, item.skill_id, &version_id)
+        })?;
         // Runtime name: explicit, else the version's declared SKILL.md name,
         // else the catalog runtime name.
         let runtime_name = match &item.runtime_name {
@@ -12560,7 +12670,21 @@ impl LocalApplicationFacade {
                 // fingerprint and the reason stay consistent.
                 facts.path_available = false;
             }
-            let decision = plan_target_preview(&facts);
+            let mut decision = plan_target_preview(&facts);
+            if security.danger_untrusted {
+                decision.disposition =
+                    skillhub_core::deployment::DeploymentPreviewDisposition::Blocked;
+                decision.mode = None;
+                decision.fallback_mode = None;
+                decision.block_reason =
+                    Some(skillhub_core::deployment::DeploymentBlockReason::SecurityAlert);
+            }
+            let mut pair_warnings = warnings;
+            for warning in &security.warnings {
+                if !pair_warnings.contains(warning) {
+                    pair_warnings.push(warning.clone());
+                }
+            }
             let first_logical = logical_target_ids.first().cloned().unwrap_or_default();
             out.push(skillhub_core::api::DeploymentPairPreview {
                 pair_id: format!("{}:{}", item.skill_id, facts.physical_target_id),
@@ -12582,7 +12706,7 @@ impl LocalApplicationFacade {
                 mode: decision.mode,
                 fallback_mode: decision.fallback_mode,
                 block_reason: decision.block_reason,
-                warnings,
+                warnings: pair_warnings,
                 confirmation_preserved: false,
                 confirmation_fingerprint: decision.confirmation_fingerprint,
                 technical_error,
@@ -12607,7 +12731,15 @@ impl LocalApplicationFacade {
                 path_available: false,
                 requires_shared_impact_confirmation: false,
             };
-            let decision = plan_target_preview(&facts);
+            let mut decision = plan_target_preview(&facts);
+            if security.danger_untrusted {
+                decision.disposition =
+                    skillhub_core::deployment::DeploymentPreviewDisposition::Blocked;
+                decision.mode = None;
+                decision.fallback_mode = None;
+                decision.block_reason =
+                    Some(skillhub_core::deployment::DeploymentBlockReason::SecurityAlert);
+            }
             out.push(skillhub_core::api::DeploymentPairPreview {
                 pair_id: format!("{}:{}", item.skill_id, logical_id),
                 skill_id: item.skill_id,
@@ -12628,7 +12760,7 @@ impl LocalApplicationFacade {
                 mode: None,
                 fallback_mode: None,
                 block_reason: decision.block_reason,
-                warnings: Vec::new(),
+                warnings: security.warnings.clone(),
                 confirmation_preserved: false,
                 confirmation_fingerprint: decision.confirmation_fingerprint,
                 technical_error: Some(error.into()),
@@ -12906,6 +13038,21 @@ impl LocalApplicationFacade {
         requested_mode: skillhub_core::DeploymentMode,
         link_permission_denied: bool,
     ) -> AppResult<skillhub_core::TargetPlan> {
+        let security = self
+            .with_database("execute.commit_deployment_preview.security", |database| {
+                deployment_security_assessment(database, pair.skill_id, &pair.version_id)
+            })?;
+        let preview_security_warnings = pair
+            .warnings
+            .iter()
+            .filter(|warning| is_deployment_security_warning(warning))
+            .cloned()
+            .collect::<Vec<_>>();
+        if security.danger_untrusted || preview_security_warnings != security.warnings {
+            return Err(target_changed_error(
+                "the version security assessment changed since the preview",
+            ));
+        }
         let library = self.library_runtime.snapshot()?;
         let injected = self.deployment_targets.as_ref();
         let discovered = if injected.is_none() {
@@ -12996,20 +13143,26 @@ impl LocalApplicationFacade {
                 "the deployment facts changed since the preview",
             ));
         }
-        let effective = DeploymentPlanner.plan(DeploymentPlanInput {
-            skill_id: pair.skill_id,
-            version_id: pair.version_id.clone(),
-            runtime_name: pair.runtime_name.clone(),
-            source_path: source_path.to_string_lossy().into_owned(),
-            targets: verified,
-            mode_override: Some(requested_mode),
-            security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
-        })?;
-        Ok(effective
+        let mut target = DeploymentPlanner
+            .plan(DeploymentPlanInput {
+                skill_id: pair.skill_id,
+                version_id: pair.version_id.clone(),
+                runtime_name: pair.runtime_name.clone(),
+                source_path: source_path.to_string_lossy().into_owned(),
+                targets: verified,
+                mode_override: Some(requested_mode),
+                security_gate: skillhub_core::deployment::DeploymentSecurityGate::default(),
+            })?
             .targets
             .into_iter()
             .next()
-            .expect("one physical target re-plans to one executable target"))
+            .expect("one physical target re-plans to one executable target");
+        for warning in security.warnings {
+            if !target.warnings.contains(&warning) {
+                target.warnings.push(warning);
+            }
+        }
+        Ok(target)
     }
 
     fn discovery_target_index(&self) -> AppResult<RegisteredTargetIndex> {

@@ -2072,7 +2072,7 @@
       "runtimeNameUnavailable": "无法读取该 Skill 的名称，暂时无法添加。请刷新后重试。",
       "planStale": "预览已经过期，目标状态可能发生变化。请返回后重新预览。",
       "targetNotWritable": "目标目录不可写，请检查目录权限后重试。",
-      "securityAlertBlocked": "该技能存在待处理的安全预警，处理前不可派发；可在详情安全页或待办中处理。",
+      "securityAlertBlocked": "该技能存在尚未完全信任的危险级安全问题，处理前不可派发；可在详情安全页或待办中处理。",
       "securityAlertBlockedSecurityLink": "前往安全页处理",
       "securityAlertBlockedPendingLink": "打开待办"
     },
@@ -2217,8 +2217,16 @@
       "target_occupied": "目标目录已存在同名内容，无法重复添加。",
       "path_unavailable": "目标目录当前无法访问，请确认磁盘或网络连接后重试。",
       "shared_impact_requires_resolution": "其他 Agent 也在读取这个共享目录，需要先处理共享影响。",
+      "security_alert": "该版本存在尚未完全信任的危险级安全问题，暂不能派发。",
       "sharedImpactDetail": "请先在关系治理中处理共享目录的影响，再派发。",
       "committedBlocked": "该目标未能执行，保持原状。"
+    },
+    "securityWarnings": {
+      "warningAllowed": "发现警告级安全问题，仍可派发。风险详情保留在安全检查中。",
+      "notChecked": "这个版本还没有基础安全检查结果；当前预览没有把它当作检查通过。",
+      "checkInProgress": "这个版本的基础安全检查仍在进行中；当前预览没有把它当作检查通过。",
+      "checkIncomplete": "这个版本的基础安全检查未完成或规则版本已过期；当前预览没有把它当作检查通过。",
+      "review": "查看安全检查"
     }
   },
   "security": {
