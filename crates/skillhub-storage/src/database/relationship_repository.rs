@@ -1425,7 +1425,19 @@ impl<'a> ConflictRepository<'a> {
             .connection
             .unchecked_transaction()
             .map_err(database_error)?;
-        let changed = tx
+        Self::record_decision_tx(&tx, conflict_id, decision, decided_at)?;
+        tx.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for committing the conflict decision and its
+    /// relationship revision with other facts from the same user action.
+    pub fn record_decision_tx(
+        transaction: &Transaction<'_>,
+        conflict_id: &str,
+        decision: ConflictClassification,
+        decided_at: i64,
+    ) -> AppResult<()> {
+        let changed = transaction
             .execute(
                 "UPDATE conflict_cases SET classification=?1, user_decision=?1, decided_at=?2
                  WHERE conflict_id=?3 AND (
@@ -1439,7 +1451,7 @@ impl<'a> ConflictRepository<'a> {
             )
             .map_err(database_error)?;
         if changed == 0 {
-            let exists = tx
+            let exists = transaction
                 .query_row(
                     "SELECT 1 FROM conflict_cases WHERE conflict_id=?1",
                     [conflict_id],
@@ -1451,10 +1463,9 @@ impl<'a> ConflictRepository<'a> {
             if !exists {
                 return Err(not_found("conflict_case"));
             }
-            return tx.commit().map_err(database_error);
+            return Ok(());
         }
-        bump_relationship_revision_tx(&tx)?;
-        tx.commit().map_err(database_error)
+        bump_relationship_revision_tx(transaction)
     }
 
     fn decode_case(&self, row: StoredCase) -> AppResult<ConflictCaseFact> {
@@ -1588,9 +1599,19 @@ impl<'a> ConflictAnalysisRepository<'a> {
     /// Marks a record adopted by the user. The conflict case's own decision
     /// fields are deliberately untouched.
     pub fn mark_adopted(&self, record_id: &str) -> AppResult<()> {
-        let changed = self
+        let transaction = self
             .database
             .connection
+            .unchecked_transaction()
+            .map_err(database_error)?;
+        Self::mark_adopted_tx(&transaction, record_id)?;
+        transaction.commit().map_err(database_error)
+    }
+
+    /// Caller-transaction seam for recording analysis adoption atomically with
+    /// the corresponding conflict decision.
+    pub fn mark_adopted_tx(transaction: &Transaction<'_>, record_id: &str) -> AppResult<()> {
+        let changed = transaction
             .execute(
                 "UPDATE conflict_analysis_records SET adopted=1 WHERE record_id=?1",
                 [record_id],

@@ -4203,6 +4203,23 @@ async fn manual_conflict_decision_needs_no_llm_and_is_auditable() {
             .list_records(Some("conflict:pending"))
             .expect("records");
         assert!(records.iter().all(|record| record.adopted_by_user));
+        let journal = database
+            .operation_repository()
+            .list_sync()
+            .expect("operation journal")
+            .into_iter()
+            .find(|record| record.kind == "conflict_resolution")
+            .expect("conflict resolution journal row");
+        assert_eq!(journal.phase, OperationPhase::Committed);
+        assert_eq!(
+            journal
+                .result
+                .as_ref()
+                .and_then(|result| result.get("conflict_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("conflict:pending"),
+            "the committed journal row carries the user-visible outcome"
+        );
     }
 
     // 决定后：待确认队列清空，冲突进入已处理历史。
@@ -4297,6 +4314,164 @@ async fn a_decision_taken_on_stale_facts_is_refused_with_a_journaled_failure() {
     assert_eq!(
         outcome.conclusion,
         Some(ConflictClassification::SameSkillVersion)
+    );
+}
+
+#[tokio::test]
+async fn conflict_decision_and_analysis_adoption_roll_back_together_on_write_failure() {
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:atomic",
+                ConflictClassification::Uncertain,
+                "fp-atomic",
+            ))
+            .expect("pending case");
+        database
+            .conflict_analysis_repository()
+            .insert_record(&analysis_record(
+                "conflict:atomic",
+                "sha256:atomic",
+                ConflictAnalysisAction::DistinctSkill,
+                100,
+            ))
+            .expect("analysis record");
+        database
+            .connection_for_test()
+            .execute_batch(
+                "CREATE TRIGGER fail_conflict_analysis_adoption
+                 BEFORE UPDATE OF adopted ON conflict_analysis_records
+                 WHEN NEW.adopted = 1
+                 BEGIN SELECT RAISE(ABORT, 'injected adoption failure'); END;",
+            )
+            .expect("install analysis adoption failure");
+    }
+
+    let workspace = conflict_workspace_of(&facade).await;
+    let revision_before = relationship_revision(&facade);
+    facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:atomic".to_owned(),
+            decision: ConflictDecision::KeepDistinct,
+            expected_relationship_revision: workspace.relationship_revision,
+        }))
+        .await
+        .expect_err("analysis adoption failure must fail the decision");
+
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        let case = database
+            .conflict_repository()
+            .list_cases()
+            .expect("cases")
+            .into_iter()
+            .find(|case| case.conflict_id == "conflict:atomic")
+            .expect("conflict case");
+        assert_eq!(case.classification, ConflictClassification::Uncertain);
+        assert_eq!(case.user_decision, None);
+        assert_eq!(case.decided_at, None);
+        let analysis = database
+            .conflict_analysis_repository()
+            .list_records(Some("conflict:atomic"))
+            .expect("analysis records");
+        assert_eq!(analysis.len(), 1);
+        assert!(!analysis[0].adopted_by_user);
+    }
+    assert_eq!(
+        relationship_revision(&facade),
+        revision_before,
+        "the relationship revision must roll back with the rejected decision"
+    );
+    let journal = conflict_resolution_journal(&facade);
+    assert_eq!(journal.len(), 1);
+    assert_eq!(journal[0].0, "rolled_back");
+    assert!(
+        journal[0].1.is_some(),
+        "the failed write should be journaled"
+    );
+}
+
+#[tokio::test]
+async fn conflict_operation_journal_failure_rolls_back_decision_and_analysis_adoption() {
+    let (facade, _workspace) = open_conflict_facade();
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        database
+            .conflict_repository()
+            .create_case(&conflict_case(
+                "conflict:journal-atomic",
+                ConflictClassification::Uncertain,
+                "fp-journal-atomic",
+            ))
+            .expect("pending case");
+        database
+            .conflict_analysis_repository()
+            .insert_record(&analysis_record(
+                "conflict:journal-atomic",
+                "sha256:journal-atomic",
+                ConflictAnalysisAction::DistinctSkill,
+                100,
+            ))
+            .expect("analysis record");
+        database
+            .connection_for_test()
+            .execute_batch(
+                "CREATE TRIGGER fail_conflict_resolution_commit
+                 BEFORE UPDATE OF phase ON operations
+                 WHEN NEW.kind = 'conflict_resolution' AND NEW.phase = 'committed'
+                 BEGIN SELECT RAISE(ABORT, 'injected journal failure'); END;",
+            )
+            .expect("install operation journal failure");
+    }
+
+    let workspace = conflict_workspace_of(&facade).await;
+    let revision_before = relationship_revision(&facade);
+    facade
+        .execute(AppCommand::ResolveConflictCase(ResolveConflictCase {
+            conflict_id: "conflict:journal-atomic".to_owned(),
+            decision: ConflictDecision::KeepDistinct,
+            expected_relationship_revision: workspace.relationship_revision,
+        }))
+        .await
+        .expect_err("operation journal commit failure must fail the decision");
+
+    {
+        let handle = facade.database_for_tests();
+        let database = handle.lock().expect("database lock");
+        let case = database
+            .conflict_repository()
+            .list_cases()
+            .expect("cases")
+            .into_iter()
+            .find(|case| case.conflict_id == "conflict:journal-atomic")
+            .expect("conflict case");
+        assert_eq!(case.classification, ConflictClassification::Uncertain);
+        assert_eq!(case.user_decision, None);
+        assert_eq!(case.decided_at, None);
+        let analysis = database
+            .conflict_analysis_repository()
+            .list_records(Some("conflict:journal-atomic"))
+            .expect("analysis records");
+        assert_eq!(analysis.len(), 1);
+        assert!(!analysis[0].adopted_by_user);
+    }
+    assert_eq!(
+        relationship_revision(&facade),
+        revision_before,
+        "the relationship revision must roll back when journal commit fails"
+    );
+    let journal = conflict_resolution_journal(&facade);
+    assert_eq!(journal.len(), 1);
+    assert_eq!(journal[0].0, "rolled_back");
+    assert!(
+        journal[0].1.is_some(),
+        "the failed write should be journaled"
     );
 }
 

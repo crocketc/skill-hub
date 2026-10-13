@@ -34,7 +34,7 @@ use skillhub_core::{
     OperationPhase, RecoveryAction, RelationMigrationResult, RelationMigrationState, Severity,
     SkillId,
 };
-use skillhub_storage::Database;
+use skillhub_storage::{Database, OperationRepositorySqlite, RelationshipRepository};
 
 use crate::LocalApplicationFacade;
 
@@ -444,14 +444,29 @@ impl LocalApplicationFacade {
     ) -> AppResult<AppCommandResult> {
         let operation_id = OperationId::new();
         self.journal_begin(operation_id, "conflict_resolution");
-        let result = self.resolve_conflict_case_flow(request);
-        self.journal_settle(operation_id, "conflict_resolution", result.as_ref().err());
-        result
+        match self.resolve_conflict_case_flow(request, operation_id) {
+            Ok(outcome) => {
+                // 成功日志已与操作结果同事务提交。此处仅补充开发日志；
+                // 提交后的日志读取失败不能把已完成的决定报告为失败。
+                if let Ok(Some(record)) = self.with_database(
+                    "operation_journal.conflict_resolution.read_committed",
+                    |database| database.operation_repository().get_sync(operation_id),
+                ) {
+                    self.log_journal_record(&record);
+                }
+                Ok(outcome)
+            }
+            Err(error) => {
+                self.journal_settle(operation_id, "conflict_resolution", Some(&error));
+                Err(error)
+            }
+        }
     }
 
     fn resolve_conflict_case_flow(
         &self,
         request: ResolveConflictCase,
+        operation_id: OperationId,
     ) -> AppResult<AppCommandResult> {
         let outcome = self.with_database("execute.resolve_conflict_case", |database| {
             let case = database
@@ -472,40 +487,32 @@ impl LocalApplicationFacade {
                 // 但绝不在这里提交迁移，也不写冲突结论。
                 let relation_id = conflict_relation_id(database, &case)?;
                 let handoff = plan_conflict_governance_handoff(&case, relation_id)?;
-                return Ok(ConflictResolutionOutcome {
+                let outcome = ConflictResolutionOutcome {
                     conflict_id: case.conflict_id.clone(),
                     decision: request.decision,
                     decided_at: None,
                     conclusion: None,
                     governance: Some(handoff),
                     relationship_revision: current_revision()?,
-                });
+                };
+                commit_conflict_resolution_record(database, operation_id, &outcome)?;
+                return Ok(outcome);
             }
 
             let decided_at = super::now_epoch_seconds();
             let Some(plan) = plan_conflict_decision(&case, request.decision, decided_at)? else {
                 // 幂等重放：同一决定已经写入过，不重复写事实、也不改版本。
-                return Ok(ConflictResolutionOutcome {
+                let outcome = ConflictResolutionOutcome {
                     conflict_id: case.conflict_id.clone(),
                     decision: request.decision,
                     decided_at: case.decided_at,
                     conclusion: case.user_decision,
                     governance: None,
                     relationship_revision: current_revision()?,
-                });
+                };
+                commit_conflict_resolution_record(database, operation_id, &outcome)?;
+                return Ok(outcome);
             };
-            // 版本校验只挡真正的写入：在过期事实上下决定必须被拒绝，
-            // 而幂等重放不能被自己的第一次写入挡回去。
-            let observed = current_revision()?;
-            if request.expected_relationship_revision != observed {
-                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
-                    .with_param("reason", "stale_relationship_facts"));
-            }
-            database.conflict_repository().record_decision(
-                &plan.record.conflict_id,
-                plan.record.conclusion,
-                decided_at,
-            )?;
             // 具体动作完成后才把该组的分析记录标为已采纳：这是审计关联，
             // 不是可以单独点击的采纳状态。
             let latest_record = database
@@ -518,19 +525,42 @@ impl LocalApplicationFacade {
                         .cmp(&right.analyzed_at)
                         .then_with(|| left.record_id.cmp(&right.record_id))
                 });
-            if let Some(record) = latest_record {
-                database
-                    .conflict_analysis_repository()
-                    .mark_adopted(&record.record_id)?;
+            let mut operation_record = planned_conflict_resolution_record(database, operation_id)?;
+            let transaction = database.begin_transaction()?;
+            // 在同一事务内再次读取修订号，避免预检后到写入前事实发生变化。
+            let observed =
+                RelationshipRepository::relationship_revision_tx(&transaction)?.to_string();
+            if request.expected_relationship_revision != observed {
+                return Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+                    .with_param("reason", "stale_relationship_facts"));
             }
-            Ok(ConflictResolutionOutcome {
+            skillhub_storage::ConflictRepository::record_decision_tx(
+                &transaction,
+                &plan.record.conflict_id,
+                plan.record.conclusion,
+                decided_at,
+            )?;
+            if let Some(record) = latest_record {
+                skillhub_storage::ConflictAnalysisRepository::mark_adopted_tx(
+                    &transaction,
+                    &record.record_id,
+                )?;
+            }
+            let outcome = ConflictResolutionOutcome {
                 conflict_id: plan.record.conflict_id.clone(),
                 decision: plan.record.decision,
                 decided_at: Some(decided_at),
                 conclusion: Some(plan.record.conclusion),
                 governance: None,
-                relationship_revision: current_revision()?,
-            })
+                relationship_revision: RelationshipRepository::relationship_revision_tx(
+                    &transaction,
+                )?
+                .to_string(),
+            };
+            set_conflict_resolution_committed(&mut operation_record, &outcome)?;
+            OperationRepositorySqlite::commit_planned_tx(&transaction, &operation_record)?;
+            Database::commit_transaction(transaction)?;
+            Ok(outcome)
         })?;
         Ok(AppCommandResult::ConflictResolved(outcome))
     }
@@ -3201,6 +3231,52 @@ fn conversion_todo_kind(relationship: RelationshipType) -> GovernanceTaskKind {
     } else {
         GovernanceTaskKind::ConvertCopyToManagedLink
     }
+}
+
+fn planned_conflict_resolution_record(
+    database: &Database,
+    operation_id: OperationId,
+) -> AppResult<skillhub_core::OperationRecord> {
+    match database.operation_repository().get_sync(operation_id)? {
+        Some(record)
+            if record.kind == "conflict_resolution" && record.phase == OperationPhase::Planned =>
+        {
+            Ok(record)
+        }
+        Some(_) => Err(AppError::new(ErrorCode::OperationConflict, Severity::Error)
+            .with_param("reason", "conflict_resolution_journal_not_planned")),
+        None => Err(AppError::new(ErrorCode::ObjectNotFound, Severity::Error)
+            .with_param("operation_id", operation_id.to_string())),
+    }
+}
+
+fn set_conflict_resolution_committed(
+    record: &mut skillhub_core::OperationRecord,
+    outcome: &ConflictResolutionOutcome,
+) -> AppResult<()> {
+    record.phase = OperationPhase::Committed;
+    record.progress.phase = OperationPhase::Committed;
+    record.progress.completed = record.progress.total;
+    record.progress.message_code = "operation.committed".to_owned();
+    record.error_code = None;
+    record.recovery_data = json!({ "recovery_required": false });
+    record.result = Some(serde_json::to_value(outcome).map_err(|error| {
+        AppError::new(ErrorCode::InternalError, Severity::Error)
+            .with_param("detail", error.to_string())
+    })?);
+    Ok(())
+}
+
+fn commit_conflict_resolution_record(
+    database: &Database,
+    operation_id: OperationId,
+    outcome: &ConflictResolutionOutcome,
+) -> AppResult<()> {
+    let mut record = planned_conflict_resolution_record(database, operation_id)?;
+    let transaction = database.begin_transaction()?;
+    set_conflict_resolution_committed(&mut record, outcome)?;
+    OperationRepositorySqlite::commit_planned_tx(&transaction, &record)?;
+    Database::commit_transaction(transaction)
 }
 
 fn relation_not_found(id: &str) -> AppError {
