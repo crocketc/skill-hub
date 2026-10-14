@@ -1037,7 +1037,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
         .map((button) => button.textContent?.trim()),
     ).toEqual([
       // 已接通：派发、标签、组合、安全检查与导出向导。
-      "Add to…",
+      "Batch dispatch",
       "Add tags",
       "Remove tags",
       "Batch add to combinations",
@@ -2352,7 +2352,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add to…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch dispatch" }));
 
     await screen.findByText("Batch deployment");
     expect(view.router.state.location.pathname).toBe("/deploy");
@@ -2482,7 +2482,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(await screen.findByText(/Codex CLI/)).toBeVisible();
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add to…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch dispatch" }));
 
     await screen.findByText("Batch deployment");
     const params = new URLSearchParams(view.router.state.location.search);

@@ -1415,8 +1415,8 @@
     "noVersion": "暂无版本",
     "page": {
       "batch": {
-        "addTo": "添加到…",
-        "addToTitle": "打开批量添加流程，将所选 Skill 添加到 Agent/项目",
+        "dispatch": "批量派发",
+        "dispatchTitle": "将所选 Skill 派发到 Agent/项目",
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
@@ -1532,7 +1532,7 @@
         "noResults": "没有符合当前筛选条件的技能",
         "unavailable": "技能目录数据尚未连接"
       },
-      "deployTargetBanner": "目标已预选：{{label}}。勾选 Skill 后点“添加到…”，将自动选中该目标。",
+      "deployTargetBanner": "目标已预选：{{label}}。勾选 Skill 后点“批量派发”，将自动选中该目标。",
       "card": {
         "version": "当前版本 {{version}}",
         "upgradeAvailable": "有可升级版本",

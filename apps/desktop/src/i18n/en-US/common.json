@@ -1415,8 +1415,8 @@
     "noVersion": "No version yet",
     "page": {
       "batch": {
-        "addTo": "Add to…",
-        "addToTitle": "Open the batch add flow to add the selected Skills to Agents/projects",
+        "dispatch": "Batch dispatch",
+        "dispatchTitle": "Dispatch the selected Skills to Agents/projects",
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
@@ -1532,7 +1532,7 @@
         "noResults": "No skills match the current filters",
         "unavailable": "Skill catalog data is not connected yet"
       },
-      "deployTargetBanner": "Target preselected: {{label}}. Select Skills and choose “Add to…” to target it automatically.",
+      "deployTargetBanner": "Target preselected: {{label}}. Select Skills and choose “Batch dispatch” to target it automatically.",
       "card": {
         "version": "Current version {{version}}",
         "upgradeAvailable": "Upgrade available",

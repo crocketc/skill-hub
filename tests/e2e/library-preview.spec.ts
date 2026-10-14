@@ -99,7 +99,7 @@ test("filtered batch dispatch excludes unchecked Skills from its exact target se
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).uncheck();
   await expect(page.getByText("All 79 filtered results selected")).toBeVisible();
 
-  await page.getByRole("button", { name: "Add to…" }).click();
+  await page.getByRole("button", { name: "Batch dispatch" }).click();
   await expect(page).toHaveURL(/\/deploy\?/);
   const target = new URL(page.url());
   expect(target.searchParams.getAll("skill")).toHaveLength(79);

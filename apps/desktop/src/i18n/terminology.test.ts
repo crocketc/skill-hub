@@ -5,7 +5,7 @@ import path from "node:path";
 
 // 术语守护（任务 11，规则冻结于 docs/archive/requirements/产品与交互设计.md §2.2 与实施计划任务 11）：
 // - 用户可见动作键（按钮、步骤名、状态转换、空态引导）一律用“添加到 Agent/项目”“从 Agent/项目移除”，
-//   批量用“添加到…”“添加 N 个 Skill”；这些键的中英文案都不得再出现「部署 / deploy」。
+//   批量派发统一使用“批量派发 / Batch dispatch”；这些键的中英文案都不得再出现「部署 / deploy」。
 // - 「部署」只允许以冻结的名词短语（链接部署/复制部署/部署关系）或技术详情/诊断术语存在；
 //   正向锁防止“一刀切删词”把技术详情里的「部署/解除部署」「符号链接」「目录联接」误删。
 // - zh-CN/en-US 键集一致性仍由 ./i18n.test.ts 断言，本文件不重复承担该职责。
@@ -70,8 +70,8 @@ function enNounViolations(keys: string[]): string[] {
 
 // 分片 1（入口动作）：批量操作区、Skill 详情/Agent/项目主操作、组合入口、边界声明。
 const ENTRY_ACTION_KEYS = [
-  "skillLibrary.page.batch.addTo",
-  "skillLibrary.page.batch.addToTitle",
+  "skillLibrary.page.batch.dispatch",
+  "skillLibrary.page.batch.dispatchTitle",
   "skillLibrary.page.deployTargetBanner",
   "skillLibrary.combinations.deploy",
   "skillLibrary.combinations.deployHint",
@@ -263,7 +263,7 @@ it("locks the frozen action verbs verbatim", () => {
     ["agents.launchDeployment", "添加到 Agent/项目", "Add to Agent/Project"],
     ["projects.detail.launchDeployment", "添加到 Agent/项目", "Add to Agent/Project"],
     ["undeploy.eyebrow", "从 Agent/项目移除", "Remove from Agent/Project"],
-    ["skillLibrary.page.batch.addTo", "添加到…", "Add to…"],
+    ["skillLibrary.page.batch.dispatch", "批量派发", "Batch dispatch"],
     ["skillLibrary.page.batch.addCombinations", "批量加入组合", "Batch add to combinations"],
     ["skillLibrary.page.batch.removeCombinations", "批量移出组合", "Batch remove from combinations"],
     ["deployment.batch.heading", "添加 {{count}} 个 Skill", "Add {{count}} Skills"],

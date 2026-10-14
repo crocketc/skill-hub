@@ -394,10 +394,10 @@ function BatchBar({
         <Button
           onClick={onDispatch}
           size="sm"
-          title={t("skillLibrary.page.batch.addToTitle")}
+          title={t("skillLibrary.page.batch.dispatchTitle")}
           variant="ghost"
         >
-          {t("skillLibrary.page.batch.addTo")}
+          {t("skillLibrary.page.batch.dispatch")}
         </Button>
         {canEditTags ? (
           <>
