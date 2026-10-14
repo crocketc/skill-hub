@@ -1461,6 +1461,33 @@
         "done": "Batch tag update finished",
         "partialFailure": "Batch tag update partially failed"
       },
+      "batchSecurityChecks": {
+        "basic": "Batch run basic check",
+        "basicPending": "Running batch basic checks…",
+        "llm": "Batch run AI check",
+        "llmPending": "Running batch AI checks…",
+        "llmCancel": "Cancel batch AI check",
+        "llmCancelPending": "Requesting cancellation…",
+        "llmCapabilityLoading": "Checking AI capability…",
+        "kind": {
+          "basic": "basic check",
+          "llm": "AI check"
+        },
+        "heading": "Batch {{kind}} results",
+        "counts": "{{scope}} in scope · {{executable}} executable · {{restricted}} restricted · {{succeeded}} succeeded · {{failed}} failed · {{cancelled}} cancelled",
+        "status": {
+          "succeeded": "Succeeded",
+          "restricted": "Restricted",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "noCurrentVersion": "The current version could not be read, so no check was run for this Skill.",
+        "emptySelection": "No Skills remain in the selected scope. Select Skills again before running a check.",
+        "done": "Batch {{kind}} finished",
+        "restricted": "Batch {{kind}} has restricted Skills",
+        "partialFailure": "Batch {{kind}} partially failed",
+        "cancelled": "Batch {{kind}} cancelled"
+      },
       "batchCollections": {
         "done": "Batch combination update finished",
         "partialFailure": "Batch combination update partially failed",
@@ -2365,6 +2392,7 @@
       "run": "Run AI check",
       "running": "AI check is running; results will appear once it completes.",
       "cancel": "Cancel check",
+      "cancelWaiting": "Finding the running AI check…",
       "cancelFailed": "The cancellation request failed: {{message}}",
       "providerMissing": "No LLM provider is configured; AI checks are unavailable.",
       "providerMissingPrototype": "Configure a provider in Settings → Network & AI. Without a provider, nothing is sent.",

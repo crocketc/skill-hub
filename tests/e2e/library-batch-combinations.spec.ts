@@ -33,3 +33,25 @@ test("batch add and remove from combinations use the selection dialog and show p
   const removeResult = page.getByTestId("batch-summary").first();
   await expect(removeResult).toContainText("2 succeeded");
 });
+
+test("batch basic and AI checks run independently and report the selected Skill", async ({ page }) => {
+  await page.goto("/__preview/skill-library");
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+  const batchBar = page.getByRole("complementary", { name: "Batch actions" });
+
+  const basicCheck = batchBar.getByRole("button", { name: "Batch run basic check" });
+  await expect(basicCheck).toBeVisible();
+  await basicCheck.click();
+  const basicResult = page.getByTestId("batch-security-check-summary").last();
+  await expect(basicResult).toContainText("Batch basic check results");
+  await expect(basicResult).toContainText("1 succeeded");
+  await expect(basicResult).toContainText("PDF Reader");
+
+  const aiCheck = batchBar.getByRole("button", { name: "Batch run AI check" });
+  await expect(aiCheck).toBeVisible();
+  await aiCheck.click();
+  const aiResult = page.getByTestId("batch-security-check-summary").first();
+  await expect(aiResult).toContainText("Batch AI check results");
+  await expect(aiResult).toContainText("1 succeeded");
+  await expect(aiResult).toContainText("PDF Reader");
+});

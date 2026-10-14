@@ -23,12 +23,13 @@ import { describeNativeError } from "../../api/nativeErrors";
 // 页面内局部通知列表（NotificationCenter/useNotices 兼容桥从本页移除）。
 import { useAppNotifications } from "../../ui/notifications";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
-import { runTrackedOperation } from "../../platform/runTrackedOperation";
+import { runTrackedOperation, type TrackedOperationHandle } from "../../platform/runTrackedOperation";
 import { useLibraryViewMode } from "./libraryViewContext";
 import {
   detailSearchFromLibrary,
   readLibraryReturnState,
 } from "../skill-detail/detailContext";
+import { skillDetailKeys } from "../skill-detail/api";
 import { SkillCard } from "../shared/skill-card/SkillCard";
 import type { SkillCardViewModel } from "../shared/skill-card/SkillCardViewModel";
 import {
@@ -79,9 +80,11 @@ import {
 } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
 import { BatchCombinationDialog, type BatchCombinationAction } from "./BatchCombinationDialog";
+import { BatchSecurityCheckSummary, type BatchSecurityCheckOutcome } from "./BatchSecurityCheckSummary";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import type { SecurityFacade } from "../security/api";
-import type { LlmAdminFacade } from "../settings/llmApi";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { evaluateLlmCapability, useLlmCapability, type LlmCapabilityState } from "../settings/llmStatus";
 import { SkillMatrix } from "./SkillMatrix";
 import { SkillPagination } from "./SkillPagination";
 import { SkillTable } from "./SkillTable";
@@ -139,9 +142,13 @@ interface BatchBarProps {
   barRef: Ref<HTMLElement>;
   canEditCombinations: boolean;
   canEditTags: boolean;
+  checkSecurityActive?: BatchSecurityActive;
   checkUpdatesPending?: boolean;
+  llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus">;
   onDispatch: () => void;
   onCheckUpdates?: () => void;
+  onCancelSecurityCheck: () => void;
+  onSecurityCheck: (kind: "basic" | "llm", capability?: LlmCapabilityState) => void;
   onCollectionAction: (action: BatchCombinationAction) => void;
   onClear: () => void;
   onDelete: () => void;
@@ -149,7 +156,17 @@ interface BatchBarProps {
   onStartExport: () => void;
   onTagAction: (action: BatchTagAction) => void;
   page: SkillPage;
+  securityFacade: SecurityFacade;
   selection: Exclude<SkillSelection, { kind: "none" }>;
+}
+
+interface BatchSecurityActive {
+  cancelError?: string;
+  cancelRequested: boolean;
+  currentSkillId?: string;
+  currentVersionId?: string;
+  kind: "basic" | "llm";
+  operationId?: string;
 }
 
 // P1-08：分组切换的分段控件选项（短文本）。视图切换已迁入壳层标题栏
@@ -318,9 +335,13 @@ function BatchBar({
   barRef,
   canEditCombinations,
   canEditTags,
+  checkSecurityActive,
   checkUpdatesPending,
+  llmFacade,
   onDispatch,
   onCheckUpdates,
+  onCancelSecurityCheck,
+  onSecurityCheck,
   onCollectionAction,
   onClear,
   onDelete,
@@ -328,9 +349,16 @@ function BatchBar({
   onStartExport,
   onTagAction,
   page,
+  securityFacade,
   selection,
 }: BatchBarProps): JSX.Element {
   const { t } = useTranslation();
+  const llmCapability = useLlmCapability(llmFacade, "safety_check", {
+    enabled: Boolean(securityFacade.runLlmCheck),
+    requiredTestLevel: "structured",
+    preconditionsMet: Boolean(securityFacade.runLlmCheck),
+  });
+  const checkSecurityPending = Boolean(checkSecurityActive);
   const count = selectionCount(selection);
   const pageIds = new Set(page.items.map((row) => row.id));
   const selectedCurrentPage =
@@ -358,7 +386,7 @@ function BatchBar({
           {t("skillLibrary.page.selection.selectAll", { count: page.total })}
         </Button>
       ) : null}
-      <Button onClick={onClear} size="sm" variant="ghost">
+      <Button disabled={checkSecurityPending} onClick={onClear} size="sm" variant="ghost">
         {t("skillLibrary.page.selection.clear")}
       </Button>
       {/* 高频操作、管理操作与破坏性删除分组呈现。 */}
@@ -390,6 +418,54 @@ function BatchBar({
               {t("skillLibrary.page.batch.removeCombinations")}
             </Button>
           </>
+        ) : null}
+        {securityFacade.runBasicCheck ? (
+          <Button
+            disabled={checkSecurityPending}
+            onClick={() => onSecurityCheck("basic")}
+            size="sm"
+            variant="ghost"
+          >
+            {checkSecurityActive?.kind === "basic"
+              ? t("skillLibrary.page.batchSecurityChecks.basicPending")
+              : t("skillLibrary.page.batchSecurityChecks.basic")}
+          </Button>
+        ) : null}
+        {securityFacade.runLlmCheck ? (
+          checkSecurityActive?.kind === "llm" &&
+          checkSecurityActive.currentSkillId &&
+          securityFacade.cancelLlmCheck &&
+          securityFacade.listRunningLlmChecks ? (
+            <>
+              <Button
+                disabled={!checkSecurityActive.operationId || checkSecurityActive.cancelRequested}
+                loading={checkSecurityActive.cancelRequested}
+                onClick={onCancelSecurityCheck}
+                size="sm"
+                title={!checkSecurityActive.operationId ? t("security.llm.cancelWaiting") : undefined}
+                variant="danger"
+              >
+                {checkSecurityActive.cancelRequested
+                  ? t("skillLibrary.page.batchSecurityChecks.llmCancelPending")
+                  : t("skillLibrary.page.batchSecurityChecks.llmCancel")}
+              </Button>
+              {checkSecurityActive.cancelError ? <span role="alert">{checkSecurityActive.cancelError}</span> : null}
+            </>
+          ) : (
+            <Button
+              disabled={checkSecurityPending || llmCapability.state === "loading"}
+              onClick={() => onSecurityCheck("llm", llmCapability)}
+              size="sm"
+              title={llmCapability.state === "loading" ? t("settings.llm.status.loading") : undefined}
+              variant="ghost"
+            >
+              {checkSecurityActive?.kind === "llm"
+                ? t("skillLibrary.page.batchSecurityChecks.llmPending")
+                : llmCapability.state === "loading"
+                  ? t("skillLibrary.page.batchSecurityChecks.llmCapabilityLoading")
+                  : t("skillLibrary.page.batchSecurityChecks.llm")}
+            </Button>
+          )
         ) : null}
         {onCheckUpdates ? (
           <Button
@@ -428,7 +504,7 @@ export function SkillLibraryPage({
   removalFacade = nativeRemovalFacade,
   refreshSnapshot,
   securityFacade,
-  llmFacade,
+  llmFacade = nativeLlmFacade,
   tracker = operationTracker,
 }: SkillLibraryPageProps): JSX.Element {
   const { t } = useTranslation();
@@ -476,6 +552,11 @@ export function SkillLibraryPage({
   const [batchCollectionAction, setBatchCollectionAction] = useState<BatchCombinationAction>();
   const [batchCollectionPending, setBatchCollectionPending] = useState(false);
   const [batchCollectionError, setBatchCollectionError] = useState<string>();
+  const [batchSecurityActive, setBatchSecurityActive] = useState<BatchSecurityActive>();
+  const batchSecurityActiveRef = useRef<BatchSecurityActive>();
+  const batchSecurityHandleRef = useRef<TrackedOperationHandle | null>(null);
+  const batchSecurityCancelledRef = useRef(false);
+  const batchSecurityCancelRequestRef = useRef<Promise<void> | null>(null);
   // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
   const [toolbarOpen, setToolbarOpen] = useState(true);
   // M-21 IA 重排：高级筛选带（工具栏第二 band）开合；窄窗口默认折叠，
@@ -498,6 +579,67 @@ export function SkillLibraryPage({
   const [batchRemovalError, setBatchRemovalError] = useState<string>();
   const [sourceUpdatesPending, setSourceUpdatesPending] = useState(false);
   const defaultPageRetry = queryClient.getDefaultOptions().queries?.retry;
+
+  const updateBatchSecurityActive = (active?: BatchSecurityActive) => {
+    batchSecurityActiveRef.current = active;
+    setBatchSecurityActive(active);
+  };
+
+  useEffect(() => {
+    const active = batchSecurityActive;
+    const listRunning = securityFacade.listRunningLlmChecks;
+    if (
+      active?.kind !== "llm" ||
+      !active.currentSkillId ||
+      !active.currentVersionId ||
+      active.operationId ||
+      !listRunning
+    ) return undefined;
+    const targetSkillId = active.currentSkillId;
+    const targetVersionId = active.currentVersionId;
+
+    let listening = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      while (listening) {
+        try {
+          const runs = await listRunning();
+          if (!listening) return;
+          const match = runs.find((run) =>
+            run.skillId === targetSkillId && run.versionId === targetVersionId,
+          );
+          if (match) {
+            setBatchSecurityActive((current) => {
+              if (
+                current?.kind !== "llm" ||
+                current.currentSkillId !== targetSkillId ||
+                current.currentVersionId !== targetVersionId ||
+                current.operationId
+              ) return current;
+              const correlated: BatchSecurityActive = { ...current, operationId: match.operationId };
+              batchSecurityActiveRef.current = correlated;
+              return correlated;
+            });
+            batchSecurityHandleRef.current?.correlate(
+              match.operationId,
+              `/library/${encodeURIComponent(targetSkillId)}/security?${new URLSearchParams({ version: targetVersionId })}`,
+            );
+            return;
+          }
+        } catch {
+          // 发现运行中的操作 ID 仅用于取消和关联；读取失败不影响检查继续执行。
+        }
+        await new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, 300);
+        });
+      }
+    };
+    void poll();
+    return () => {
+      listening = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [batchSecurityActive, securityFacade.listRunningLlmChecks]);
 
   const clearBatchAnnouncement = () => {
     batchRequestRef.current += 1;
@@ -1054,6 +1196,233 @@ export function SkillLibraryPage({
     }
   };
 
+  const cancelBatchSecurityCheck = async () => {
+    const active = batchSecurityActiveRef.current;
+    const cancelCheck = securityFacade.cancelLlmCheck;
+    if (
+      active?.kind !== "llm" ||
+      !active.operationId ||
+      active.cancelRequested ||
+      !cancelCheck
+    ) return;
+
+    const handle = batchSecurityHandleRef.current;
+    updateBatchSecurityActive({ ...active, cancelError: undefined, cancelRequested: true });
+    handle?.requestCancel();
+    const request = (async () => {
+      try {
+        await cancelCheck(active.operationId!);
+        batchSecurityCancelledRef.current = true;
+        handle?.markCancelled();
+      } catch (reason: unknown) {
+        handle?.cancelRequestFailed();
+        const current = batchSecurityActiveRef.current;
+        if (
+          current?.kind === "llm" &&
+          current.currentSkillId === active.currentSkillId &&
+          current.currentVersionId === active.currentVersionId
+        ) {
+          updateBatchSecurityActive({
+            ...current,
+            cancelError: describeError(reason, "security.errors.generic"),
+            cancelRequested: false,
+          });
+        }
+      }
+    })();
+    batchSecurityCancelRequestRef.current = request;
+    await request;
+    if (batchSecurityCancelRequestRef.current === request) {
+      batchSecurityCancelRequestRef.current = null;
+    }
+  };
+
+  const startBatchSecurityCheck = async (
+    kind: "basic" | "llm",
+    capability?: LlmCapabilityState,
+  ) => {
+    if (selection.kind === "none" || selectionCount(selection) <= 0 || batchSecurityActiveRef.current) return;
+    const runCheck = kind === "basic" ? securityFacade.runBasicCheck : securityFacade.runLlmCheck;
+    if (!runCheck || (kind === "llm" && (!capability || capability.state === "loading"))) return;
+
+    batchSecurityCancelledRef.current = false;
+    batchSecurityCancelRequestRef.current = null;
+    batchSecurityHandleRef.current = null;
+    updateBatchSecurityActive({ kind, cancelRequested: false });
+    try {
+      let currentCapability = capability;
+      if (kind === "llm" && currentCapability?.state === "error") {
+        const refreshed = await currentCapability.query.refetch();
+        if (refreshed.isError || !refreshed.data) {
+          currentCapability = { state: "error", query: refreshed };
+        } else {
+          const readiness = evaluateLlmCapability(refreshed.data, "safety_check", {
+            requiredTestLevel: "structured",
+            preconditionsMet: Boolean(runCheck),
+          });
+          currentCapability = {
+            state: readiness.ready ? "ready" : "blocked",
+            readiness,
+            query: refreshed,
+          };
+        }
+      }
+      const selected = await materializeSelectedSkills(true);
+      if (selected.length === 0) {
+        notify({
+          source: "library",
+          kind: "batch-security-check",
+          title: t("skillLibrary.page.batchSecurityChecks.emptySelection"),
+          tone: "warning",
+        });
+        return;
+      }
+      const outcomes: BatchSecurityCheckOutcome[] = [];
+      const executable: Array<{ id: string; name: string; currentVersionId: string }> = [];
+      for (const skill of selected) {
+        if (skill.versionReadError) {
+          outcomes.push({
+            id: skill.id,
+            label: skill.name,
+            message: skill.versionReadError,
+            status: "failed",
+          });
+        } else if (!skill.currentVersionId) {
+          outcomes.push({
+            id: skill.id,
+            label: skill.name,
+            message: t("skillLibrary.page.batchSecurityChecks.noCurrentVersion"),
+            status: "restricted",
+          });
+        } else if (kind === "llm" && currentCapability?.state !== "ready") {
+          outcomes.push({ id: skill.id, label: skill.name, status: "restricted" });
+        } else {
+          executable.push({ id: skill.id, name: skill.name, currentVersionId: skill.currentVersionId });
+        }
+      }
+
+      if (executable.length > 0) {
+        await runTrackedOperation({
+          canCancel: kind === "llm" && Boolean(securityFacade.cancelLlmCheck && securityFacade.listRunningLlmChecks),
+          tracker,
+          kind: kind === "basic" ? "basic_check" : "ai_check",
+          label: t(kind === "basic" ? "security.tracker.basicCheckLabel" : "security.tracker.aiCheckLabel"),
+          total: selected.length,
+          notifications: null,
+          translate: (key, options) => String(t(key as never, options as never)),
+          successNotice: () => null,
+          errorNotice: () => null,
+          summarize: (settled: BatchSecurityCheckOutcome[]) => ({
+            succeeded: settled.filter((outcome) => outcome.status === "succeeded").length,
+            failed: settled.filter((outcome) => outcome.status === "failed").length,
+            skipped: settled.filter((outcome) => outcome.status === "restricted" || outcome.status === "cancelled").length,
+          }),
+          run: async (handle) => {
+            batchSecurityHandleRef.current = handle;
+            let completed = outcomes.length;
+            handle.progress(completed, selected.length);
+            for (let index = 0; index < executable.length; index += 1) {
+              const skill = executable[index];
+              if (kind === "llm" && batchSecurityCancelledRef.current) {
+                outcomes.push(...executable.slice(index).map((notRun) => ({
+                  id: notRun.id,
+                  label: notRun.name,
+                  status: "cancelled" as const,
+                })));
+                completed = selected.length;
+                handle.progress(completed, selected.length);
+                break;
+              }
+
+              if (kind === "llm") {
+                updateBatchSecurityActive({
+                  kind,
+                  cancelRequested: false,
+                  currentSkillId: skill.id,
+                  currentVersionId: skill.currentVersionId,
+                });
+              }
+              let failure: unknown;
+              try {
+                await runCheck(skill.id, skill.currentVersionId);
+              } catch (reason: unknown) {
+                failure = reason;
+              }
+              const cancelRequest = batchSecurityCancelRequestRef.current;
+              if (kind === "llm" && cancelRequest) await cancelRequest;
+              if (kind === "llm" && batchSecurityCancelledRef.current) {
+                outcomes.push({ id: skill.id, label: skill.name, status: "cancelled" });
+                outcomes.push(...executable.slice(index + 1).map((notRun) => ({
+                  id: notRun.id,
+                  label: notRun.name,
+                  status: "cancelled" as const,
+                })));
+                completed = selected.length;
+                handle.progress(completed, selected.length);
+                break;
+              }
+              outcomes.push(failure === undefined
+                ? { id: skill.id, label: skill.name, status: "succeeded" }
+                : {
+                    id: skill.id,
+                    label: skill.name,
+                    message: describeError(failure, "security.errors.generic"),
+                    status: "failed",
+                  });
+              completed += 1;
+              handle.progress(completed, selected.length);
+            }
+            return outcomes;
+          },
+        });
+
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+          ...executable.map((skill) => queryClient.invalidateQueries({ queryKey: skillDetailKeys.summary(skill.id) })),
+        ]);
+      }
+
+      const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
+      const restrictedCount = outcomes.filter((outcome) => outcome.status === "restricted").length;
+      const cancelledCount = outcomes.filter((outcome) => outcome.status === "cancelled").length;
+      notify({
+        source: "library",
+        detailNode: (
+          <BatchSecurityCheckSummary
+            capability={kind === "llm" ? currentCapability : undefined}
+            executableCount={executable.length}
+            kind={kind}
+            outcomes={outcomes}
+            scopeCount={selected.length}
+          />
+        ),
+        kind: "batch-security-check",
+        title: t(
+          failedCount > 0
+            ? "skillLibrary.page.batchSecurityChecks.partialFailure"
+            : cancelledCount > 0
+              ? "skillLibrary.page.batchSecurityChecks.cancelled"
+              : restrictedCount > 0
+                ? "skillLibrary.page.batchSecurityChecks.restricted"
+                : "skillLibrary.page.batchSecurityChecks.done",
+          { kind: t(`skillLibrary.page.batchSecurityChecks.kind.${kind}`) },
+        ),
+        tone: failedCount > 0 ? "danger" : cancelledCount > 0 ? "info" : restrictedCount > 0 ? "warning" : "success",
+      });
+    } catch (reason: unknown) {
+      notify({
+        source: "library",
+        kind: "batch-security-check",
+        title: describeError(reason, "skillLibrary.page.batch.error"),
+        tone: "danger",
+      });
+    } finally {
+      batchSecurityHandleRef.current = null;
+      batchSecurityCancelRequestRef.current = null;
+      updateBatchSecurityActive(undefined);
+    }
+  };
+
   const startBatchUpdateCheck = () => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     if (!facade.checkSourceUpdates) return;
@@ -1112,16 +1481,39 @@ export function SkillLibraryPage({
     );
   };
 
-  const materializeSelectedSkills = async (): Promise<Array<{ id: string; name: string }>> => {
+  const materializeSelectedSkills = async (includeCurrentVersion = false): Promise<Array<{
+    currentVersionId?: string;
+    id: string;
+    name: string;
+    versionReadError?: string;
+  }>> => {
     if (selection.kind === "explicit") {
-      const names = new Map(pageQuery.data?.items.map((item) => [item.id, item.name]));
-      return Promise.all(selection.skillIds.map(async (id) => ({
-        id,
-        name: names.get(id) ?? (await facade.getSkillQuickView(id)).name,
-      })));
+      const rows = new Map(pageQuery.data?.items.map((item) => [item.id, item]));
+      return Promise.all(selection.skillIds.map(async (id) => {
+        const row = rows.get(id);
+        if (row && (!includeCurrentVersion || row.currentVersionId)) {
+          return { currentVersionId: row.currentVersionId, id, name: row.name };
+        }
+        if (!includeCurrentVersion && row) return { id, name: row.name };
+        try {
+          const view = await facade.getSkillQuickView(id);
+          return {
+            currentVersionId: row?.currentVersionId ?? view.currentVersionId,
+            id,
+            name: row?.name ?? view.name,
+          };
+        } catch (reason: unknown) {
+          if (!includeCurrentVersion) throw reason;
+          return {
+            id,
+            name: row?.name ?? id,
+            versionReadError: describeError(reason, "skillLibrary.page.batch.error"),
+          };
+        }
+      }));
     }
     if (selection.kind === "none") return [];
-    const items: Array<{ id: string; name: string }> = [];
+    const items: Array<{ currentVersionId?: string; id: string; name: string }> = [];
     let scanned = 0;
     let pageNumber = 1;
     while (true) {
@@ -1133,8 +1525,22 @@ export function SkillLibraryPage({
       });
       scanned += result.items.length;
       items.push(...filterSelectedItems(selection, result.items)
-        .map((item) => ({ id: item.id, name: item.name })));
-      if (scanned >= result.total || result.items.length === 0) return items;
+        .map((item) => ({ currentVersionId: item.currentVersionId, id: item.id, name: item.name })));
+      if (scanned >= result.total || result.items.length === 0) {
+        if (!includeCurrentVersion) return items;
+        return Promise.all(items.map(async (item) => {
+          if (item.currentVersionId) return item;
+          try {
+            const view = await facade.getSkillQuickView(item.id);
+            return { ...item, currentVersionId: view.currentVersionId };
+          } catch (reason: unknown) {
+            return {
+              ...item,
+              versionReadError: describeError(reason, "skillLibrary.page.batch.error"),
+            };
+          }
+        }));
+      }
       pageNumber += 1;
     }
   };
@@ -1794,9 +2200,13 @@ export function SkillLibraryPage({
           barRef={setBatchBarElement}
           canEditCombinations={Boolean(facade.listCombinations && facade.updateCombination)}
           canEditTags={Boolean(facade.saveSkillMetadata)}
+          checkSecurityActive={batchSecurityActive}
           checkUpdatesPending={sourceUpdatesPending}
+          llmFacade={llmFacade}
           onDispatch={startBatchDispatch}
           onCheckUpdates={facade.checkSourceUpdates ? startBatchUpdateCheck : undefined}
+          onCancelSecurityCheck={() => void cancelBatchSecurityCheck()}
+          onSecurityCheck={(kind, capability) => void startBatchSecurityCheck(kind, capability)}
           onCollectionAction={(action) => {
             setBatchCollectionError(undefined);
             setBatchCollectionAction(action);
@@ -1816,6 +2226,7 @@ export function SkillLibraryPage({
           onStartExport={startBatchExport}
           onTagAction={setBatchTagAction}
           page={page}
+          securityFacade={securityFacade}
           selection={selectedBatchTarget}
         />
       ) : null}

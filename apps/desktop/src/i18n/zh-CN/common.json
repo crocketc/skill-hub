@@ -1461,6 +1461,33 @@
         "done": "批量标签更新完成",
         "partialFailure": "批量标签更新部分失败"
       },
+      "batchSecurityChecks": {
+        "basic": "批量运行基础检查",
+        "basicPending": "正在批量运行基础检查…",
+        "llm": "批量运行 AI 检查",
+        "llmPending": "正在批量运行 AI 检查…",
+        "llmCancel": "取消批量 AI 检查",
+        "llmCancelPending": "正在请求取消…",
+        "llmCapabilityLoading": "正在读取 AI 能力…",
+        "kind": {
+          "basic": "基础检查",
+          "llm": "AI 检查"
+        },
+        "heading": "批量{{kind}}结果",
+        "counts": "范围 {{scope}} 项 · 可执行 {{executable}} 项 · 受限 {{restricted}} 项 · 成功 {{succeeded}} 项 · 失败 {{failed}} 项 · 已取消 {{cancelled}} 项",
+        "status": {
+          "succeeded": "成功",
+          "restricted": "受限",
+          "failed": "失败",
+          "cancelled": "已取消"
+        },
+        "noCurrentVersion": "无法读取此技能的当前版本，因此没有运行检查。",
+        "emptySelection": "所选范围中已没有可检查的技能，请重新选择。",
+        "done": "批量{{kind}}完成",
+        "restricted": "批量{{kind}}有受限项",
+        "partialFailure": "批量{{kind}}部分失败",
+        "cancelled": "批量{{kind}}已取消"
+      },
       "batchCollections": {
         "done": "批量组合调整完成",
         "partialFailure": "批量组合调整部分失败",
@@ -2365,6 +2392,7 @@
       "run": "运行 AI 检查",
       "running": "AI 检查进行中，结果将在完成后展示。",
       "cancel": "取消检查",
+      "cancelWaiting": "正在查找运行中的 AI 检查…",
       "cancelFailed": "取消请求未成功：{{message}}",
       "providerMissing": "未配置 LLM 提供商，AI 检查不可用",
       "providerMissingPrototype": "可在设置中的网络与 AI 配置提供商；未配置提供商时不会发送内容。",

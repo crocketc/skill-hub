@@ -15,6 +15,8 @@ import baseCssRaw from "../../styles/base.css?raw";
 import { AppNotificationsProvider } from "../../ui/notifications";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import type { SecurityFacade } from "../security/api";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import {
   LibraryViewModeProvider,
   LibraryViewModeSwitch,
@@ -42,6 +44,7 @@ interface RenderLibraryOptions {
   facade: SkillLibraryFacade;
   initialEntry?: InitialEntry;
   onOpenDiscovery?: () => void;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   queryRetry?: boolean | number;
   removalFacade?: RemovalFacade;
   securityFacade?: SecurityFacade;
@@ -60,6 +63,7 @@ interface RenderedLibrary {
 function renderLibrary({
   facade,
   initialEntry = "/library",
+  llmFacade = createReadyLlmStatusFacade(),
   onOpenDiscovery,
   queryRetry = false,
   removalFacade,
@@ -77,7 +81,7 @@ function renderLibrary({
   });
   const router = createMemoryRouter(
     [
-      { path: "/library", element: <SkillLibraryPage facade={facade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} securityFacade={securityFacade ?? createPreviewSecurityFacade()} tracker={tracker} /> },
+      { path: "/library", element: <SkillLibraryPage facade={facade} llmFacade={llmFacade} onOpenDiscovery={onOpenDiscovery} removalFacade={removalFacade} securityFacade={securityFacade ?? createPreviewSecurityFacade()} tracker={tracker} /> },
       // P1-11：卡片“查看”按钮跳完整详情页。
       { path: "/library/:skillId", element: <SkillDetailRouteProbe /> },
       { path: "/deploy", element: <p>Batch deployment</p> },
@@ -166,6 +170,213 @@ describe("SkillLibraryPage", () => {
     expect(screen.getByText("Prepared for safety review")).toBeVisible();
     expect(facade.calls.emitBatchIntent).toHaveLength(0);
     expect(screen.queryByRole("button", { name: "Run security check" })).not.toBeInTheDocument();
+  });
+
+  it("runs batch basic checks against each current version and reports failures per skill", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [MOCK_SKILL_PDF, { ...MOCK_SKILL_DOCX, currentVersionId: "docx-version-2" }],
+      total: 2,
+    });
+    const runBasicCheck = vi.fn(async (skillId: string) => {
+      if (skillId === "skill-pdf") throw new Error("scanner unavailable");
+    });
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runBasicCheck,
+    };
+    const tracker = createOperationTracker();
+    renderLibrary({ facade, securityFacade, llmFacade: createReadyLlmStatusFacade(), tracker });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    fireEvent.click(within(batchBar).getByRole("button", { name: "Batch run basic check" }));
+
+    await waitFor(() => expect(runBasicCheck).toHaveBeenCalledTimes(2));
+    expect(runBasicCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1");
+    expect(runBasicCheck).toHaveBeenCalledWith("skill-docx", "docx-version-2");
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(within(summary).getByText("PDF Reader")).toBeVisible();
+    expect(within(summary).getByText("DOCX Writer")).toBeVisible();
+    expect(within(summary).getByText("scanner unavailable")).toBeVisible();
+    expect(within(summary).getByText(/2 executable .*1 succeeded .*1 failed/)).toBeVisible();
+    expect(tracker.hasRunningKind("basic_check")).toBe(false);
+    expect(tracker.getSnapshot()[0]).toMatchObject({ status: "partial", completed: 2, total: 2 });
+  });
+
+  it("reports AI capability restrictions without sending any selected skill content", async () => {
+    const facade = createMockSkillLibraryFacade({ pageItems: [MOCK_SKILL_PDF], total: 1 });
+    const runLlmCheck = vi.fn(async () => undefined);
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runLlmCheck,
+    };
+    const llmFacade = createReadyLlmStatusFacade({
+      capabilities: {
+        safety_check: false,
+        semantic_duplicate: true,
+        description_translation: true,
+        online_search_assist: true,
+      },
+    });
+    renderLibrary({ facade, securityFacade, llmFacade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    const aiCheck = await within(batchBar).findByRole("button", { name: "Batch run AI check" });
+    await waitFor(() => expect(aiCheck).toBeEnabled());
+    fireEvent.click(aiCheck);
+
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(within(summary).getByText("This AI capability is turned off.")).toBeVisible();
+    expect(within(summary).getByText("PDF Reader")).toBeVisible();
+    expect(within(summary).getByText("Restricted")).toBeVisible();
+    expect(within(summary).getByText(/1 in scope .*0 executable .*1 restricted/)).toBeVisible();
+    expect(runLlmCheck).not.toHaveBeenCalled();
+  });
+
+  it("rechecks shared AI readiness after a read error before running selected Skills", async () => {
+    const facade = createMockSkillLibraryFacade({ pageItems: [MOCK_SKILL_PDF], total: 1 });
+    const runLlmCheck = vi.fn(async () => undefined);
+    const readyStatus = createReadyLlmStatusFacade();
+    const readRuntimeStatus = vi.fn()
+      .mockRejectedValueOnce(new Error("status unavailable"))
+      .mockImplementation(() => readyStatus.readRuntimeStatus());
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runLlmCheck,
+    };
+    renderLibrary({ facade, securityFacade, llmFacade: { readRuntimeStatus } });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    const aiCheck = await within(batchBar).findByRole("button", { name: "Batch run AI check" });
+    await waitFor(() => expect(aiCheck).toBeEnabled());
+    fireEvent.click(aiCheck);
+
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(within(summary).getByText(/1 succeeded/)).toBeVisible();
+    expect(readRuntimeStatus).toHaveBeenCalledTimes(2);
+    expect(runLlmCheck).toHaveBeenCalledWith("skill-pdf", "fixture-version-1");
+  });
+
+  it("cancels the current batch AI check and does not start remaining Skills", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [
+        { ...MOCK_SKILL_PDF, id: "a-skill-pdf", name: "Aardvark PDF" },
+        { ...MOCK_SKILL_DOCX, id: "z-skill-docx", name: "Zebra DOCX", currentVersionId: "docx-version-2" },
+      ],
+      total: 2,
+    });
+    const gate = deferred<void>();
+    const runLlmCheck = vi.fn(async (skillId: string) => {
+      if (skillId === "a-skill-pdf") {
+        await gate.promise;
+        throw new Error("operation cancelled");
+      }
+    });
+    const cancelLlmCheck = vi.fn(async () => gate.resolve());
+    const listRunningLlmChecks = vi.fn(async () => [
+      { skillId: "a-skill-pdf", versionId: "fixture-version-1", operationId: "op-batch-ai" },
+    ]);
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runLlmCheck,
+      cancelLlmCheck,
+      listRunningLlmChecks,
+    };
+    const tracker = createOperationTracker();
+    renderLibrary({ facade, securityFacade, llmFacade: createReadyLlmStatusFacade(), tracker });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Aardvark PDF" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Zebra DOCX" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    fireEvent.click(await within(batchBar).findByRole("button", { name: "Batch run AI check" }));
+    const cancel = await within(batchBar).findByRole("button", { name: "Cancel batch AI check" });
+    await waitFor(() => expect(runLlmCheck).toHaveBeenCalledWith("a-skill-pdf", "fixture-version-1"));
+    await waitFor(() => expect(cancel).toBeEnabled());
+    fireEvent.click(cancel);
+
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(cancelLlmCheck).toHaveBeenCalledWith("op-batch-ai");
+    expect(within(summary).getByText("Aardvark PDF")).toBeVisible();
+    expect(within(summary).getByText("Zebra DOCX")).toBeVisible();
+    expect(within(summary).getAllByText("Cancelled")).toHaveLength(2);
+    expect(runLlmCheck).toHaveBeenCalledTimes(1);
+    expect(runLlmCheck).not.toHaveBeenCalledWith("z-skill-docx", "docx-version-2");
+    expect(tracker.hasRunningKind("ai_check")).toBe(false);
+    expect(tracker.getSnapshot()[0]?.status).toBe("cancelled");
+  });
+
+  it("keeps a batch AI check running when its cancellation request is rejected", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [
+        { ...MOCK_SKILL_PDF, id: "a-skill-pdf", name: "Aardvark PDF" },
+        { ...MOCK_SKILL_DOCX, id: "z-skill-docx", name: "Zebra DOCX", currentVersionId: "docx-version-2" },
+      ],
+      total: 2,
+    });
+    const gate = deferred<void>();
+    const runLlmCheck = vi.fn(async (skillId: string) => {
+      if (skillId === "a-skill-pdf") {
+        await gate.promise;
+        throw new Error("scanner failed");
+      }
+    });
+    const cancelLlmCheck = vi.fn(async () => {
+      throw new Error("cancel endpoint unavailable");
+    });
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runLlmCheck,
+      cancelLlmCheck,
+      listRunningLlmChecks: vi.fn(async () => [
+        { skillId: "a-skill-pdf", versionId: "fixture-version-1", operationId: "op-batch-ai" },
+      ]),
+    };
+    const tracker = createOperationTracker();
+    renderLibrary({ facade, securityFacade, llmFacade: createReadyLlmStatusFacade(), tracker });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Aardvark PDF" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Zebra DOCX" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    fireEvent.click(await within(batchBar).findByRole("button", { name: "Batch run AI check" }));
+    const cancel = await within(batchBar).findByRole("button", { name: "Cancel batch AI check" });
+    await waitFor(() => expect(runLlmCheck).toHaveBeenCalledWith("a-skill-pdf", "fixture-version-1"));
+    await waitFor(() => expect(cancel).toBeEnabled());
+    fireEvent.click(cancel);
+
+    expect(await within(batchBar).findByRole("alert")).toHaveTextContent("cancel endpoint unavailable");
+    await act(async () => gate.reject(new Error("scanner failed")));
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(runLlmCheck).toHaveBeenCalledTimes(2);
+    expect(runLlmCheck).toHaveBeenCalledWith("z-skill-docx", "docx-version-2");
+    expect(within(summary).getByText("scanner failed")).toBeVisible();
+    expect(within(summary).getByText("Zebra DOCX")).toBeVisible();
+    expect(tracker.getSnapshot()[0]?.status).toBe("partial");
+  });
+
+  it("marks a Skill without a readable current version as restricted and does not run a check", async () => {
+    const facade = createMockSkillLibraryFacade({
+      pageItems: [{ ...MOCK_SKILL_PDF, currentVersionId: undefined }],
+      total: 1,
+    });
+    const runBasicCheck = vi.fn(async () => undefined);
+    const tracker = createOperationTracker();
+    const securityFacade: SecurityFacade = {
+      ...createPreviewSecurityFacade(),
+      runBasicCheck,
+    };
+    renderLibrary({ facade, securityFacade, tracker });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    const batchBar = await screen.findByRole("complementary", { name: "Batch actions" });
+    fireEvent.click(within(batchBar).getByRole("button", { name: "Batch run basic check" }));
+
+    const summary = await screen.findByTestId("batch-security-check-summary");
+    expect(within(summary).getByText("The current version could not be read, so no check was run for this Skill.")).toBeVisible();
+    expect(within(summary).getByText(/1 in scope .*0 executable .*1 restricted/)).toBeVisible();
+    expect(runBasicCheck).not.toHaveBeenCalled();
+    expect(tracker.getSnapshot()).toHaveLength(0);
   });
 
   it("keeps source review preparation editable and never reapplies cleared selection", async () => {
@@ -815,6 +1026,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     );
 
     const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    await within(batchBar).findByRole("button", { name: "Batch run AI check" });
     const actions = batchBar.querySelector(".sh-skill-library__batch-actions");
     expect(actions).toBeInTheDocument();
     expect(
@@ -822,12 +1034,14 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual([
-      // 当前已接通：派发、标签、组合变更与导出向导。
+      // 已接通：派发、标签、组合、安全检查与导出向导。
       "Add to…",
       "Add tags",
       "Remove tags",
       "Batch add to combinations",
       "Batch remove from combinations",
+      "Batch run basic check",
+      "Batch run AI check",
       "Start export",
       // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills from library",
