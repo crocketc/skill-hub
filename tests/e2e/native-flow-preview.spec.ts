@@ -177,6 +177,8 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
     const combinationsState = [{ id: "combo-1", name: "Docs bundle", members: ["pdf-reader"] }];
     const combinationCommands: string[] = [];
     (window as unknown as { __combinationCommands: string[] }).__combinationCommands = combinationCommands;
+    const removalCommands: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    (window as unknown as { __removalCommands: typeof removalCommands }).__removalCommands = removalCommands;
 
     const ok = (type: string, payload: unknown) => ({ type, payload });
     type PreviewQuery = {
@@ -291,7 +293,10 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           case "search_online_sources": return ok("source_search_page", onlinePage);
           case "discover_repo_skills": return ok("repo_discovery_report", repoReport);
           case "list_deployments": return ok("deployments", deployments);
-          case "list_deployment_targets": return ok("deployment_targets", deploymentTargets);
+          case "list_deployment_targets": return ok("deployment_targets", deploymentTargets.map((target) => ({
+            ...target,
+            physical_identity_verified: true,
+          })));
           case "list_skills": return ok("skill_page", { items: skillItems, total: skillItems.length, page: query.payload.page, page_size: query.payload.page_size, tags: ["documents", "automation"] });
           case "get_deployment_relations": return ok("deployment_relations", deployments);
           case "list_skill_operations": return ok("skill_operations", skillOperations);
@@ -483,6 +488,9 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
       }
       if (command === "execute_command") {
         const action = args.command!;
+        if (action.type === "prepare_delete_skill" || action.type === "commit_delete_skill" || action.type === "cancel_delete_skill") {
+          removalCommands.push({ type: action.type, payload: action.payload as Record<string, unknown> });
+        }
         if (action.type === "create_combination" || action.type === "update_combination" || action.type === "delete_combination" || action.type === "rename_combination") {
           combinationCommands.push(action.type);
         }
@@ -552,6 +560,51 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           // create 只带 preview_id + 决定并返回 export_result。
           case "prepare_standard_export": return ok("export_preview", { selection: { skills: ["pdf-reader"] }, versions: "current", skills: [{ skill_id: "pdf-reader", version_id: "v1", display_name: "PDF Reader" }], sensitive_items: [{ skill_id: "pdf-reader", version_id: "v1", path: "SKILL.md", reason: "contains credential-like content" }], preview_id: "export-preview-1", expires_at: new Date(Date.now() + 600000).toISOString(), confirmation_fingerprint: "export-fp-1" });
           case "create_standard_export": return ok("export_result", { path: "C:/Preview/skillhub-export.zip", skills_exported: 1 });
+          case "prepare_delete_skill": {
+            const skillId = String(action.payload.skill_id);
+            const hasLink = skillId === "pdf-reader";
+            return ok("removal_impact", {
+              operation_id: `delete-${skillId}`,
+              skill_id: skillId,
+              deployments: hasLink ? [{
+                id: "dep-delete-pdf",
+                skill_id: skillId,
+                version_id: "v1",
+                target_id: "codex-target",
+                state: "deployed",
+                mode: "symbolic_link",
+                managed: true,
+                runtime_name: "pdf-reader",
+                expected_hash: "sha256:delete-pdf",
+                observed_hash: "sha256:delete-pdf",
+              }] : [],
+              dependencies: [],
+              project_configs: [],
+              pinned_versions: [],
+              combinations: [],
+              related_skills: [],
+              unknown_external_references: [],
+              draft_count: 0,
+            });
+          }
+          case "commit_delete_skill": {
+            const operationId = String(action.payload.prepared_delete_id);
+            const centralDeleteFailed = operationId === "delete-pdf-reader";
+            return ok("removal_result", {
+              operation_id: operationId,
+              skill_id: centralDeleteFailed ? "pdf-reader" : "release-notes",
+              state: centralDeleteFailed ? "partially_committed" : "committed",
+              central_skill_deleted: !centralDeleteFailed,
+              recovery_operation_id: centralDeleteFailed ? "op-restore-pdf" : null,
+              central_delete_error: centralDeleteFailed ? "operation_conflict" : null,
+              decisions: centralDeleteFailed ? [{
+                deployment_id: "dep-delete-pdf",
+                status: "applied",
+                error_code: null,
+              }] : [],
+            });
+          }
+          case "cancel_delete_skill": return ok("operation_summary", operationSummary);
           case "resolve_recovery": return ok("operation_summary", operationSummary);
           case "set_ui_preference": return ok("operation_summary", operationSummary);
           case "prepare_deployment": return ok("prepared_deployment", { id: "prepared-deploy-1", operation_id: "op-deploy-1", plan: args.command.payload.plan });
@@ -940,6 +993,47 @@ test("batch export carries its selected Skill into the real wizard flow and repo
   await page.getByRole("button", { name: "Create export" }).click();
 
   await expect(page.getByRole("status").filter({ hasText: "Export created at C:/Preview/skillhub-export.zip (1 Skill exported)" })).toBeVisible();
+});
+
+test("batch deletion carries selected Skills through impact review and shows partial recovery", async ({ page }) => {
+  await installNativePreview(page);
+  await page.goto("/library");
+
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+  await page.getByRole("checkbox", { name: "Select Release Notes" }).check();
+  await page.getByRole("button", { name: "Delete selected Skills from library" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Review batch deletion impact" });
+  await expect(dialog).toContainText("PDF Reader");
+  await expect(dialog).toContainText("Release Notes");
+  await expect(dialog.getByRole("button", { name: "Continue deletion" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Continue deletion" }).click();
+  await dialog.getByRole("button", { name: "Click again to confirm deleting 2 Skills" }).click();
+
+  const outcome = page.getByTestId("removal-outcome-result");
+  await expect(outcome).toBeVisible();
+  await expect(page.getByTestId("removal-outcome-title")).toHaveText("Targets were removed, but the library Skill was not deleted.");
+  const removalCommands = await page.evaluate(() =>
+    (window as unknown as { __removalCommands: Array<{ type: string; payload: Record<string, unknown> }> }).__removalCommands,
+  );
+  const preparedSkillIds = removalCommands
+    .filter((command) => command.type === "prepare_delete_skill")
+    .map((command) => command.payload.skill_id);
+  expect(preparedSkillIds).toEqual(["pdf-reader", "release-notes"]);
+  const commits = removalCommands.filter((command) => command.type === "commit_delete_skill");
+  expect(commits.map((command) => command.payload.prepared_delete_id)).toEqual([
+    "delete-pdf-reader",
+    "delete-release-notes",
+  ]);
+  expect(commits[0].payload.decisions).toEqual([{
+    deployment_id: "dep-delete-pdf",
+    decision: "remove_owned_target",
+    confirm_shared_target_removal: false,
+  }]);
+  await expect(outcome.getByTestId("removal-outcome-recovery")).toBeVisible();
+  await outcome.getByTestId("removal-outcome-recovery").click();
+  await expect(page).toHaveURL(/\/recovery\?operationId=op-restore-pdf$/);
+  await expect(page.getByRole("heading", { name: "Recover the unfinished operation" })).toBeVisible();
 });
 
 test("settings exposes ordered sections and application update boundary", async ({ page }) => {
