@@ -20,6 +20,16 @@ fn deployment_conflict_preview_has_an_explicit_default_and_stable_shape() {
             entry_identity: "file-id:17".to_owned(),
             content_fingerprint: Some("sha256:original".to_owned()),
         }],
+        shared_target: true,
+        shared_consumers_complete: true,
+        shared_consumers: vec![skillhub_core::api::DeploymentConflictConsumer {
+            kind: skillhub_core::api::DeploymentConflictConsumerKind::Agent,
+            consumer_id: "codex".to_owned(),
+            display_name: "Codex".to_owned(),
+            logical_target_ids: vec!["target.codex".to_owned()],
+            active_deployment_ids: Vec::new(),
+        }],
+        shared_consumer_fingerprint: "sha256:shared".to_owned(),
         available_actions: vec![
             skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
             skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy,
@@ -67,7 +77,7 @@ fn deployment_pair_disposition_uses_a_stable_explicit_name_shape() {
 }
 
 #[test]
-fn deployment_pair_selection_keeps_fallback_confirmation_orthogonal() {
+fn deployment_pair_selection_keeps_confirmations_orthogonal() {
     let request = skillhub_core::api::CommitDeploymentPreview {
         preview_id: "preview-1".to_owned(),
         pairs: vec![skillhub_core::api::DeploymentPairSelection {
@@ -76,6 +86,7 @@ fn deployment_pair_selection_keeps_fallback_confirmation_orthogonal() {
                 runtime_name: "pdf-review".to_owned(),
             },
             confirm_fallback: true,
+            confirm_shared_target: true,
         }],
     };
     let json = serde_json::to_value(request).unwrap();
@@ -84,6 +95,7 @@ fn deployment_pair_selection_keeps_fallback_confirmation_orthogonal() {
         serde_json::json!({ "rename_and_deploy": { "runtime_name": "pdf-review" } })
     );
     assert_eq!(json["pairs"][0]["confirm_fallback"], true);
+    assert_eq!(json["pairs"][0]["confirm_shared_target"], true);
 }
 
 #[test]

@@ -993,6 +993,21 @@ export type DeploymentConflictBackup = {
 
 export type DeploymentConflictBackupEntryKind = "directory" | "file" | "symbolic_link" | "directory_link";
 
+/**
+ *  One confirmed Agent or project that can consume a shared deployment
+ *  directory. Active deployment relations stay attached to the consumer so
+ *  preview confirmation covers both directory membership and current usage.
+ */
+export type DeploymentConflictConsumer = {
+	kind: DeploymentConflictConsumerKind,
+	consumer_id: string,
+	display_name: string,
+	logical_target_ids: string[],
+	active_deployment_ids: DeploymentId[],
+};
+
+export type DeploymentConflictConsumerKind = "agent" | "project";
+
 /**  One observed occupant of a requested physical target and runtime name. */
 export type DeploymentConflictOccupant = {
 	ownership: ExistingOwnership,
@@ -1014,6 +1029,10 @@ export type DeploymentConflictOccupant = {
 /**  Server-computed conflict facts and the actions currently safe to offer. */
 export type DeploymentConflictPreview = {
 	occupants: DeploymentConflictOccupant[],
+	shared_target?: boolean,
+	shared_consumers_complete?: boolean,
+	shared_consumers?: DeploymentConflictConsumer[],
+	shared_consumer_fingerprint?: string,
 	available_actions: DeploymentConflictAction[],
 	default_action: DeploymentConflictAction,
 };
@@ -1121,6 +1140,8 @@ export type DeploymentPairSelection = {
 	disposition: DeploymentPairDisposition,
 	/**  `true` accepts the recommended managed-copy fallback. */
 	confirm_fallback: boolean,
+	/**  `true` confirms the complete shared-directory consumer snapshot. */
+	confirm_shared_target?: boolean,
 };
 
 export type DeploymentPlan = {

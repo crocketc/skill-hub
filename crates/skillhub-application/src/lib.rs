@@ -2134,6 +2134,7 @@ struct ConflictReplacementEligibility {
     requested_skill_id: skillhub_core::SkillId,
     mode: Option<DeploymentMode>,
     allowed: bool,
+    shared_target: bool,
 }
 
 impl LocalApplicationFacade {
@@ -12760,9 +12761,8 @@ impl LocalApplicationFacade {
                     }
                 }
             };
-            let shared = discovery_targets
-                .iter()
-                .any(|entry| entry.shared_reference && logical_target_ids.contains(&entry.id));
+            let shared =
+                is_shared_deployment_target(discovery_targets, &physical_id, &logical_target_ids);
             let mut facts = skillhub_core::deployment::DeploymentPairFacts {
                 skill_id: item.skill_id,
                 version_id: version_id.clone(),
@@ -12812,8 +12812,8 @@ impl LocalApplicationFacade {
                     ConflictReplacementEligibility {
                         requested_skill_id: item.skill_id,
                         mode: decision.mode.or(decision.fallback_mode),
-                        allowed: !facts.requires_shared_impact_confirmation
-                            && !security.danger_untrusted,
+                        allowed: !security.danger_untrusted,
+                        shared_target: facts.requires_shared_impact_confirmation,
                     },
                 )?)
             } else {
@@ -12986,7 +12986,7 @@ impl LocalApplicationFacade {
                     .with_param("pair_id", requested.pair_id.clone())
                     .with_action(RecoveryAction::Retry));
             };
-            if !deployment_pair_selection_supported(pair, &requested.disposition) {
+            if !deployment_pair_selection_supported(pair, requested) {
                 return Err(AppError::new(ErrorCode::InvalidInput, Severity::Error)
                     .with_param("field", "disposition")
                     .with_param("pair_id", requested.pair_id.clone())
@@ -14361,9 +14361,11 @@ impl LocalApplicationFacade {
                     .map(|snapshot| snapshot.logical_targets)
                     .unwrap_or_default())
             })?;
-        let shared = discovery_targets
-            .iter()
-            .any(|entry| entry.shared_reference && pair.logical_target_ids.contains(&entry.id));
+        let shared = is_shared_deployment_target(
+            &discovery_targets,
+            expected_physical_target,
+            &pair.logical_target_ids,
+        );
         let security = self
             .with_database("execute.commit_deployment_preview.security", |database| {
                 deployment_security_assessment(database, pair.skill_id, &pair.version_id)
@@ -14431,10 +14433,10 @@ impl LocalApplicationFacade {
             ConflictReplacementEligibility {
                 requested_skill_id: pair.skill_id,
                 mode: rechecked.mode.or(rechecked.fallback_mode),
-                allowed: !shared
-                    && !security.danger_untrusted
+                allowed: !security.danger_untrusted
                     && pair.disposition
                         == skillhub_core::deployment::DeploymentPreviewDisposition::ConflictDecisionRequired,
+                shared_target: shared,
             },
         )?;
         let fingerprint =
@@ -14532,8 +14534,14 @@ impl LocalApplicationFacade {
                 target_path,
                 runtime_name,
                 occupancy,
+                eligibility.shared_target,
             )
         })?;
+        if preview.shared_target
+            && (!preview.shared_consumers_complete || preview.shared_consumers.is_empty())
+        {
+            return Ok(preview);
+        }
         if !eligibility.allowed || eligibility.mode.is_none() || preview.occupants.len() != 1 {
             return Ok(preview);
         }
@@ -20970,6 +20978,7 @@ fn deployment_conflict_preview(
     target_path: &str,
     runtime_name: &str,
     occupancy: &[ExistingDeployment],
+    shared_target: bool,
 ) -> AppResult<skillhub_core::api::DeploymentConflictPreview> {
     let consumers = occupancy
         .iter()
@@ -20979,6 +20988,22 @@ fn deployment_conflict_preview(
     let mut consumers = consumers;
     consumers.sort_by_key(|id| id.to_string());
     consumers.dedup();
+    let (shared_consumers_complete, shared_consumers) = if shared_target {
+        deployment_conflict_shared_consumers(database, physical_target_id, target_path)?
+    } else {
+        (false, Vec::new())
+    };
+    let shared_consumer_fingerprint = if shared_target {
+        let mut hasher = Sha256::new();
+        hasher.update(b"deployment-conflict-shared-consumers-v1\n");
+        hasher.update([u8::from(shared_consumers_complete)]);
+        if let Ok(serialized) = serde_json::to_vec(&shared_consumers) {
+            hasher.update(serialized);
+        }
+        format!("sha256:{:x}", hasher.finalize())
+    } else {
+        String::new()
+    };
     let catalog = database.catalog_repository()?;
     let target_entry = Path::new(target_path).join(runtime_name);
     let occupants = occupancy
@@ -21011,11 +21036,287 @@ fn deployment_conflict_preview(
         .collect();
     Ok(skillhub_core::api::DeploymentConflictPreview {
         occupants,
-        // Task 2 can safely honor skip only. Replacement and rename are added
-        // only after their recovery and relationship paths are implemented.
+        shared_target,
+        shared_consumers_complete,
+        shared_consumers,
+        shared_consumer_fingerprint,
+        // Mutating actions are added below only after the current occupant,
+        // ownership, recovery path, and relationship impact are verified.
         available_actions: vec![skillhub_core::deployment::DeploymentConflictAction::Skip],
         default_action: skillhub_core::deployment::DeploymentConflictAction::Skip,
     })
+}
+
+fn is_shared_deployment_target(
+    targets: &[skillhub_core::agent::LogicalTarget],
+    physical_target_id: &str,
+    selected_target_ids: &[String],
+) -> bool {
+    targets.iter().any(|target| {
+        target.shared_reference
+            && (selected_target_ids.iter().any(|id| id == &target.id)
+                || (target.physical_identity_verified && target.physical_id == physical_target_id))
+    })
+}
+
+fn deployment_conflict_shared_consumers(
+    database: &skillhub_storage::Database,
+    physical_target_id: &str,
+    target_path: &str,
+) -> AppResult<(bool, Vec<skillhub_core::api::DeploymentConflictConsumer>)> {
+    use skillhub_core::agent::{ClientKind, DirectoryObservationStatus, TargetScope};
+    use skillhub_core::api::{DeploymentConflictConsumer, DeploymentConflictConsumerKind};
+
+    let discovery = database
+        .agent_repository()
+        .load()?
+        .unwrap_or_else(empty_discovery);
+    let projects = database.project_repository().list()?;
+    let deployments = database.deployment_repository().list_all()?;
+    let registered_target_paths = database.target_repository().paths_by_id()?;
+    let requested_path_identity = physical_id_for_path(target_path);
+    let physical_targets = discovery
+        .physical_targets
+        .iter()
+        .filter(|target| target.id == physical_target_id);
+    let mut physical_targets = physical_targets.collect::<Vec<_>>();
+    let physical_target = (physical_targets.len() == 1)
+        .then(|| physical_targets.pop())
+        .flatten();
+    let mut complete = requested_path_identity.as_deref() == Some(physical_target_id)
+        && physical_target.is_some_and(|target| {
+            target.exists
+                && target.readable
+                && physical_id_for_path(&target.path).as_deref() == Some(physical_target_id)
+                && paths_resolve_to_same_directory(&target.path, target_path)
+        });
+    let mut consumers = Vec::<DeploymentConflictConsumer>::new();
+    let mut related_target_ids = BTreeSet::<String>::new();
+
+    for target in &discovery.logical_targets {
+        let resolves_to_requested_path = paths_resolve_to_same_directory(&target.path, target_path);
+        let identity_matches = target.physical_identity_verified
+            && target.physical_id == physical_target_id
+            && physical_id_for_path(&target.path).as_deref() == Some(physical_target_id)
+            && resolves_to_requested_path;
+        if (resolves_to_requested_path || target.physical_id == physical_target_id)
+            && !identity_matches
+        {
+            complete = false;
+        }
+        if !identity_matches {
+            continue;
+        }
+        related_target_ids.insert(target.id.clone());
+        if !target.available
+            || !target.exists
+            || !target.readable
+            || target.status != DirectoryObservationStatus::Existing
+        {
+            complete = false;
+            continue;
+        }
+        let roots = discovery
+            .agent_roots
+            .iter()
+            .filter(|root| root.id == target.agent_root_id)
+            .collect::<Vec<_>>();
+        let root_is_verified = roots.len() == 1 && {
+            let root = roots[0];
+            root.profile_id == target.profile_id
+                && root.client_id == target.client_id
+                && root.scope == target.scope
+                && root.status == DirectoryObservationStatus::Existing
+                && root.exists
+                && root.readable
+                && root.physical_identity_verified
+                && root
+                    .physical_id
+                    .as_deref()
+                    .is_some_and(|id| physical_id_for_path(&root.path).as_deref() == Some(id))
+                && path_is_within(&root.path, &target.path)
+        };
+        if !root_is_verified {
+            complete = false;
+        }
+        let instances = discovery
+            .instances
+            .iter()
+            .filter(|instance| {
+                instance.profile_id == target.profile_id && instance.client_id == target.client_id
+            })
+            .collect::<Vec<_>>();
+        let instance_is_verified =
+            instances.len() == 1 && instances[0].kind != ClientKind::SharedDirectory;
+        if !instance_is_verified {
+            complete = false;
+        }
+        if root_is_verified && instance_is_verified {
+            let instance = instances[0];
+            let display_name = if instance.display_name.trim().is_empty() {
+                "未命名 Agent".to_owned()
+            } else {
+                instance.display_name.clone()
+            };
+            add_deployment_conflict_consumer(
+                &mut consumers,
+                DeploymentConflictConsumerKind::Agent,
+                format!("agent:{}:{}", target.profile_id, target.client_id),
+                display_name,
+                Some(&target.id),
+            );
+        }
+
+        if target.scope == TargetScope::Project {
+            let matching_projects = projects
+                .iter()
+                .filter(|project| path_is_within(project.path(), &target.path))
+                .collect::<Vec<_>>();
+            if matching_projects.len() != 1 {
+                complete = false;
+            }
+            for project in matching_projects {
+                if physical_id_for_path(project.path()).as_deref()
+                    != Some(project.physical_id.as_str())
+                {
+                    complete = false;
+                    continue;
+                }
+                add_deployment_conflict_consumer(
+                    &mut consumers,
+                    DeploymentConflictConsumerKind::Project,
+                    format!("project:{}", project.id),
+                    project.name.clone(),
+                    Some(&target.id),
+                );
+            }
+        }
+    }
+
+    if let Some(physical_target) = physical_target {
+        let expected_target_ids = physical_target
+            .logical_target_ids
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if expected_target_ids != related_target_ids {
+            complete = false;
+        }
+    }
+
+    for project in &projects {
+        let current_identity = physical_id_for_path(project.path());
+        if current_identity.as_deref() == Some(physical_target_id) {
+            if project.physical_id != physical_target_id {
+                complete = false;
+                continue;
+            }
+            add_deployment_conflict_consumer(
+                &mut consumers,
+                DeploymentConflictConsumerKind::Project,
+                format!("project:{}", project.id),
+                project.name.clone(),
+                None,
+            );
+        } else if project.physical_id == physical_target_id {
+            // A registered project claims this directory identity, but the
+            // current path no longer confirms it; leave mutations closed.
+            complete = false;
+        }
+    }
+
+    for deployment in deployments.iter().filter(|deployment| {
+        deployment.managed
+            && matches!(
+                deployment.state,
+                DeploymentState::Deployed | DeploymentState::NeedsRecovery
+            )
+    }) {
+        let target_path_matches = registered_target_paths
+            .get(&deployment.target_id)
+            .and_then(physical_id_for_path)
+            .as_deref()
+            == Some(physical_target_id);
+        let relation_matches = deployment.target_id == physical_target_id
+            || related_target_ids.contains(&deployment.target_id)
+            || target_path_matches;
+        if !relation_matches {
+            continue;
+        }
+        let mut matched = false;
+        for consumer in &mut consumers {
+            let tied_to_logical_target = consumer
+                .logical_target_ids
+                .iter()
+                .any(|id| id == &deployment.target_id);
+            if deployment.target_id == physical_target_id
+                || target_path_matches
+                || tied_to_logical_target
+            {
+                consumer.active_deployment_ids.push(deployment.id);
+                matched = true;
+            }
+        }
+        if !matched {
+            complete = false;
+        }
+    }
+
+    for consumer in &mut consumers {
+        consumer.logical_target_ids.sort();
+        consumer.logical_target_ids.dedup();
+        consumer
+            .active_deployment_ids
+            .sort_by_key(|id| id.to_string());
+        consumer.active_deployment_ids.dedup();
+    }
+    consumers.sort_by(|left, right| {
+        format!("{:?}:{}", left.kind, left.consumer_id)
+            .cmp(&format!("{:?}:{}", right.kind, right.consumer_id))
+    });
+    if consumers.is_empty() {
+        complete = false;
+    }
+    Ok((complete, consumers))
+}
+
+fn add_deployment_conflict_consumer(
+    consumers: &mut Vec<skillhub_core::api::DeploymentConflictConsumer>,
+    kind: skillhub_core::api::DeploymentConflictConsumerKind,
+    consumer_id: String,
+    display_name: String,
+    logical_target_id: Option<&str>,
+) {
+    if let Some(consumer) = consumers
+        .iter_mut()
+        .find(|consumer| consumer.kind == kind && consumer.consumer_id == consumer_id)
+    {
+        if let Some(logical_target_id) = logical_target_id {
+            consumer
+                .logical_target_ids
+                .push(logical_target_id.to_owned());
+        }
+    } else {
+        consumers.push(skillhub_core::api::DeploymentConflictConsumer {
+            kind,
+            consumer_id,
+            display_name,
+            logical_target_ids: logical_target_id.map(str::to_owned).into_iter().collect(),
+            active_deployment_ids: Vec::new(),
+        });
+    }
+}
+
+fn path_is_within(root: &str, candidate: &str) -> bool {
+    let root_path = Path::new(root);
+    let candidate_path = Path::new(candidate);
+    match (
+        std::fs::canonicalize(root_path),
+        std::fs::canonicalize(candidate_path),
+    ) {
+        (Ok(root), Ok(candidate)) => candidate.starts_with(root),
+        _ => candidate_path.starts_with(root_path),
+    }
 }
 
 fn conflict_entry_identity(path: &Path) -> Option<String> {
@@ -21696,23 +21997,32 @@ fn pair_result(
 
 fn deployment_pair_selection_supported(
     pair: &skillhub_core::api::DeploymentPairPreview,
-    disposition: &skillhub_core::deployment::DeploymentPairDisposition,
+    selection: &skillhub_core::api::DeploymentPairSelection,
 ) -> bool {
     use skillhub_core::deployment::{
         DeploymentConflictAction as Action, DeploymentPairDisposition as Selection,
     };
-    match disposition {
+    let shared_confirmation_required = pair
+        .conflict
+        .as_ref()
+        .is_some_and(|conflict| conflict.shared_target);
+    match &selection.disposition {
         Selection::Skip | Selection::Exclude => true,
         Selection::Deploy => pair.conflict.is_none(),
-        Selection::ReplaceTarget => pair
-            .conflict
-            .as_ref()
-            .is_some_and(|conflict| conflict.available_actions.contains(&Action::ReplaceTarget)),
-        Selection::RenameAndDeploy { .. } => pair.conflict.as_ref().is_some_and(|conflict| {
-            conflict
-                .available_actions
-                .contains(&Action::RenameAndDeploy)
-        }),
+        Selection::ReplaceTarget => {
+            (!shared_confirmation_required || selection.confirm_shared_target)
+                && pair.conflict.as_ref().is_some_and(|conflict| {
+                    conflict.available_actions.contains(&Action::ReplaceTarget)
+                })
+        }
+        Selection::RenameAndDeploy { .. } => {
+            (!shared_confirmation_required || selection.confirm_shared_target)
+                && pair.conflict.as_ref().is_some_and(|conflict| {
+                    conflict
+                        .available_actions
+                        .contains(&Action::RenameAndDeploy)
+                })
+        }
     }
 }
 
@@ -21727,8 +22037,8 @@ fn preview_commit_key(request: &skillhub_core::api::CommitDeploymentPreview) -> 
             let disposition =
                 serde_json::to_string(&pair.disposition).unwrap_or_else(|_| "invalid".into());
             format!(
-                "{}|disposition:{}|confirm:{}",
-                pair.pair_id, disposition, pair.confirm_fallback
+                "{}|disposition:{}|confirm:{}|confirm_shared:{}",
+                pair.pair_id, disposition, pair.confirm_fallback, pair.confirm_shared_target
             )
         })
         .collect::<Vec<_>>();

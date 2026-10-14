@@ -229,7 +229,7 @@ it("commits only the preview id and per-pair selections, then joins Skill facts 
     type: "commit_deployment_preview",
     payload: {
       preview_id: "preview-1",
-      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "deploy", confirm_fallback: true }],
+      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "deploy", confirm_fallback: true, confirm_shared_target: false }],
     },
   });
   // 路由/汇总沿用的三态投影 + Skill 展示名由预览 facts 联接而来（DEV-18-A）。
@@ -252,6 +252,10 @@ it("submits a conflict preview as an explicit skip until conflict controls ship"
       blockReason: "target_occupied",
       conflict: {
         occupants: [],
+        shared_target: false,
+        shared_consumers_complete: false,
+        shared_consumers: [],
+        shared_consumer_fingerprint: "",
         available_actions: ["skip"],
         default_action: "skip",
       },
@@ -273,7 +277,7 @@ it("submits a conflict preview as an explicit skip until conflict controls ship"
     type: "commit_deployment_preview",
     payload: {
       preview_id: "preview-1",
-      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "skip", confirm_fallback: false }],
+      pairs: [{ pair_id: "skill-pdf:fs-codex", disposition: "skip", confirm_fallback: false, confirm_shared_target: false }],
     },
   });
   expect(results[0].status).toBe("skipped");

@@ -1414,6 +1414,7 @@ fn fallback_pair(pair_id: &str, confirm: bool, exclude: bool) -> DeploymentPairS
             skillhub_core::deployment::DeploymentPairDisposition::Deploy
         },
         confirm_fallback: confirm,
+        confirm_shared_target: false,
     }
 }
 
@@ -1422,6 +1423,7 @@ fn skip_pair(pair_id: &str) -> DeploymentPairSelection {
         pair_id: pair_id.into(),
         disposition: skillhub_core::deployment::DeploymentPairDisposition::Skip,
         confirm_fallback: false,
+        confirm_shared_target: false,
     }
 }
 
@@ -1652,7 +1654,11 @@ async fn conflict_commit_refuses_an_action_not_offered_by_preview() {
     let pair = find_pair(&preview, &harness.skill.id(), "claude-global");
     assert_eq!(
         pair.conflict.as_ref().unwrap().available_actions,
-        vec![skillhub_core::deployment::DeploymentConflictAction::Skip]
+        vec![
+            skillhub_core::deployment::DeploymentConflictAction::Skip,
+            skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy,
+            skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+        ]
     );
     let pair_id = pair.pair_id.clone();
 
@@ -1794,6 +1800,7 @@ async fn managed_conflict_preview_names_occupant_and_consumers() {
         conflict.available_actions,
         vec![
             skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget,
+            skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy,
             skillhub_core::deployment::DeploymentConflictAction::Skip,
         ]
     );

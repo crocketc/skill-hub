@@ -785,11 +785,39 @@ pub struct DeploymentConflictOccupant {
     pub content_fingerprint: Option<String>,
 }
 
+/// One confirmed Agent or project that can consume a shared deployment
+/// directory. Active deployment relations stay attached to the consumer so
+/// preview confirmation covers both directory membership and current usage.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentConflictConsumer {
+    pub kind: DeploymentConflictConsumerKind,
+    pub consumer_id: String,
+    pub display_name: String,
+    pub logical_target_ids: Vec<String>,
+    pub active_deployment_ids: Vec<crate::DeploymentId>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentConflictConsumerKind {
+    Agent,
+    Project,
+}
+
 /// Server-computed conflict facts and the actions currently safe to offer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
 pub struct DeploymentConflictPreview {
     pub occupants: Vec<DeploymentConflictOccupant>,
+    #[serde(default)]
+    pub shared_target: bool,
+    #[serde(default)]
+    pub shared_consumers_complete: bool,
+    #[serde(default)]
+    pub shared_consumers: Vec<DeploymentConflictConsumer>,
+    #[serde(default)]
+    pub shared_consumer_fingerprint: String,
     pub available_actions: Vec<crate::deployment::DeploymentConflictAction>,
     pub default_action: crate::deployment::DeploymentConflictAction,
 }

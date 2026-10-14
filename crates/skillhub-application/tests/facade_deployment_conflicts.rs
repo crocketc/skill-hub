@@ -21,6 +21,8 @@ struct Harness {
     database_dir: tempfile::TempDir,
     _library_root: tempfile::TempDir,
     target_root: tempfile::TempDir,
+    _project_parent: tempfile::TempDir,
+    _project_grandparent: tempfile::TempDir,
     other_target_root: tempfile::TempDir,
     third_target_root: tempfile::TempDir,
     source_skill: Skill,
@@ -78,7 +80,9 @@ async fn harness() -> Harness {
         versions.push(version.id);
     }
 
-    let target_root = tempfile::tempdir().expect("target root");
+    let project_grandparent = tempfile::tempdir().expect("project grandparent");
+    let project_parent = tempfile::tempdir_in(project_grandparent.path()).expect("project parent");
+    let target_root = tempfile::tempdir_in(project_parent.path()).expect("target root");
     let other_target_root = tempfile::tempdir().expect("other target root");
     let third_target_root = tempfile::tempdir().expect("third target root");
     let physical_id =
@@ -95,7 +99,12 @@ async fn harness() -> Harness {
     let third_physical_id = skillhub_core::physical_id_for_path(third_target_root.path())
         .expect("third target identity");
     let facts: Vec<TargetFact> = [
-        ("claude-global", target_root.path(), physical_id),
+        ("claude-global", target_root.path(), physical_id.clone()),
+        (
+            "shared-reference-codex",
+            target_root.path(),
+            physical_id.clone(),
+        ),
         ("codex-global", other_target_root.path(), other_physical_id),
         ("gemini-global", third_target_root.path(), third_physical_id),
     ]
@@ -119,6 +128,8 @@ async fn harness() -> Harness {
         database_dir,
         _library_root: library_root,
         target_root,
+        _project_parent: project_parent,
+        _project_grandparent: project_grandparent,
         other_target_root,
         third_target_root,
         source_skill,
@@ -265,6 +276,14 @@ async fn conflict_preview_with_preference(
     harness: &Harness,
     preference: DeploymentPreference,
 ) -> DeploymentBatchPreview {
+    conflict_preview_for_targets(harness, &["claude-global"], preference).await
+}
+
+async fn conflict_preview_for_targets(
+    harness: &Harness,
+    target_ids: &[&str],
+    preference: DeploymentPreference,
+) -> DeploymentBatchPreview {
     let response = harness
         .facade
         .query(RootAppQuery::GetDeploymentBatchPreview(
@@ -273,7 +292,7 @@ async fn conflict_preview_with_preference(
                     skill_id: harness.source_skill.id(),
                     version_id: Some(harness.source_version.clone()),
                     runtime_name: Some("shared-runtime".into()),
-                    logical_target_ids: vec!["claude-global".into()],
+                    logical_target_ids: target_ids.iter().map(|id| (*id).to_owned()).collect(),
                     preference,
                 }],
                 confirmations: std::collections::BTreeMap::new(),
@@ -286,6 +305,116 @@ async fn conflict_preview_with_preference(
         panic!("expected deployment preview");
     };
     preview
+}
+
+fn set_shared_discovery(harness: &Harness, consumers: &[(&str, &str)]) {
+    use skillhub_core::agent::{
+        AgentRootObservation, ClientInstance, ClientKind, ClientPresence,
+        DirectoryObservationStatus, DirectoryPrecedence, DiscoverySnapshot, LogicalTarget,
+        OperatingSystem, PhysicalTarget, TargetScope,
+    };
+
+    let path = harness.target_root.path().to_string_lossy().into_owned();
+    let physical_id = skillhub_core::physical_id_for_path(harness.target_root.path())
+        .expect("shared target identity");
+    let mut instances = Vec::new();
+    let mut agent_roots = Vec::new();
+    let mut logical_targets = Vec::new();
+    let mut physical_target_ids = Vec::new();
+    for (index, (client_key, display_name)) in consumers.iter().enumerate() {
+        let profile_id = format!("profile-{client_key}");
+        let client_id = format!("client-{client_key}");
+        let root_id = format!("root-{client_key}");
+        instances.push(ClientInstance {
+            profile_id: profile_id.clone(),
+            client_id: client_id.clone(),
+            kind: ClientKind::Cli,
+            display_name: (*display_name).to_owned(),
+            supported_os: vec![OperatingSystem::Macos, OperatingSystem::Windows],
+            client_presence: ClientPresence::Unknown,
+        });
+        agent_roots.push(AgentRootObservation {
+            id: root_id.clone(),
+            profile_id: profile_id.clone(),
+            client_id: client_id.clone(),
+            scope: TargetScope::Global,
+            path: path.clone(),
+            status: DirectoryObservationStatus::Existing,
+            exists: true,
+            readable: true,
+            writable: true,
+            physical_id: Some(physical_id.clone()),
+            physical_identity_verified: true,
+        });
+        let id = if index == 0 {
+            "claude-global".to_owned()
+        } else {
+            format!("shared-reference-{client_key}")
+        };
+        physical_target_ids.push(id.clone());
+        logical_targets.push(LogicalTarget {
+            id,
+            profile_id,
+            client_id,
+            scope: TargetScope::Global,
+            path: path.clone(),
+            agent_root_id: root_id,
+            marker: "skills".to_owned(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: true,
+            builtin: false,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: true,
+            physical_id: physical_id.clone(),
+            status: DirectoryObservationStatus::Existing,
+            physical_identity_verified: true,
+        });
+    }
+    if consumers.is_empty() {
+        logical_targets.push(LogicalTarget {
+            id: "claude-global".to_owned(),
+            profile_id: "unknown-profile".to_owned(),
+            client_id: "unknown-client".to_owned(),
+            scope: TargetScope::Global,
+            path: path.clone(),
+            agent_root_id: "missing-root".to_owned(),
+            marker: "skills".to_owned(),
+            precedence: DirectoryPrecedence::Preferred,
+            shared_reference: true,
+            builtin: false,
+            exists: true,
+            readable: true,
+            writable: true,
+            available: false,
+            physical_id: physical_id.clone(),
+            status: DirectoryObservationStatus::Existing,
+            physical_identity_verified: false,
+        });
+        physical_target_ids.push("claude-global".to_owned());
+    }
+    let snapshot = DiscoverySnapshot {
+        generation: format!("shared-{}", consumers.len()),
+        observed_at: "2026-10-14T00:00:00Z".to_owned(),
+        instances,
+        agent_roots,
+        logical_targets,
+        physical_targets: vec![PhysicalTarget {
+            id: physical_id,
+            path,
+            exists: true,
+            readable: true,
+            writable: true,
+            case_behavior: "sensitive".to_owned(),
+            logical_target_ids: physical_target_ids,
+        }],
+    };
+    Database::open(harness.database_dir.path().join("skillhub.sqlite"))
+        .expect("database")
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist shared discovery");
 }
 
 fn deployments(harness: &Harness) -> Vec<(String, String, String, String, String)> {
@@ -312,6 +441,469 @@ fn deployments(harness: &Harness) -> Vec<(String, String, String, String, String
         .expect("deployment rows")
         .map(|row| row.expect("deployment row"))
         .collect()
+}
+
+#[tokio::test]
+async fn shared_target_preview_lists_confirmed_consumers_and_active_deployments() {
+    let harness = harness().await;
+    let occupant_id = deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(conflict.shared_target);
+    assert!(conflict.shared_consumers_complete);
+    assert_eq!(conflict.shared_consumers.len(), 2);
+    assert!(conflict
+        .shared_consumers
+        .iter()
+        .any(|consumer| consumer.display_name == "Claude Code"));
+    assert!(conflict.shared_consumers.iter().any(|consumer| {
+        consumer.display_name == "Codex" && consumer.active_deployment_ids.contains(&occupant_id)
+    }));
+    assert!(!conflict.shared_consumer_fingerprint.is_empty());
+    assert!(conflict
+        .available_actions
+        .contains(&DeploymentConflictAction::ReplaceTarget));
+}
+
+#[tokio::test]
+async fn shared_target_with_unverified_alias_only_allows_skip() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+
+    let database =
+        Database::open(harness.database_dir.path().join("skillhub.sqlite")).expect("database");
+    let mut snapshot = database
+        .agent_repository()
+        .load()
+        .expect("load discovery")
+        .expect("discovery snapshot");
+    let mut unverified_alias = snapshot.logical_targets[0].clone();
+    unverified_alias.id = "unverified-shared-alias".to_owned();
+    unverified_alias.profile_id = "unknown-profile".to_owned();
+    unverified_alias.client_id = "unknown-client".to_owned();
+    unverified_alias.agent_root_id = "missing-root".to_owned();
+    unverified_alias.shared_reference = false;
+    unverified_alias.physical_id = "stale-physical-id".to_owned();
+    unverified_alias.physical_identity_verified = false;
+    snapshot.logical_targets.push(unverified_alias);
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist incomplete alias");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(conflict.shared_target);
+    assert!(!conflict.shared_consumers_complete);
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_with_ambiguous_project_consumers_is_incomplete() {
+    use skillhub_core::agent::TargetScope;
+    use skillhub_core::project::Project;
+
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+
+    let database =
+        Database::open(harness.database_dir.path().join("skillhub.sqlite")).expect("database");
+    let mut snapshot = database
+        .agent_repository()
+        .load()
+        .expect("load discovery")
+        .expect("discovery snapshot");
+    snapshot.logical_targets[0].scope = TargetScope::Project;
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist project-scoped discovery");
+
+    database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "Outer project",
+            harness._project_grandparent.path(),
+        ))
+        .expect("register outer project");
+    database
+        .project_repository()
+        .register(Project::new(
+            skillhub_core::ProjectId::new(),
+            "Inner project",
+            harness._project_parent.path(),
+        ))
+        .expect("register inner project");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(!conflict.shared_consumers_complete);
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+    assert_eq!(
+        conflict
+            .shared_consumers
+            .iter()
+            .filter(|consumer| {
+                consumer.kind == skillhub_core::api::DeploymentConflictConsumerKind::Project
+            })
+            .count(),
+        2,
+        "all candidate project consumers must be disclosed"
+    );
+}
+
+#[tokio::test]
+async fn shared_target_with_ambiguous_agent_roots_is_incomplete() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+
+    let database =
+        Database::open(harness.database_dir.path().join("skillhub.sqlite")).expect("database");
+    let mut snapshot = database
+        .agent_repository()
+        .load()
+        .expect("load discovery")
+        .expect("discovery snapshot");
+    let mut duplicate_root = snapshot.agent_roots[0].clone();
+    duplicate_root.path = harness
+        .other_target_root
+        .path()
+        .to_string_lossy()
+        .into_owned();
+    duplicate_root.physical_id = Some(
+        skillhub_core::physical_id_for_path(harness.other_target_root.path())
+            .expect("other target identity"),
+    );
+    snapshot.agent_roots.push(duplicate_root);
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist ambiguous root");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(!conflict.shared_consumers_complete);
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_with_agent_root_owned_by_another_client_is_incomplete() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+
+    let database =
+        Database::open(harness.database_dir.path().join("skillhub.sqlite")).expect("database");
+    let mut snapshot = database
+        .agent_repository()
+        .load()
+        .expect("load discovery")
+        .expect("discovery snapshot");
+    snapshot.agent_roots[0].client_id = "another-client".to_owned();
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist mismatched root owner");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(!conflict.shared_consumers_complete);
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_with_ambiguous_agent_instances_is_incomplete() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+
+    let database =
+        Database::open(harness.database_dir.path().join("skillhub.sqlite")).expect("database");
+    let mut snapshot = database
+        .agent_repository()
+        .load()
+        .expect("load discovery")
+        .expect("discovery snapshot");
+    let mut duplicate_instance = snapshot.instances[0].clone();
+    duplicate_instance.display_name = "Ambiguous Claude Instance".to_owned();
+    snapshot.instances.push(duplicate_instance);
+    database
+        .agent_repository()
+        .replace(&snapshot)
+        .expect("persist ambiguous instance");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(!conflict.shared_consumers_complete);
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_confirmation_allows_replacement_after_preview_revalidation() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+    let preview = conflict_preview(&harness).await;
+    let pair_id = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair")
+        .pair_id
+        .clone();
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id,
+                    disposition: DeploymentPairDisposition::ReplaceTarget,
+                    confirm_fallback: false,
+                    confirm_shared_target: true,
+                }],
+            },
+        ))
+        .await
+        .expect("confirmed shared replacement");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed
+    );
+    let contents =
+        std::fs::read_to_string(harness.target_root.path().join("shared-runtime/SKILL.md"))
+            .expect("replacement remains readable");
+    assert!(contents.contains("replacement contents"));
+}
+
+#[tokio::test]
+async fn shared_logical_targets_for_one_physical_directory_make_one_preview_pair() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+    let preview = conflict_preview_for_targets(
+        &harness,
+        &["claude-global", "shared-reference-codex"],
+        DeploymentPreference::Copy,
+    )
+    .await;
+
+    let matching_pairs = preview
+        .pairs
+        .iter()
+        .filter(|pair| pair.skill_id == harness.source_skill.id())
+        .collect::<Vec<_>>();
+    assert_eq!(matching_pairs.len(), 1);
+    assert_eq!(
+        matching_pairs[0].logical_target_ids,
+        vec!["claude-global", "shared-reference-codex"]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_replace_without_consumer_confirmation_does_not_write() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+    let preview = conflict_preview(&harness).await;
+    let deployments_before = deployments(&harness);
+    let pair_id = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair")
+        .pair_id
+        .clone();
+
+    let result = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id,
+                    disposition: DeploymentPairDisposition::ReplaceTarget,
+                    confirm_fallback: false,
+                    confirm_shared_target: false,
+                }],
+            },
+        ))
+        .await;
+    assert!(
+        result.is_err(),
+        "unconfirmed shared replacement must be refused"
+    );
+    let contents =
+        std::fs::read_to_string(harness.target_root.path().join("shared-runtime/SKILL.md"))
+            .expect("occupant remains readable");
+    assert!(contents.contains("original contents"));
+    assert_eq!(deployments(&harness), deployments_before);
+}
+
+#[tokio::test]
+async fn shared_target_with_no_confirmed_consumers_only_allows_skip() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[]);
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    let conflict = pair.conflict.as_ref().expect("shared conflict");
+    assert!(conflict.shared_target);
+    assert!(!conflict.shared_consumers_complete);
+    assert!(conflict.shared_consumers.is_empty());
+    assert_eq!(
+        conflict.available_actions,
+        vec![DeploymentConflictAction::Skip]
+    );
+}
+
+#[tokio::test]
+async fn shared_target_consumer_addition_after_preview_blocks_replacement() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+    let preview = conflict_preview(&harness).await;
+    let pair_id = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair")
+        .pair_id
+        .clone();
+    let deployments_before = deployments(&harness);
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id: pair_id.clone(),
+                    disposition: DeploymentPairDisposition::ReplaceTarget,
+                    confirm_fallback: false,
+                    confirm_shared_target: true,
+                }],
+            },
+        ))
+        .await
+        .expect("commit returns per-pair stale result");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+    );
+    let contents =
+        std::fs::read_to_string(harness.target_root.path().join("shared-runtime/SKILL.md"))
+            .expect("occupant remains readable");
+    assert!(contents.contains("original contents"));
+    assert_eq!(deployments(&harness), deployments_before);
+}
+
+#[tokio::test]
+async fn shared_target_consumer_removal_after_preview_blocks_replacement() {
+    let harness = harness().await;
+    deploy_occupant(&harness).await;
+    set_shared_discovery(&harness, &[("claude", "Claude Code"), ("codex", "Codex")]);
+    let preview = conflict_preview(&harness).await;
+    let pair_id = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair")
+        .pair_id
+        .clone();
+    let deployments_before = deployments(&harness);
+    set_shared_discovery(&harness, &[("claude", "Claude Code")]);
+
+    let response = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id,
+                    disposition: DeploymentPairDisposition::ReplaceTarget,
+                    confirm_fallback: false,
+                    confirm_shared_target: true,
+                }],
+            },
+        ))
+        .await
+        .expect("commit returns per-pair stale result");
+    let AppCommandResult::DeploymentPreviewCommitResult(result) = response else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        result.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Blocked
+    );
+    let contents =
+        std::fs::read_to_string(harness.target_root.path().join("shared-runtime/SKILL.md"))
+            .expect("occupant remains readable");
+    assert!(contents.contains("original contents"));
+    assert_eq!(deployments(&harness), deployments_before);
 }
 
 #[tokio::test]
@@ -342,6 +934,7 @@ async fn managed_replacement_transfers_only_the_selected_deployment() {
                     pair_id,
                     disposition: DeploymentPairDisposition::ReplaceTarget,
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -442,6 +1035,7 @@ async fn unknown_directory_replacement_is_restorable_without_creating_a_recovery
                     pair_id: pair.pair_id.clone(),
                     disposition: DeploymentPairDisposition::ReplaceTarget,
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -566,6 +1160,7 @@ async fn changed_managed_occupant_is_left_untouched_and_blocks_replacement() {
                     pair_id: pair.pair_id.clone(),
                     disposition: DeploymentPairDisposition::ReplaceTarget,
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -618,6 +1213,7 @@ async fn link_preference_requires_confirmation_before_copy_fallback_replacement(
                     pair_id: pair.pair_id.clone(),
                     disposition: DeploymentPairDisposition::ReplaceTarget,
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -645,6 +1241,7 @@ async fn link_preference_requires_confirmation_before_copy_fallback_replacement(
                     pair_id: pair.pair_id.clone(),
                     disposition: DeploymentPairDisposition::ReplaceTarget,
                     confirm_fallback: true,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -689,6 +1286,7 @@ async fn rename_and_deploy_is_offered_for_managed_conflicts() {
                         runtime_name: "replacement-renamed".to_owned(),
                     },
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -770,6 +1368,7 @@ async fn rename_and_deploy_derives_subject_when_source_has_an_unselected_use() {
                         runtime_name: "replacement-local".to_owned(),
                     },
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))
@@ -859,6 +1458,7 @@ async fn retry_after_derived_copy_commit_reuses_the_saved_subject() {
             runtime_name: "replacement-local".to_owned(),
         },
         confirm_fallback: false,
+        confirm_shared_target: false,
     };
 
     // Recreate the durable boundary where Save As Copy committed but the
@@ -981,6 +1581,7 @@ async fn retry_after_original_subject_rename_uses_its_committed_version() {
             runtime_name: "replacement-renamed".to_owned(),
         },
         confirm_fallback: false,
+        confirm_shared_target: false,
     };
     let first_response = harness
         .facade
@@ -1072,11 +1673,12 @@ async fn retry_after_original_subject_rename_uses_its_committed_version() {
 
 fn preview_commit_key_for_test(preview_id: &str, selection: &DeploymentPairSelection) -> String {
     format!(
-        "{}\n{}|disposition:{}|confirm:{}",
+        "{}\n{}|disposition:{}|confirm:{}|confirm_shared:{}",
         preview_id,
         selection.pair_id,
         serde_json::to_string(&selection.disposition).expect("serialize disposition"),
-        selection.confirm_fallback
+        selection.confirm_fallback,
+        selection.confirm_shared_target
     )
 }
 
@@ -1106,6 +1708,7 @@ async fn occupied_new_runtime_name_blocks_rename_without_changing_subject_or_tar
                         runtime_name: "replacement-local".to_owned(),
                     },
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))

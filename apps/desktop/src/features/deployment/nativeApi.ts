@@ -194,6 +194,7 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
               pair_id: selection.pairId,
               disposition: selection.exclude ? "exclude" : facts?.conflict ? "skip" : "deploy",
               confirm_fallback: selection.confirmFallback,
+              confirm_shared_target: selection.confirmSharedTarget ?? false,
             };
           }),
         },

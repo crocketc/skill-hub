@@ -633,6 +633,7 @@ async fn changed_security_assessment_blocks_a_stale_preview_before_writing() {
                     pair_id,
                     disposition: skillhub_core::deployment::DeploymentPairDisposition::Deploy,
                     confirm_fallback: false,
+                    confirm_shared_target: false,
                 }],
             },
         ))

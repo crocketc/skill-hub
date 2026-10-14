@@ -762,6 +762,9 @@ pub struct DeploymentPairSelection {
     pub disposition: crate::deployment::DeploymentPairDisposition,
     /// `true` accepts the recommended managed-copy fallback.
     pub confirm_fallback: bool,
+    /// `true` confirms the complete shared-directory consumer snapshot.
+    #[serde(default)]
+    pub confirm_shared_target: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]

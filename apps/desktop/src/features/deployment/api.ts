@@ -238,6 +238,7 @@ export type PreviewConfirmations = Record<string, string>;
 export type PairSelection = {
   pairId: string;
   confirmFallback: boolean;
+  confirmSharedTarget?: boolean;
   exclude: boolean;
 };
 

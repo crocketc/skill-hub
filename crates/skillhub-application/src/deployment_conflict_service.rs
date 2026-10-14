@@ -3436,6 +3436,10 @@ mod tests {
                         .expect("entry identity"),
                     content_fingerprint: Some(original_hash),
                 }],
+                shared_target: false,
+                shared_consumers_complete: false,
+                shared_consumers: vec![],
+                shared_consumer_fingerprint: String::new(),
                 available_actions: vec![
                     DeploymentConflictAction::ReplaceTarget,
                     DeploymentConflictAction::Skip,
