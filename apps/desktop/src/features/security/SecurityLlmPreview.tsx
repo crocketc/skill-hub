@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences } from "./api";
 import { SecurityResults } from "./SecurityResults";
+import { getPreviewLlmFacade } from "../settings/SettingsLlmPreview";
 
 const BASIC_CHECK: SecurityCheck = {
   kind: "basic",
@@ -60,5 +61,5 @@ export function SecurityLlmPreview() {
       },
     };
   });
-  return <SecurityResults facade={facade} skillId="skill-pdf" versionId="current" />;
+  return <SecurityResults facade={facade} llmFacade={getPreviewLlmFacade()} skillId="skill-pdf" versionId="current" />;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useState, type JSX } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
@@ -8,6 +8,9 @@ import { Button } from "../../ui/Button";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { conflictWorkspaceHref } from "../relationships/decisions/conflictDecisions";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { LlmCapabilityStatusNotice } from "../settings/LlmCapabilityStatusNotice";
+import { useLlmCapability } from "../settings/llmStatus";
 import {
   type SemanticDuplicateReport,
   type SkillDetailFacade,
@@ -15,6 +18,7 @@ import {
 
 interface SemanticDuplicatePanelProps {
   facade: SkillDetailFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   skillId: string;
   /** P1-12：来自 getInsights 的确定性重复候选（内容比对产物，与 AI 无关），
    * 页面加载即常显；可选 AI 分析在其上作为增强层，由用户显式触发。 */
@@ -32,6 +36,7 @@ interface SemanticDuplicatePanelProps {
 export function SemanticDuplicatePanel({
   deterministicCandidates = [],
   facade,
+  llmFacade = nativeLlmFacade,
   skillId,
   tracker = operationTracker,
 }: SemanticDuplicatePanelProps): JSX.Element {
@@ -40,23 +45,10 @@ export function SemanticDuplicatePanel({
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<SemanticDuplicateReport>();
   const [error, setError] = useState<string>();
-  // null 表示可用性查询尚未返回：按钮暂不可点，但不显示不可用文案。
-  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    facade
-      .isAiAvailable()
-      .then((available) => {
-        if (!cancelled) setAiAvailable(available);
-      })
-      .catch(() => {
-        if (!cancelled) setAiAvailable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [facade]);
+  const capability = useLlmCapability(llmFacade, "semantic_duplicate", {
+    requiredTestLevel: "structured",
+    preconditionsMet: Boolean(facade.analyzeSemanticDuplicates),
+  });
 
   const describeError = (reason: unknown) =>
     describeNativeError(
@@ -66,7 +58,7 @@ export function SemanticDuplicatePanel({
     );
 
   const run = () => {
-    if (running) return;
+    if (running || capability.state !== "ready") return;
     setRunning(true);
     setError(undefined);
     // 统一执行桥（任务 4）：AI 分析进 tracker 在途投影，并同步进入
@@ -91,7 +83,7 @@ export function SemanticDuplicatePanel({
       .finally(() => setRunning(false));
   };
 
-  const aiUnavailableCopy = aiAvailable === false;
+  const aiUnavailableCopy = capability.state !== "ready";
 
   return (
     <section aria-labelledby="deterministic-duplicates-heading" className="sh-detail-insights">
@@ -126,7 +118,7 @@ export function SemanticDuplicatePanel({
       </div>
       <p className="sh-settings-local-note">{t("skillDetail.duplicates.scopeNote")}</p>
       {aiUnavailableCopy ? (
-        <p role="status">{t("skillDetail.duplicates.aiUnavailable")}</p>
+        <LlmCapabilityStatusNotice capability={capability} />
       ) : null}
       {error ? (
         <>

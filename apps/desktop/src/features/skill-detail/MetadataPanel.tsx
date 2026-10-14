@@ -8,6 +8,9 @@ import { Button } from "../../ui/Button";
 import { IconButton } from "../../ui/IconButton";
 import { StatusBadge } from "../../ui/StatusBadge";
 import { useOptionalAppNotifications } from "../../ui/notifications";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { LlmCapabilityStatusNotice } from "../settings/LlmCapabilityStatusNotice";
+import { useLlmCapability } from "../settings/llmStatus";
 import { skillLibraryKeys } from "../skills/api";
 import type {
   SkillDetailFacade,
@@ -18,6 +21,7 @@ import { skillDetailKeys } from "./api";
 
 interface MetadataPanelProps {
   facade: SkillDetailFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   metadata: SkillMetadata;
   refreshSnapshot?: () => Promise<void>;
   skillId: string;
@@ -197,6 +201,7 @@ export function MetadataPanel(props: MetadataPanelProps) {
 
 function MetadataPanelForSkill({
   facade,
+  llmFacade = nativeLlmFacade,
   metadata,
   refreshSnapshot,
   reviewPresentation = false,
@@ -206,6 +211,10 @@ function MetadataPanelForSkill({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const notifications = useOptionalAppNotifications();
+  const translationCapability = useLlmCapability(llmFacade, "description_translation", {
+    requiredTestLevel: "model",
+    preconditionsMet: Boolean(metadata.originalDescription?.trim()),
+  });
   const [translationConfirmation, setTranslationConfirmation] = useState(false);
   const [translationPurposeDraft, setTranslationPurposeDraft] = useState<string>();
   const [translationError, setTranslationError] = useState<string>();
@@ -245,6 +254,7 @@ function MetadataPanelForSkill({
   };
   // 重新翻译是 AI 长流程，占用在途顶栏（不可取消：后端没有该操作的取消契约）。
   const requestTranslation = async (overwriteUserRevision: boolean) => {
+    if (translationCapability.state !== "ready") return;
     setTranslationError(undefined);
     try {
       const translationResult = await runTrackedOperation({
@@ -341,7 +351,7 @@ function MetadataPanelForSkill({
       <details className="sh-metadata-panel__secondary" open={reviewPresentation}>
         <summary>{t("skillDetail.metadata.sourceTexts")}</summary>
         <section>
-          <div className="sh-metadata-panel__section-heading"><h3>{t("skillDetail.metadata.originalDescription")}</h3>{reviewPresentation ? <IconButton icon="sparkle" label={t("skillDetail.metadata.retranslate")} onClick={() => { if (metadata.translation?.userRevised) setTranslationConfirmation(true); else void requestTranslation(false); }} /> : null}</div>
+          <div className="sh-metadata-panel__section-heading"><h3>{t("skillDetail.metadata.originalDescription")}</h3></div>
           <p>{metadata.originalDescription ?? t("skillDetail.metadata.empty")}</p>
         </section>
         <section>
@@ -353,18 +363,17 @@ function MetadataPanelForSkill({
                   设为我的用途
                 </Button>
               ) : null}
-              {!reviewPresentation ? (
-                <Button
-                  onClick={() => {
-                    if (metadata.translation?.userRevised) setTranslationConfirmation(true);
-                    else void requestTranslation(false);
-                  }}
-                  size="sm"
-                  variant="ghost"
-                >
-                  {t("skillDetail.metadata.retranslate")}
-                </Button>
-              ) : null}
+              <Button
+                disabled={translationCapability.state !== "ready"}
+                onClick={() => {
+                  if (metadata.translation?.userRevised) setTranslationConfirmation(true);
+                  else void requestTranslation(false);
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                {t(metadata.translation?.text ? "skillDetail.metadata.retranslate" : "skillDetail.metadata.aiTranslate")}
+              </Button>
             </div>
           </div>
           <EditableTextSection
@@ -374,6 +383,7 @@ function MetadataPanelForSkill({
             reviewPresentation={reviewPresentation}
             value={metadata.translation?.text ?? ""}
           />
+          <LlmCapabilityStatusNotice capability={translationCapability} />
           {metadata.translation ? (
             <div className="sh-metadata-panel__translation-facts">
               <span>{metadata.translation.locale}</span>
@@ -394,7 +404,7 @@ function MetadataPanelForSkill({
                   locale: metadata.translation?.locale,
                 })}
               </p>
-              <Button onClick={() => void requestTranslation(true)} size="sm">
+              <Button disabled={translationCapability.state !== "ready"} onClick={() => void requestTranslation(true)} size="sm">
                 {t("skillDetail.metadata.confirmRetranslate")}
               </Button>
               <Button onClick={() => setTranslationConfirmation(false)} size="sm" variant="ghost">

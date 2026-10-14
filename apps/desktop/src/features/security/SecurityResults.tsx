@@ -1,7 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
 import type { ProductLevel } from "../../api/bindings";
 import { describeNativeError } from "../../api/nativeErrors";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
@@ -15,11 +14,15 @@ import { Icon } from "../../ui/Icon";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { FindingActions } from "./FindingActions";
 import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { LlmCapabilityStatusNotice } from "../settings/LlmCapabilityStatusNotice";
+import { useLlmCapability } from "../settings/llmStatus";
 import { type SecurityCheck, type SecurityFacade, type SecurityFinding, type SecurityPreferences } from "./api";
 import "./securityResults.css";
 
 export interface SecurityResultsProps {
   facade: SecurityFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   skillId: string;
   versionId: string;
   findingId?: string;
@@ -36,7 +39,7 @@ export interface SecurityResultsProps {
   tracker?: OperationTracker;
 }
 
-export function SecurityResults({ facade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page", presentationMode = "standard", securityAlert }: SecurityResultsProps) {
+export function SecurityResults({ facade, llmFacade = nativeLlmFacade, skillId, tracker = operationTracker, versionId, findingId, checkKind, variant = "page", presentationMode = "standard", securityAlert }: SecurityResultsProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const scopeKey = `${skillId}\u0000${versionId}`;
@@ -57,6 +60,11 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
   const isCurrentScope = (capturedScope: string) => mountedRef.current && scopeRef.current === capturedScope;
   const targetHref = `/library/${encodeURIComponent(skillId)}/security?${new URLSearchParams({ version: resolvedVersionId })}`;
   const notifications = useOptionalAppNotifications();
+  const llmCapability = useLlmCapability(llmFacade, "safety_check", {
+    requiredTestLevel: "structured",
+    preconditionsMet: Boolean(facade.runLlmCheck),
+  });
+  const llmReady = llmCapability.state === "ready";
   const [checks, setChecks] = useState<SecurityCheck[]>([]);
   const [findings, setFindings] = useState<SecurityFinding[]>([]);
   const [preferences, setPreferences] = useState<SecurityPreferences>();
@@ -187,11 +195,10 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
       if (isCurrentScope(operationScope)) setBasicRunning(false);
     }
   };
-  const llmConfigured = preferences ? preferences.llmProvider.trim().length > 0 : presentationMode !== "risk-aware";
   // 统一执行桥（任务 4）：在途句柄挂在 ref 上，供取消路径与运行中的
   // operation id 发现逻辑随时关联/落终态。
   const handleRun = async () => {
-    if (!facade.runLlmCheck || !llmConfigured) return;
+    if (!facade.runLlmCheck || !llmReady) return;
     const operationScope = scopeKey;
     if (llmRunScopeRef.current === operationScope) return;
     llmRunScopeRef.current = operationScope;
@@ -343,7 +350,7 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
             running={running}
             versionId={resolvedVersionId}
             runAvailable={Boolean(facade.runLlmCheck)}
-            configured={llmConfigured}
+            configured={llmReady}
             onCancel={() => void handleCancel()}
             cancelAvailable={Boolean(facade.cancelLlmCheck)}
             cancelEnabled={Boolean(runningOperation)}
@@ -355,11 +362,8 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
         {running ? <p className="sh-settings-local-note">{t("security.llm.running")}</p> : null}
         {cancelError ? <p role="alert">{t("security.llm.cancelFailed", { message: cancelError })}</p> : null}
         {dispositionError ? <p role="alert">{dispositionError}</p> : null}
-        {preferences && !preferences.llmProvider.trim() ? (
-          <p className="sh-security-results__drawer-config-note">
-            {t("security.llm.providerMissing")} <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>
-          </p>
-        ) : preferences ? (
+        {facade.runLlmCheck ? <LlmCapabilityStatusNotice capability={llmCapability} /> : null}
+        {preferences ? (
           <p className="sh-security-results__drawer-scope">{preferences.dataScope === "explicit_selection"
             ? t("security.llm.scopeExplicitSelection")
             : t("security.llm.scopeOther", { scope: preferences.dataScope })}</p>
@@ -416,20 +420,19 @@ export function SecurityResults({ facade, skillId, tracker = operationTracker, v
           <h2 id="llm-security-heading">{t("security.llmHeading")}</h2>
           <CheckSummary check={checkByKind("llm")} experimental riskAware={presentationMode === "risk-aware"} />
           <div className="sh-workflow-actions">
-            <Button disabled={!llmConfigured} loading={running} onClick={() => void handleRun()} size="sm">{t("security.llm.run")}</Button>
+            {facade.runLlmCheck ? <Button disabled={!llmReady} loading={running} onClick={() => void handleRun()} size="sm">{t("security.llm.run")}</Button> : null}
             {running && facade.cancelLlmCheck ? (
               <Button disabled={!runningOperation} loading={cancelRequested} onClick={() => void handleCancel()} size="sm" variant="danger">{t("security.llm.cancel")}</Button>
             ) : null}
           </div>
           {running ? <p className="sh-settings-local-note">{t("security.llm.running")}</p> : null}
           {cancelError ? <p role="alert">{t("security.llm.cancelFailed", { message: cancelError })}</p> : null}
+          {facade.runLlmCheck ? <LlmCapabilityStatusNotice capability={llmCapability} /> : null}
           {preferences ? (
             <p className="sh-settings-local-note">
-              {preferences.llmProvider.trim()
-                ? preferences.dataScope === "explicit_selection"
-                  ? t("security.llm.scopeExplicitSelection")
-                  : t("security.llm.scopeOther", { scope: preferences.dataScope })
-                : <><span>{t("security.llm.providerMissing")}</span> {presentationMode === "risk-aware" ? <span>{t("security.llm.providerMissingPrototype")}</span> : <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>}</>}
+              {preferences.dataScope === "explicit_selection"
+                ? t("security.llm.scopeExplicitSelection")
+                : t("security.llm.scopeOther", { scope: preferences.dataScope })}
             </p>
           ) : null}
           {runError ? <p role="alert">{t("security.llm.runFailed", { message: runError })}</p> : null}

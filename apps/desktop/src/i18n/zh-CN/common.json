@@ -1988,6 +1988,7 @@
       "purpose": "我的用途说明",
       "purposeHint": "保存后将优先显示在概览；与内容描述相互独立。",
       "retranslate": "重新翻译描述",
+      "aiTranslate": "AI 翻译",
       "save": "保存{{label}}",
       "saveAction": "保存",
       "saveError": "未能保存，草稿已保留。",
@@ -3906,6 +3907,20 @@
         "online_search_assist": "联网搜索辅助"
       },
       "capabilityDisabled": "此功能对应的 AI 能力未启用；请在设置的 AI 能力开关中开启后重试。",
+      "status": {
+        "loading": "正在读取 AI 能力状态…",
+        "readFailed": "暂时无法读取 AI 能力状态。",
+        "retry": "重新读取",
+        "openSettings": "前往网络与 AI 设置",
+        "preconditionsMissing": "当前内容尚不满足此操作的前置条件。",
+        "providerUnselected": "尚未选择此操作实际使用的模型供应商。",
+        "providerUnavailable": "当前模型执行器不可用。",
+        "providerIncomplete": "当前模型供应商的地址或模型配置不完整。",
+        "credentialMissing": "当前模型供应商缺少可用凭据。",
+        "connectionUnverified": "当前模型配置尚未通过连接测试。",
+        "structuredOutputUnverified": "当前模型尚未通过结构化输出测试。",
+        "capabilityDisabled": "此功能的 AI 能力开关尚未开启。"
+      },
       "scopeSafety": "发送范围：Skill 文件内容（敏感值遮盖后）",
       "scopeDuplicate": "发送范围：Skill 名称与描述",
       "scopeTranslation": "发送范围：Skill 描述文本",

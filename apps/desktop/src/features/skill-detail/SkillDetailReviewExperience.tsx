@@ -16,6 +16,7 @@ import { MarkdownWorkspace } from "../markdown/MarkdownWorkspace";
 import type { MarkdownFacade } from "../markdown/api";
 import { SecurityResults } from "../security/SecurityResults";
 import type { SecurityFacade } from "../security/api";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import { SecurityAlertBadge } from "../shared/SecurityAlertBadge";
 import { MetadataPanel } from "./MetadataPanel";
 import { RequirementsPanel } from "./RequirementsPanel";
@@ -76,6 +77,7 @@ interface SkillDetailReviewExperienceProps {
   refreshSnapshot?: () => Promise<void>;
   requirements?: SkillRequirementFact[];
   securityFacade: SecurityFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   skillId: string;
   summary: SkillDetailSummary;
   /** W3-5：使用去向卡呈现模型（来自治理清单）；undefined 表示本路由未接治理门面。 */
@@ -114,6 +116,7 @@ export function SkillDetailReviewExperience({
   refreshSnapshot,
   requirements,
   securityFacade,
+  llmFacade,
   skillId,
   summary,
   usageDestinations,
@@ -219,7 +222,7 @@ export function SkillDetailReviewExperience({
             </h2>
             <div hidden={!openSections["review-overview"]} id="review-overview-body">
               <div className="sh-skill-detail-review__overview">
-                {metadata ? <MetadataPanel facade={facade} metadata={safeMetadata} refreshSnapshot={refreshSnapshot} skillId={skillId} reviewPresentation /> : (
+                {metadata ? <MetadataPanel facade={facade} llmFacade={llmFacade} metadata={safeMetadata} refreshSnapshot={refreshSnapshot} skillId={skillId} reviewPresentation /> : (
                   <p role="status">正在读取技能画像…</p>
                 )}
                 <div className="sh-skill-detail-review__facts">
@@ -252,6 +255,7 @@ export function SkillDetailReviewExperience({
               {summary.currentVersionId ? (
                 <SecurityResults
                   facade={securityFacade}
+                  llmFacade={llmFacade}
                   securityAlert={summary.securityAlert}
                   skillId={skillId}
                   versionId={summary.currentVersionId}
@@ -276,7 +280,7 @@ export function SkillDetailReviewExperience({
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
               <ReviewUsageDestinations destinations={usageDestinations} onOpenGovernance={onOpenGovernanceDestination} />
-              {insights ? <ReviewUsageInsights facade={facade} insights={insights} skillId={skillId} /> : null}
+              {insights ? <ReviewUsageInsights facade={facade} insights={insights} llmFacade={llmFacade} skillId={skillId} /> : null}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-sources">
@@ -338,12 +342,13 @@ function ReviewSectionToggle({ label, onToggle, open, sectionId }: {
 /**
  * 依赖、重复候选与使用证据：依赖与使用证据是随页面数据加载的确定性只读事实，
  * 不提供刷新入口；重复候选走 SemanticDuplicatePanel 真实契约——确定性候选
- * 常显（insights.deterministicDuplicates），可选 AI 层按 isAiAvailable 三态
- * 降级（未配置→停用+配置入口文案；已配置→真实分析；失败→可读原因）。
+ * 常显（insights.deterministicDuplicates），可选 AI 层使用共享能力状态，
+ * 等待当前连接与能力前置条件就绪后才允许发起分析。
  */
-function ReviewUsageInsights({ facade, insights, skillId }: {
+function ReviewUsageInsights({ facade, insights, llmFacade, skillId }: {
   facade: SkillDetailFacade;
   insights: SkillDetailInsights;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   skillId: string;
 }) {
   return (
@@ -362,6 +367,7 @@ function ReviewUsageInsights({ facade, insights, skillId }: {
       <SemanticDuplicatePanel
         deterministicCandidates={insights.deterministicDuplicates}
         facade={facade}
+        llmFacade={llmFacade}
         skillId={skillId}
       />
       <h3>使用证据</h3>

@@ -1,9 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { createSkillHubI18n } from "../../i18n";import { createOperationTracker } from "../../platform/operationTracker";
 import { createMockSkillDetailFacade } from "./testFixtures";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import { SemanticDuplicatePanel } from "./SemanticDuplicatePanel";
 import type { SkillDetailFacade } from "./api";
 
@@ -11,20 +14,29 @@ async function renderPanel(
   facade: SkillDetailFacade,
   deterministicCandidates: string[] = [],
   tracker = createOperationTracker(),
+  llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus"> = createReadyLlmStatusFacade(),
+  waitUntilReady = true,
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <SemanticDuplicatePanel
-          deterministicCandidates={deterministicCandidates}
-          facade={facade}
-          skillId="skill-pdf"
-          tracker={tracker}
-        />
-      </MemoryRouter>
-    </I18nextProvider>,
+    <QueryClientProvider client={client}>
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <SemanticDuplicatePanel
+            deterministicCandidates={deterministicCandidates}
+            facade={facade}
+            llmFacade={llmFacade}
+            skillId="skill-pdf"
+            tracker={tracker}
+          />
+        </MemoryRouter>
+      </I18nextProvider>
+    </QueryClientProvider>,
   );
+  if (waitUntilReady) {
+    await waitFor(() => expect(screen.getByRole("button", { name: "运行分析" })).toBeEnabled());
+  }
   return tracker;
 }
 
@@ -124,17 +136,17 @@ describe("SemanticDuplicatePanel", () => {
     ).toBeVisible();
   });
 
-  it("disables the AI action with an honest note when no provider is configured", async () => {
+  it("disables the AI action when the selected model provider is missing", async () => {
     const facade = createMockSkillDetailFacade();
-    facade.isAiAvailable = async () => false;
-    await renderPanel(facade, ["PDF Reader（副本）"]);
+    const llmFacade = createReadyLlmStatusFacade({ provider: null });
+    await renderPanel(facade, ["PDF Reader（副本）"], undefined, llmFacade, false);
 
     expect(await screen.findByRole("button", { name: "运行分析" })).toBeDisabled();
-    expect(
-      screen.getByText(
-        "尚未配置可用的 LLM 供应商；AI 分析按钮已停用，确定性候选照常展示。",
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText("尚未选择此操作实际使用的模型供应商。")).toBeVisible();
+    expect(screen.getByRole("link", { name: "前往网络与 AI 设置" })).toHaveAttribute(
+      "href",
+      "/settings?section=networkAi#settings-panel-networkAi",
+    );
     // 不可用就不发起分析：绝不伪造结果。
     expect(facade.calls.analyzedDuplicateSkills).toEqual([]);
   });

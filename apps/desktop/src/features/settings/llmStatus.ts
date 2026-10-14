@@ -30,6 +30,12 @@ export type LlmCapabilityReadiness = {
   reasons: LlmCapabilityBlockReason[];
 };
 
+export type LlmCapabilityState = {
+  state: "loading" | "error" | "blocked" | "ready";
+  readiness?: LlmCapabilityReadiness;
+  query: UseQueryResult<LlmStatusSnapshot, Error>;
+};
+
 /** Read the exact backend-selected provider and capability switches together.
  * This local-only query never invokes an AI task or sends skill data. */
 export async function readLlmStatus(
@@ -41,14 +47,41 @@ export async function readLlmStatus(
 /** All open AI consumers use this same query key and source of truth. */
 export function useLlmStatus(
   facade: Pick<LlmAdminFacade, "readRuntimeStatus">,
+  options: { enabled?: boolean } = {},
 ): UseQueryResult<LlmStatusSnapshot, Error> {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: llmStatusQueryKey,
     queryFn: () => readLlmStatus(facade),
     refetchOnMount: "always",
     retry: false,
     staleTime: 0,
   });
+}
+
+/** Cached readiness is never authoritative during a refresh or after a failed read. */
+export function useLlmCapability(
+  facade: Pick<LlmAdminFacade, "readRuntimeStatus">,
+  capability: LlmCapabilityName,
+  options: {
+    enabled?: boolean;
+    requiredTestLevel?: LlmRequiredTestLevel;
+    preconditionsMet?: boolean;
+  } = {},
+): LlmCapabilityState {
+  const query = useLlmStatus(facade, options);
+  if (query.isFetching || query.isPending) {
+    return { state: "loading", query };
+  }
+  if (query.isError) return { state: "error", query };
+  if (!query.data) return { state: "loading", query };
+
+  const readiness = evaluateLlmCapability(query.data, capability, options);
+  return {
+    state: readiness.ready ? "ready" : "blocked",
+    readiness,
+    query,
+  };
 }
 
 /** Refresh every open consumer after a successful provider or capability edit.

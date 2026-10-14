@@ -24,6 +24,10 @@ import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
 import { AgentPresentation } from "../../ui/AgentPresentation";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { LlmCapabilityStatusNotice } from "../settings/LlmCapabilityStatusNotice";
+import { useLlmCapability } from "../settings/llmStatus";
+import type { LlmCapabilityState } from "../settings/llmStatus";
 import type { SkillLibraryReturnState } from "../skill-detail/detailContext";
 import { skillDetailKeys } from "../skill-detail/api";
 import {
@@ -49,6 +53,7 @@ export interface SkillQuickDrawerProps {
   /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
   directoryOpener?: DirectoryOpener;
   facade: SkillLibraryFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   libraryReturn?: SkillLibraryReturnState;
   /** W4-2：删除交给宿主的统一移除流程（prepare_delete 影响确认）。 */
   onDelete: (skill: { id: string; name: string }) => void;
@@ -76,7 +81,10 @@ interface ModuleProps {
   versionsState?: { libraryReturn: SkillLibraryReturnState };
 }
 
-type ModuleRendererProps = ModuleProps & { securityFacade: SecurityFacade };
+type ModuleRendererProps = ModuleProps & {
+  securityFacade: SecurityFacade;
+  llmCapability: LlmCapabilityState;
+};
 
 interface ModuleCardProps {
   children: ReactNode;
@@ -185,6 +193,7 @@ export function SkillQuickDrawer({
   detailSearch = "",
   directoryOpener,
   facade,
+  llmFacade = nativeLlmFacade,
   libraryReturn,
   onDelete,
   onDispatch,
@@ -423,18 +432,16 @@ export function SkillQuickDrawer({
   }, [detailQuery.data]);
 
   const view = localView ?? detailQuery.data;
-  // FB-⑥：AI 可用性事实源与 SecurityResults 一致（llmProvider 非空即视为已配置；
-  // 能力开关的细粒度合成由 D3-A 统一收口）。读取失败按未知处理：不禁用，
-  // 点击后由真实错误路径给出原因，避免误伤已配置用户。
-  const llmPreferencesQuery = useQuery({
+  const translationCapability = useLlmCapability(llmFacade, "description_translation", {
     enabled: open,
-    queryFn: async () => (await securityFacade.getPreferences?.()) ?? null,
-    queryKey: ["skill-drawer-llm-preferences"],
-    staleTime: 60_000,
+    requiredTestLevel: "model",
+    preconditionsMet: Boolean(view?.originalDescription?.trim()),
   });
-  const llmConfigured = llmPreferencesQuery.data
-    ? llmPreferencesQuery.data.llmProvider.trim().length > 0
-    : true;
+  const safetyCapability = useLlmCapability(llmFacade, "safety_check", {
+    enabled: open,
+    requiredTestLevel: "structured",
+    preconditionsMet: Boolean(view?.currentVersionId && securityFacade.runLlmCheck),
+  });
   const versionsHref = skillId
     ? `${location.pathname.startsWith("/__preview") ? "/__preview/skill-detail" : "/library"}/${skillId}${detailSearch}#review-versions`
     : undefined;
@@ -728,7 +735,7 @@ export function SkillQuickDrawer({
                 editingField={editingField}
                 editingValue={editingValue}
                 facade={facade}
-                llmConfigured={llmConfigured}
+                llmCapability={translationCapability}
                 onAddTags={() => setTagAction("add_tag")}
                 onBeginEdit={beginEdit}
                 onChange={setEditingValue}
@@ -755,7 +762,7 @@ export function SkillQuickDrawer({
               <PrototypeCollectionsModule facade={facade} skillId={view.id} />
               {normalizedPreferences.visibleModules.includes("usage_evidence") ? <UsageEvidenceModule view={view} /> : null}
               <PrototypeSubjectLocationModule directoryOpener={directoryOpener} view={view} />
-              <PrototypeSecurityChecksModule llmConfigured={llmConfigured} securityFacade={securityFacade} view={view} />
+              <PrototypeSecurityChecksModule llmCapability={safetyCapability} securityFacade={securityFacade} view={view} />
               <SourceVersionPrototypeModule versionsHref={versionsHref} versionsState={versionsState} view={view} />
             </div>
           ) : null}
@@ -1403,13 +1410,14 @@ function PrototypeSecurityRiskIcon({ description, label, title }: { description:
 }
 
 
-function PrototypeSecurityChecksModule({ llmConfigured = true, securityFacade, view }: ModuleRendererProps & { llmConfigured?: boolean }) {
+function PrototypeSecurityChecksModule({ llmCapability, securityFacade, view }: ModuleRendererProps) {
   const { t } = useTranslation();
   const [runningKinds, setRunningKinds] = useState<Set<SecurityCheckKind>>(() => new Set());
   // FB-⑥：失败原因存结构化错误的可读文本（对齐 SecurityResults），不再只存布尔
   // 而把真实原因吞成通用句。
   const [runErrors, setRunErrors] = useState<Partial<Record<SecurityCheckKind, string>>>({});
   const versionId = view.currentVersionId;
+  const llmReady = llmCapability.state === "ready";
   const resultQuery = useQuery({
     enabled: Boolean(versionId),
     queryKey: ["skill-drawer-prototype-security", view.id, versionId],
@@ -1424,7 +1432,7 @@ function PrototypeSecurityChecksModule({ llmConfigured = true, securityFacade, v
   });
   const executeCheck = async (kind: SecurityCheckKind) => {
     const run = kind === "basic" ? securityFacade.runBasicCheck : securityFacade.runLlmCheck;
-    if (!versionId || !run || runningKinds.has(kind)) return;
+    if (!versionId || !run || runningKinds.has(kind) || (kind === "llm" && !llmReady)) return;
     setRunErrors((current) => {
       const next = { ...current };
       delete next[kind];
@@ -1569,16 +1577,11 @@ function PrototypeSecurityChecksModule({ llmConfigured = true, securityFacade, v
         <Button disabled={!versionId || !securityFacade.runBasicCheck || runningKinds.has("basic")} loading={runningKinds.has("basic")} onClick={() => void executeCheck("basic")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.recheck")}
         </Button>
-        <Button disabled={!versionId || !llmConfigured || !securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
+        <Button disabled={!versionId || !llmReady || !securityFacade.runLlmCheck || runningKinds.has("llm")} loading={runningKinds.has("llm")} onClick={() => void executeCheck("llm")} size="sm" variant="secondary">
           {t("skillLibrary.drawer.prototype.aiCheck")}
         </Button>
       </div>
-      {!llmConfigured ? (
-        <p className="sh-skill-drawer__prototype-security-error" role="status">
-          {t("security.llm.providerMissing")}{" "}
-          <Link to="/settings?section=networkAi">{t("security.llm.configure")}</Link>
-        </p>
-      ) : null}
+      {securityFacade.runLlmCheck ? <LlmCapabilityStatusNotice capability={llmCapability} /> : null}
     </ModuleCard>
   );
 }
@@ -1637,8 +1640,7 @@ interface PrototypeIdentityRegionProps extends ModuleProps {
   /** W3-7：生命周期控制读写真实 set_trial 命令所需门面与快照刷新。 */
   facade: SkillLibraryFacade;
   refreshSnapshot?: () => Promise<void>;
-  /** FB-⑥：LLM 未配置时禁用 AI 翻译并给出设置入口；缺省按已配置处理。 */
-  llmConfigured?: boolean;
+  llmCapability: LlmCapabilityState;
   onAddTags: () => void;
   onBeginEdit: (field: "alias" | "note" | "purpose") => void;
   onChange: (value: string) => void;
@@ -1658,7 +1660,7 @@ function PrototypeIdentityRegion({
   editingField,
   editingValue,
   facade,
-  llmConfigured = true,
+  llmCapability,
   onAddTags,
   onBeginEdit,
   onChange,
@@ -1858,7 +1860,7 @@ function PrototypeIdentityRegion({
             aria-label={t("skillLibrary.drawer.prototype.aiTranslate")}
             className="sh-skill-drawer__prototype-translate"
             data-tooltip={t("skillLibrary.drawer.prototype.aiTranslate")}
-            disabled={translationLoading || !onTranslateDescription || !llmConfigured}
+            disabled={translationLoading || !onTranslateDescription || llmCapability.state !== "ready"}
             onClick={onTranslateDescription}
             size="sm"
             variant="ghost"
@@ -1866,12 +1868,7 @@ function PrototypeIdentityRegion({
             {translationLoading ? <span className="sh-skill-drawer__prototype-translate-loading" aria-hidden="true" /> : <PrototypeTranslationIcon />}
           </Button>
         </div>
-        {!onTranslateDescription || !llmConfigured ? (
-          <span className="sh-skill-drawer__prototype-translation-unavailable">
-            <span>{t("skillLibrary.drawer.prototype.translationUnavailable")}</span>
-            <Link to="/settings?section=networkAi">{t("skillLibrary.drawer.prototype.configureTranslation")}</Link>
-          </span>
-        ) : null}
+        {onTranslateDescription ? <LlmCapabilityStatusNotice capability={llmCapability} /> : null}
         {translationError ? <p role="alert">{translationError}</p> : null}
         {translationDraft ? (
           <div aria-label={t("skillLibrary.drawer.translation.confirmLabel")} role="alertdialog">

@@ -4,6 +4,7 @@ import type { BootstrapSnapshot } from "../../api/bindings";
 import { AppShell } from "../../app/AppShell";
 import { useAppNotifications } from "../../ui/notifications";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { getPreviewLlmFacade } from "../settings/SettingsLlmPreview";
 import { DEFAULT_DRAWER_PREFERENCES } from "./api";
 import { drawerWidthForPreset } from "./drawerModules";
 import { SkillLibraryPage } from "./SkillLibraryPage";
@@ -110,6 +111,7 @@ export function SkillLibraryPreview() {
       {showNotificationPreview ? <NotificationActionPreview /> : null}
       <SkillLibraryPage
         facade={facade}
+        llmFacade={getPreviewLlmFacade()}
         securityFacade={securityFacade}
       />
     </>

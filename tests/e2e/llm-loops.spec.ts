@@ -22,6 +22,28 @@ test("the saved-translation loop retranslates the description on demand", async 
   await expect(page.getByText("Retranslated description (zh-CN)")).toBeVisible();
 });
 
+test("translation settings return to the same skill and refresh capability state", async ({ page }) => {
+  await page.goto("/__preview/skill-detail/skill-pdf?scenario=translation-setup");
+
+  const panel = page.locator(".sh-metadata-panel");
+  const translateAgain = panel.getByRole("button", { name: "Translate description again" });
+  await expect(page.getByText("示例译文")).toBeVisible();
+  await expect(translateAgain).toBeDisabled();
+
+  await page.getByRole("link", { name: "Open Network & AI settings" }).click();
+  await expect(page).toHaveURL(/\/__preview\/settings-llm\?section=networkAi#settings-panel-networkAi$/);
+  const translationSwitch = page.getByRole("switch", { name: "Description translation" });
+  await expect(translationSwitch).toBeVisible();
+  await translationSwitch.check();
+  await expect(translationSwitch).toBeChecked();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf\?scenario=translation-setup$/);
+  await expect(page.getByText("示例译文")).toBeVisible();
+  await expect(translateAgain).toBeEnabled();
+  await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toHaveCount(0);
+});
+
 test("the semantic duplicate analysis reports AI candidates as advisory", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
   await page.getByRole("link", { name: "使用去向" }).click();

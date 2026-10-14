@@ -8,6 +8,8 @@ import { createOperationTracker, type OperationTracker } from "../../platform/op
 import { AppNotificationsProvider } from "../../ui/notifications";
 import { skillDetailKeys } from "../skill-detail/api";
 import { skillLibraryKeys } from "../skills/api";
+import type { LlmAdminFacade } from "../settings/llmApi";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
 import {
   separateCheckFixture,
   type SecurityCheck,
@@ -42,6 +44,7 @@ interface FacadeOverrides {
   checks?: SecurityCheck[];
   findings?: SecurityFinding[];
   preferences?: SecurityPreferences;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   runBasicCheck?: (skillId: string, versionId: string) => Promise<void>;
   runLlmCheck?: (skillId: string, versionId: string) => Promise<void>;
   cancelLlmCheck?: (operationId: string) => Promise<void>;
@@ -61,7 +64,7 @@ interface FacadeOverrides {
   securityAlert?: "danger" | "warning" | null;
 }
 
-async function renderSecurity({ checks, findings, preferences, runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant, presentationMode, securityAlert }: FacadeOverrides) {
+async function renderSecurity({ checks, findings, preferences, llmFacade = createReadyLlmStatusFacade(), runBasicCheck, runLlmCheck, cancelLlmCheck, listRunningLlmChecks, onDisposition, tracker, dispositionRejection, skillId = "skill-pdf", versionId = "v1", withNotices, variant, presentationMode, securityAlert }: FacadeOverrides) {
   const dispositionCalls: DispositionCall[] = [];
   const fixture = separateCheckFixture();
   let currentFindings = findings ?? fixture.findings;
@@ -98,7 +101,7 @@ async function renderSecurity({ checks, findings, preferences, runBasicCheck, ru
   // i18n 实例，通知文案会退化成未翻译的键名。
   const tree = (
     <I18nextProvider i18n={i18n}>
-      <SecurityResults facade={facade} presentationMode={presentationMode} securityAlert={securityAlert} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
+      <SecurityResults facade={facade} llmFacade={llmFacade} presentationMode={presentationMode} securityAlert={securityAlert} skillId={skillId} tracker={tracker} variant={variant} versionId={versionId} />
     </I18nextProvider>
   );
   const view = render(
@@ -389,24 +392,32 @@ it("renders risk-aware summaries through i18n keys instead of hardcoded copy", a
   expect(await pending.findByTestId("review-safety-summary")).toHaveTextContent("高风险 0 项 · 1 项待处理。请结合检查范围与发现记录判断。");
 });
 
-it("explains the risk-aware provider gap through i18n without a settings link", async () => {
+it("shows the shared AI setup entry in risk-aware security presentation", async () => {
   await renderSecurity({
+    llmFacade: createReadyLlmStatusFacade({ provider: null }),
     presentationMode: "risk-aware",
     preferences: { llmProvider: "", dataScope: "explicit_selection" },
   });
 
-  expect(await screen.findByText("可在设置中的网络与 AI 配置提供商；未配置提供商时不会发送内容。")).toBeVisible();
-  expect(screen.queryByRole("link", { name: "配置 AI 设置" })).not.toBeInTheDocument();
+  expect(await screen.findByText("尚未选择此操作实际使用的模型供应商。")).toBeVisible();
+  expect(screen.getByRole("link", { name: "前往网络与 AI 设置" })).toHaveAttribute(
+    "href",
+    "/settings?section=networkAi#settings-panel-networkAi",
+  );
 });
 
-it("disables the AI check entry with an explanation when no LLM provider is configured", async () => {
+it("disables the AI check from shared capability status while preserving the send scope", async () => {
   const { runSpy } = await renderSecurity({
+    llmFacade: createReadyLlmStatusFacade({ provider: null }),
     preferences: { llmProvider: "", dataScope: "explicit_selection" },
   });
 
-  expect(await screen.findByText("未配置 LLM 提供商，AI 检查不可用")).toBeVisible();
-  expect(screen.getByRole("link", { name: "配置 AI 设置" })).toHaveAttribute("href", "/settings?section=networkAi");
-  expect(screen.queryByText("仅发送显式选择的 Skill 内容")).not.toBeInTheDocument();
+  expect(await screen.findByText("尚未选择此操作实际使用的模型供应商。")).toBeVisible();
+  expect(screen.getByRole("link", { name: "前往网络与 AI 设置" })).toHaveAttribute(
+    "href",
+    "/settings?section=networkAi#settings-panel-networkAi",
+  );
+  expect(screen.getByText("仅发送显式选择的 Skill 内容")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "运行 AI 检查" })).toBeDisabled();
 
   fireEvent.click(screen.getByRole("button", { name: "运行 AI 检查" }));

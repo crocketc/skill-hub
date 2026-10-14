@@ -7,6 +7,7 @@ import {
   evaluateLlmCapability,
   invalidateLlmStatus,
   llmStatusQueryKey,
+  useLlmCapability,
   useLlmStatus,
   type LlmStatusSnapshot,
 } from "./llmStatus";
@@ -110,6 +111,31 @@ it("does not mark shared status available while a read is pending or failed", as
   await waitFor(() => expect(failed.result.current.isError).toBe(true));
   expect(failed.result.current.data).toBeUndefined();
   failed.unmount();
+  client.clear();
+});
+
+it("does not reuse cached readiness while refreshing or after the refresh fails", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  client.setQueryData(llmStatusQueryKey, snapshot());
+  const facade = {
+    async readRuntimeStatus() {
+      throw new Error("settings read failed");
+    },
+  } as never;
+
+  const result = renderHook(
+    () => useLlmCapability(facade, "description_translation"),
+    { wrapper },
+  );
+  expect(result.result.current.state).toBe("loading");
+  expect(result.result.current.readiness).toBeUndefined();
+
+  await waitFor(() => expect(result.result.current.state).toBe("error"));
+  expect(result.result.current.readiness).toBeUndefined();
+  result.unmount();
   client.clear();
 });
 

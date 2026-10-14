@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { AppNotificationsProvider } from "../../ui/notifications";
+import type { LlmAdminFacade } from "../settings/llmApi";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
 import type { SkillMetadata } from "./api";
 import { MetadataPanel } from "./MetadataPanel";
 import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
@@ -12,12 +14,14 @@ import { createMockSkillDetailFacade, detailFixture } from "./testFixtures";
 async function renderMetadata({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
+  llmFacade = createReadyLlmStatusFacade(),
   refreshSnapshot,
   reviewPresentation = false,
   skillId = "skill-pdf",
 }: {
   facade?: ReturnType<typeof createMockSkillDetailFacade>;
   metadata?: SkillMetadata;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   refreshSnapshot?: () => Promise<void>;
   reviewPresentation?: boolean;
   skillId?: string;
@@ -31,6 +35,7 @@ async function renderMetadata({
       <I18nextProvider i18n={i18n}>
         <MetadataPanel
           facade={facade}
+          llmFacade={llmFacade}
           metadata={currentMetadata}
           refreshSnapshot={refreshSnapshot}
           reviewPresentation={reviewPresentation}
@@ -40,6 +45,13 @@ async function renderMetadata({
     </QueryClientProvider>
   );
   const rendered = render(renderPanel(metadata));
+  if (metadata.originalDescription?.trim()) {
+    await waitFor(() => expect(
+      screen.getByRole("button", {
+        name: metadata.translation?.text ? "重新翻译描述" : "AI 翻译",
+      }),
+    ).toBeEnabled());
+  }
   return {
     client,
     facade,
@@ -49,8 +61,10 @@ async function renderMetadata({
           <I18nextProvider i18n={i18n}>
             <MetadataPanel
               facade={facade}
+              llmFacade={llmFacade}
               metadata={nextMetadata}
               refreshSnapshot={refreshSnapshot}
+              reviewPresentation={reviewPresentation}
               skillId={nextSkillId}
             />
           </I18nextProvider>
@@ -63,10 +77,12 @@ async function renderMetadata({
 async function renderMetadataWithBridge({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
+  llmFacade = createReadyLlmStatusFacade(),
   tracker = createOperationTracker(),
 }: {
   facade?: ReturnType<typeof createMockSkillDetailFacade>;
   metadata?: SkillMetadata;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   tracker?: OperationTracker;
 } = {}) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -79,6 +95,7 @@ async function renderMetadataWithBridge({
         <AppNotificationsProvider>
           <MetadataPanel
             facade={facade}
+            llmFacade={llmFacade}
             metadata={metadata}
             skillId="skill-pdf"
             tracker={tracker}
@@ -87,6 +104,13 @@ async function renderMetadataWithBridge({
       </I18nextProvider>
     </QueryClientProvider>,
   );
+  if (metadata.originalDescription?.trim()) {
+    await waitFor(() => expect(
+      screen.getByRole("button", {
+        name: metadata.translation?.text ? "重新翻译描述" : "AI 翻译",
+      }),
+    ).toBeEnabled());
+  }
   return { client, facade, tracker };
 }
 

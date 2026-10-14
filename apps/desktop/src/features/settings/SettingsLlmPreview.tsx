@@ -52,6 +52,12 @@ const PREVIEW_PROVIDERS: LlmProviderView[] = [
     },
     credential_configured: true,
     is_default: true,
+    last_connection_test: {
+      service_ok: true,
+      model_ok: true,
+      structured_ok: true,
+      tested_at: "2026-10-15T00:00:00Z",
+    },
   },
   {
     config: {
@@ -91,6 +97,10 @@ function wantsLongScenario(): boolean {
   return new URLSearchParams(window.location.search).get("scenario") === "long-text";
 }
 
+function wantsTranslationSetupScenario(): boolean {
+  return new URLSearchParams(window.location.search).get("scenario") === "translation-setup";
+}
+
 function previewLlmFacade(): LlmAdminFacade {
   const longScenario = wantsLongScenario();
   let providers: LlmProviderView[] = longScenario
@@ -99,8 +109,8 @@ function previewLlmFacade(): LlmAdminFacade {
   const capabilities: LlmCapabilityState = {
     capabilities: {
       safety_check: true,
-      semantic_duplicate: false,
-      description_translation: false,
+      semantic_duplicate: true,
+      description_translation: !wantsTranslationSetupScenario(),
       online_search_assist: false,
     },
     aiOutputLanguage: "system",
@@ -214,11 +224,19 @@ function previewLlmFacade(): LlmAdminFacade {
   };
 }
 
+let sharedPreviewLlmFacade: LlmAdminFacade | undefined;
+
+/** Shared only by DEV preview routes to exercise settings-to-consumer refresh. */
+export function getPreviewLlmFacade(): LlmAdminFacade {
+  sharedPreviewLlmFacade ??= previewLlmFacade();
+  return sharedPreviewLlmFacade;
+}
+
 export function SettingsLlmPreview() {
   const [facade] = useState<SettingsFacade>(() => ({
     execute: async () => undefined,
     get: async () => settingsFixture(),
-    llm: previewLlmFacade(),
+    llm: getPreviewLlmFacade(),
   }));
   return <SettingsPage facade={facade} />;
 }

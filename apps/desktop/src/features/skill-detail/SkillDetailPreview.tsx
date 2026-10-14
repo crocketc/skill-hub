@@ -12,6 +12,7 @@ import type {
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { createMockMarkdownFacade } from "../markdown/testFixtures";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { getPreviewLlmFacade } from "../settings/SettingsLlmPreview";
 import { removalImpactFixture, type RemovalFacade } from "../removal/api";
 import { SkillDetailPage } from "./SkillDetailPage";
 import { createMockSkillDetailFacade } from "./testFixtures";
@@ -424,6 +425,7 @@ export function SkillDetailPreview() {
   return (
     <SkillDetailPage
       facade={facade}
+      llmFacade={getPreviewLlmFacade()}
       governanceFacade={previewGovernanceFacade}
       markdownFacade={markdownFacade}
       removalFacade={previewRemovalFacade}

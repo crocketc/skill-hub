@@ -1988,6 +1988,7 @@
       "purpose": "My purpose",
       "purposeHint": "Once saved it is shown first in the overview; independent of the content description.",
       "retranslate": "Translate description again",
+      "aiTranslate": "AI translate",
       "save": "Save {{label}}",
       "saveAction": "Save",
       "saveError": "Could not save. Your draft is still here.",
@@ -3906,6 +3907,20 @@
         "online_search_assist": "Online search assist"
       },
       "capabilityDisabled": "The AI capability for this feature is disabled; enable it in Settings and try again.",
+      "status": {
+        "loading": "Reading AI capability status…",
+        "readFailed": "The AI capability status could not be read.",
+        "retry": "Retry reading",
+        "openSettings": "Open Network & AI settings",
+        "preconditionsMissing": "The current content does not meet this action's prerequisites.",
+        "providerUnselected": "No model provider is selected for this action.",
+        "providerUnavailable": "The selected model runner is unavailable.",
+        "providerIncomplete": "The selected provider endpoint or model is incomplete.",
+        "credentialMissing": "The selected provider has no available credentials.",
+        "connectionUnverified": "The selected model configuration has not passed a connection test.",
+        "structuredOutputUnverified": "The selected model has not passed structured output testing.",
+        "capabilityDisabled": "This AI capability is turned off."
+      },
       "scopeSafety": "Sends: skill file contents (after masking sensitive values)",
       "scopeDuplicate": "Sends: skill names and descriptions",
       "scopeTranslation": "Sends: skill description text",

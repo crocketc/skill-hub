@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import "../../styles/base.css";
 import {
   DEFAULT_DRAWER_PREFERENCES,
@@ -204,6 +206,7 @@ interface DrawerHarnessProps {
   detailSearch?: string;
   directoryOpener?: { openDirectory: (path: string) => Promise<void> };
   facade: SkillLibraryFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   libraryReturn?: { focusSkillId: string; scrollLeft: number; scrollTop: number };
   /** W4-2：抽屉主操作接宿主真实流程（派发路由/标准导出/统一移除）。 */
   onDelete?: (skill: { id: string; name: string }) => void;
@@ -222,6 +225,7 @@ function DrawerHarness({
   detailSearch,
   directoryOpener,
   facade,
+  llmFacade = createReadyLlmStatusFacade(),
   libraryReturn,
   onDelete,
   onDispatch,
@@ -253,6 +257,7 @@ function DrawerHarness({
         detailSearch={detailSearch}
         directoryOpener={directoryOpener}
         facade={facade}
+        llmFacade={llmFacade}
         libraryReturn={libraryReturn}
         // 主操作在抽屉里是必选真实流程；未断言动作的测试给空实现，
         // 需要断言的测试显式传入 spy（见 "drawer primary actions" describe）。
@@ -1294,16 +1299,20 @@ describe("drawer AI availability and error reasons (FB-⑥)", () => {
     actions: [],
   };
 
-  it("disables AI translation and shows the configure entry when no LLM provider is set", async () => {
+  it("disables AI translation with the shared selected-provider reason", async () => {
     const securityFacade = createPreviewSecurityFacade();
     securityFacade.getPreferences = async () => ({ llmProvider: "", dataScope: "explicit_selection" });
-    await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+    await renderDrawer({
+      facade: createMockSkillLibraryFacade(),
+      llmFacade: createReadyLlmStatusFacade({ provider: null }),
+      securityFacade,
+    });
 
     expect(await screen.findByRole("button", { name: "AI translation" })).toBeDisabled();
-    expect(await screen.findByText("AI translation is not configured")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Configure AI translation" })).toHaveAttribute(
+    expect(await screen.findAllByText("No model provider is selected for this action.")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Open Network & AI settings" })[0]).toHaveAttribute(
       "href",
-      "/settings?section=networkAi",
+      "/settings?section=networkAi#settings-panel-networkAi",
     );
   });
 
@@ -1319,18 +1328,20 @@ describe("drawer AI availability and error reasons (FB-⑥)", () => {
     );
   });
 
-  it("disables the AI security check and shows the configure entry when no LLM provider is set", async () => {
+  it("disables the AI security check with the shared selected-provider reason", async () => {
     const securityFacade = createPreviewSecurityFacade();
     securityFacade.getPreferences = async () => ({ llmProvider: "", dataScope: "explicit_selection" });
-    await renderDrawer({ facade: createMockSkillLibraryFacade(), securityFacade });
+    await renderDrawer({
+      facade: createMockSkillLibraryFacade(),
+      llmFacade: createReadyLlmStatusFacade({ provider: null }),
+      securityFacade,
+    });
 
     expect(await screen.findByRole("button", { name: "AI check" })).toBeDisabled();
-    expect(
-      await screen.findByText("No LLM provider is configured; AI checks are unavailable."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Configure AI settings" })).toHaveAttribute(
+    expect(await screen.findAllByText("No model provider is selected for this action.")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Open Network & AI settings" })[0]).toHaveAttribute(
       "href",
-      "/settings?section=networkAi",
+      "/settings?section=networkAi#settings-panel-networkAi",
     );
   });
 

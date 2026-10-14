@@ -18,6 +18,7 @@ import {
 } from "./api";
 import { detailSearchFromLibrary, readLibraryReturnState } from "./detailContext";
 import type { SecurityFacade } from "../security/api";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import { useOptionalAppNotifications } from "../../ui/notifications";
 import { operationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
@@ -67,6 +68,7 @@ interface SkillDetailPageProps {
   /** T05：技能详情与关系治理页共用 T04 使用关系释放门面。 */
   usageChangeFacade?: UsageChangeFacade;
   securityFacade: SecurityFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   refreshSnapshot?: () => Promise<void>;
   tracker?: OperationTracker;
 }
@@ -85,6 +87,7 @@ export function SkillDetailPage({
   removalFacade,
   usageChangeFacade,
   securityFacade,
+  llmFacade,
   refreshSnapshot,
   tracker = operationTracker,
 }: SkillDetailPageProps) {
@@ -586,6 +589,7 @@ export function SkillDetailPage({
         refreshSnapshot={refreshSnapshot}
         requirements={requirementsQuery.data}
         securityFacade={securityFacade}
+        llmFacade={llmFacade}
         skillId={skillId}
         summary={summaryQuery.data}
         usageDestinations={usageDestinations}
