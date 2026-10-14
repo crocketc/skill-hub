@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType, useOutletContext, useSearchParams } from "react-router-dom";
 import { queryApplication, type GovernanceTaskFact } from "../api/bindings";
 import { DiscoveryPage, type DiscoveryModuleView } from "../features/discovery/DiscoveryPage";
 import { desktopDiscoveryFacade } from "../features/discovery/api";
@@ -26,6 +26,7 @@ export function DiscoveryRoute({
 }: DiscoveryRouteProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const { refreshSnapshot } = useOutletContext<BootstrapOutletContext>();
   const state = location.state as
     | { initialSources?: string[]; initialSourceText?: string; onboardingImport?: boolean; governanceTaskId?: string }
@@ -102,6 +103,11 @@ export function DiscoveryRoute({
     <DiscoveryPage
       key={governanceTaskId ?? "discovery"}
       view={view}
+      onlineSearchNavigation={{
+        pathname: location.pathname,
+        key: location.key,
+        action: navigationType,
+      }}
       discoveryFacade={discoveryFacade}
       importFacade={importFacade}
       importedNames={loadImportedNames}
@@ -121,7 +127,6 @@ export function DiscoveryRoute({
       )}
       onOpenGovernanceTask={handleOpenGovernanceTask}
       onNavigate={(module) => navigate(`/discovery/${module}`)}
-      onOpenSettings={() => navigate("/settings")}
     />
   );
 }

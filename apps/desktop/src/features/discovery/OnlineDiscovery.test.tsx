@@ -1,12 +1,15 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render as testingRender, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import {
   type LlmAdminFacade,
-  type LlmProviderView,
-  unavailableLlmFacade,
+  type LlmRuntimeStatus,
 } from "../settings/llmApi";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
 import type {
   DownloadedRepoSkill,
   OperationSummary,
@@ -15,6 +18,15 @@ import type {
 } from "../../api/bindings";
 import { OnlineDiscovery, parseGitHubRepoTree, toRepoSkill } from "./OnlineDiscovery";
 import type { DiscoveryFacade } from "./api";
+
+function render(ui: ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return testingRender(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 const hit = {
   source_id: "skills.sh/anthropics/skills/pdf",
@@ -80,12 +92,18 @@ beforeAll(async () => {
     .__skillhubOnlineDiscoveryI18n = await createSkillHubI18n(["zh-CN"]);
 });
 
-async function renderSearched(facade: DiscoveryFacade, onImportDirectory = vi.fn(), importedNames?: () => Promise<string[]>) {
+async function renderSearched(
+  facade: DiscoveryFacade,
+  onImportDirectory = vi.fn(),
+  importedNames?: () => Promise<string[]>,
+  llmFacade = createReadyLlmStatusFacade(),
+) {
   render(
     <I18nextProvider i18n={createSkillHubI18nSync()}>
       <OnlineDiscovery
         facade={facade}
         importedNames={importedNames}
+        llmFacade={llmFacade}
         onImportDirectory={onImportDirectory}
         onStartImport={vi.fn()}
       />
@@ -95,6 +113,21 @@ async function renderSearched(facade: DiscoveryFacade, onImportDirectory = vi.fn
   await click(screen.getByRole("button", { name: "搜索" }));
   await screen.findByText("PDF Reader");
   return onImportDirectory;
+}
+
+function signaledReadyLlmFacade() {
+  const ready = createReadyLlmStatusFacade();
+  let settled = false;
+  return {
+    isSettled: () => settled,
+    facade: {
+      async readRuntimeStatus() {
+        const status = await ready.readRuntimeStatus();
+        settled = true;
+        return status;
+      },
+    },
+  };
 }
 
 it("guides the user with a visible hint before the first search", () => {
@@ -371,8 +404,9 @@ describe("single-skill install (P1-04)", () => {
 });
 
 describe("AI search assist", () => {
-  async function toggleAssist() {
+  async function toggleAssist(isSettled?: () => boolean) {
     await click(screen.getByLabelText("AI 搜索辅助"));
+    if (isSettled) await waitFor(() => expect(isSettled()).toBe(true));
   }
 
   it("keeps calling the plain search while the assist toggle is off", async () => {
@@ -404,8 +438,9 @@ describe("AI search assist", () => {
     };
     const assisted = vi.fn(async () => assistedPage);
     const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
-    await renderSearched(facade);
-    await toggleAssist();
+    const llm = signaledReadyLlmFacade();
+    await renderSearched(facade, vi.fn(), undefined, llm.facade);
+    await toggleAssist(llm.isSettled);
     await click(screen.getByRole("button", { name: "搜索" }));
 
     await screen.findByText("PDF Text Extractor");
@@ -421,8 +456,9 @@ describe("AI search assist", () => {
       throw new Error("llm.request_timeout");
     });
     const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
-    await renderSearched(facade);
-    await toggleAssist();
+    const llm = signaledReadyLlmFacade();
+    await renderSearched(facade, vi.fn(), undefined, llm.facade);
+    await toggleAssist(llm.isSettled);
     await click(screen.getByRole("button", { name: "搜索" }));
 
     await screen.findByText("PDF Reader");
@@ -438,8 +474,9 @@ describe("AI search assist", () => {
       throw { code: "llm.not_configured", severity: "error", params: {}, actions: [] };
     });
     const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
-    await renderSearched(facade);
-    await toggleAssist();
+    const llm = signaledReadyLlmFacade();
+    await renderSearched(facade, vi.fn(), undefined, llm.facade);
+    await toggleAssist(llm.isSettled);
     await click(screen.getByRole("button", { name: "搜索" }));
 
     expect(await screen.findByText("PDF Reader")).toBeVisible();
@@ -453,8 +490,9 @@ describe("AI search assist", () => {
       throw { code: "llm.cancelled", severity: "error", params: {}, actions: [] };
     });
     const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
-    await renderSearched(facade);
-    await toggleAssist();
+    const llm = signaledReadyLlmFacade();
+    await renderSearched(facade, vi.fn(), undefined, llm.facade);
+    await toggleAssist(llm.isSettled);
     await click(screen.getByRole("button", { name: "搜索" }));
 
     expect(await screen.findByText("PDF Reader")).toBeVisible();
@@ -709,65 +747,35 @@ describe("search candidate confirmation loop (P1-05)", () => {
   });
 });
 
-// M-16：勾选 AI 搜索辅助时立即读取配置/能力开关/凭据状态，呈现
-// 可用/未配置/被禁用/连接未知四态；未就绪时阻断伪 AI 路径并提供设置入口；
-// 普通搜索结果永远不标成 AI 结果。
-describe("AI assist readiness gate (M-16)", () => {
-  const onlineProvider: LlmProviderView = {
-    config: {
-      id: "deepseek",
-      label: "DeepSeek",
-      protocol: "open_ai_compatible",
-      deployment: "online",
-      endpoint: "https://api.deepseek.com/v1",
-      model: "deepseek-chat",
-      credential_ref: { id: "llm-provider:deepseek" },
-      enabled: true,
-    },
-    credential_configured: true,
-    is_default: true,
-  };
-
-  function llmFacadeWith(
-    options: {
-      providers?: LlmProviderView[];
-      onlineSearchAssist?: boolean;
-      readError?: unknown;
-    } = {},
-  ): LlmAdminFacade {
+// AI-SEARCH consumes the shared runtime status. SearchQueryService uses structured
+// output, so a model test without structured_ok is not sufficient for this task.
+describe("AI-assisted online search shared readiness", () => {
+  function llmFacadeWith(options: {
+    status?: LlmRuntimeStatus;
+    readRuntimeStatus?: () => Promise<LlmRuntimeStatus>;
+  } = {}) {
+    const ready = createReadyLlmStatusFacade();
     return {
-      ...unavailableLlmFacade,
-      async listProviders() {
-        return options.providers ?? [];
-      },
-      async readCapabilityState() {
-        if (options.readError !== undefined) throw options.readError;
-        return {
-          capabilities: {
-            safety_check: false,
-            semantic_duplicate: false,
-            description_translation: false,
-            online_search_assist: options.onlineSearchAssist ?? true,
-          },
-          aiOutputLanguage: "system",
-        };
-      },
-    };
+      readRuntimeStatus: options.readRuntimeStatus
+        ?? (() => options.status ? Promise.resolve(options.status) : ready.readRuntimeStatus()),
+    } satisfies Pick<LlmAdminFacade, "readRuntimeStatus">;
+  }
+
+  async function readyStatus(): Promise<LlmRuntimeStatus> {
+    return createReadyLlmStatusFacade().readRuntimeStatus();
   }
 
   async function renderWithAssist(options: {
-    llmFacade: LlmAdminFacade;
+    llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
     facade?: DiscoveryFacade;
-    onOpenSettings?: () => void;
-  }) {
+  } = {}) {
     const facade = options.facade ?? baseFacade();
     render(
       <I18nextProvider i18n={createSkillHubI18nSync()}>
         <OnlineDiscovery
           facade={facade}
-          llmFacade={options.llmFacade}
+          llmFacade={options.llmFacade ?? llmFacadeWith()}
           onImportDirectory={vi.fn()}
-          onOpenSettings={options.onOpenSettings}
           onStartImport={vi.fn()}
         />
       </I18nextProvider>,
@@ -777,192 +785,113 @@ describe("AI assist readiness gate (M-16)", () => {
     return facade;
   }
 
-  it("shows the not-configured state and blocks the pseudo-AI path when no provider is enabled", async () => {
+  it("only reads local capability status when enabled; it waits for an explicit Search action", async () => {
     const assisted = vi.fn(async () => page);
-    const facade = await renderWithAssist({
-      llmFacade: llmFacadeWith({ providers: [] }),
-      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
-    });
+    const facade = baseFacade({ searchOnlineSourcesAssisted: assisted });
+    const readRuntimeStatus = vi.fn(llmFacadeWith().readRuntimeStatus);
+    await renderWithAssist({ facade, llmFacade: { readRuntimeStatus } });
 
-    expect(await screen.findByText(/尚未配置可用的 LLM 供应商/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "前往设置" })).toBeVisible();
+    await waitFor(() => expect(readRuntimeStatus).toHaveBeenCalledTimes(1));
+    expect(facade.searchOnlineSources).not.toHaveBeenCalled();
+    expect(assisted).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: "前往网络与 AI 设置" })).not.toBeInTheDocument();
 
     await click(screen.getByRole("button", { name: "搜索" }));
     await screen.findByText("PDF Reader");
-    // 未就绪时不得发起注定失败的伪 AI 请求；普通搜索照常执行。
-    expect(assisted).not.toHaveBeenCalled();
-    expect(facade.searchOnlineSources).toHaveBeenCalledTimes(1);
-    // 普通搜索结果不得标成 AI 结果。
-    expect(screen.getByRole("status").textContent).not.toContain("AI 扩展");
-  });
-
-  it("shows the disabled state when the online_search_assist capability switch is off", async () => {
-    const assisted = vi.fn(async () => page);
-    const onOpenSettings = vi.fn();
-    await renderWithAssist({
-      llmFacade: llmFacadeWith({ providers: [onlineProvider], onlineSearchAssist: false }),
-      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
-      onOpenSettings,
-    });
-
-    expect(await screen.findByText(/联网搜索辅助能力未开启/)).toBeVisible();
-
-    await click(screen.getByRole("button", { name: "前往设置" }));
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
-
-    await click(screen.getByRole("button", { name: "搜索" }));
-    await screen.findByText("PDF Reader");
-    expect(assisted).not.toHaveBeenCalled();
-
-    // 就绪通告已展示同一句"能力未开启"时，搜索被拒不再相邻重复渲染同一句。
-    expect(screen.getAllByText(/联网搜索辅助能力未开启/)).toHaveLength(1);
-  });
-
-  it("shows the credential-missing variant when the enabled provider has no key", async () => {
-    const assisted = vi.fn(async () => page);
-    await renderWithAssist({
-      llmFacade: llmFacadeWith({
-        providers: [{ ...onlineProvider, credential_configured: false }],
-      }),
-      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
-    });
-
-    expect(await screen.findByText(/缺少 API 密钥/)).toBeVisible();
-
-    await click(screen.getByRole("button", { name: "搜索" }));
-    await screen.findByText("PDF Reader");
-    expect(assisted).not.toHaveBeenCalled();
-  });
-
-  it("shows connection-unverified while configured and verifies on the first real search", async () => {
-    const assistedPage: SourceSearchPage = {
-      ...page,
-      ai_assisted: true,
-      expanded_query: "pdf extraction",
-    };
-    const assisted = vi.fn(async () => assistedPage);
-    await renderWithAssist({
-      llmFacade: llmFacadeWith({ providers: [onlineProvider], onlineSearchAssist: true }),
-      facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
-    });
-
-    expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
-
-    await click(screen.getByRole("button", { name: "搜索" }));
     expect(assisted).toHaveBeenCalledWith("pdf");
-    expect(await screen.findByText(/AI 扩展查询/)).toBeVisible();
-    // 验证成功后状态收敛为可用（已验证语义）。
-    expect(await screen.findByText(/AI 辅助连接已验证/)).toBeVisible();
   });
 
-  // D3：设置页三级连接测试的结果被持久化并随供应商视图返回；勾选 AI 辅助
-  // 时消费它，"已验证"不再误报"连接尚未验证"。
-  describe("persisted connection test verdict (D3)", () => {
-    const verifiedProvider: LlmProviderView = {
-      ...onlineProvider,
-      last_connection_test: {
-        service_ok: true,
-        model_ok: true,
-        structured_ok: true,
-        tested_at: "1789114968",
-      },
-    };
-
-    it("reads a fresh three-level pass as verified instead of unverified", async () => {
+  it.each(["provider", "capability", "credential"] as const)(
+    "uses shared readiness for %s and keeps plain search available",
+    async (missing) => {
+      const baseline = await readyStatus();
+      const status: LlmRuntimeStatus = missing === "provider"
+        ? { ...baseline, provider: null }
+        : missing === "capability"
+          ? { ...baseline, capabilities: { ...baseline.capabilities, online_search_assist: false } }
+          : { ...baseline, provider: { ...baseline.provider!, credential_configured: false } };
+      const reason = {
+        provider: "尚未选择此操作实际使用的模型供应商",
+        capability: "此功能的 AI 能力开关尚未开启",
+        credential: "当前模型供应商缺少可用凭据",
+      }[missing];
       const assisted = vi.fn(async () => page);
-      await renderWithAssist({
-        llmFacade: llmFacadeWith({ providers: [verifiedProvider] }),
+      const facade = await renderWithAssist({
+        llmFacade: llmFacadeWith({ status }),
         facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
       });
 
-      const notice = await screen.findByText(/AI 辅助连接已验证/);
-      expect(notice).toBeVisible();
-      expect(notice.textContent).not.toContain("连接尚未验证");
-      // 已验证状态不是"未就绪"：不提供前往设置入口。
-      expect(screen.queryByRole("button", { name: "前往设置" })).not.toBeInTheDocument();
-
-      // 已验证不阻断真实 AI 路径。
+      expect(await screen.findByText(new RegExp(reason))).toBeVisible();
+      expect(screen.getByRole("link", { name: "前往网络与 AI 设置" })).toBeVisible();
       await click(screen.getByRole("button", { name: "搜索" }));
       await screen.findByText("PDF Reader");
-      expect(assisted).toHaveBeenCalledWith("pdf");
-    });
+      expect(assisted).not.toHaveBeenCalled();
+      expect(facade.searchOnlineSources).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText("AI 尚未就绪，本次已使用普通搜索；以下结果仍然可用。")).toBeVisible();
+      expect(screen.queryByTestId("assist-skills.sh/example/expanded")).not.toBeInTheDocument();
+    },
+  );
 
-    it("stays verified when only the structured level failed", async () => {
-      await renderWithAssist({
-        llmFacade: llmFacadeWith({
-          providers: [
-            {
-              ...verifiedProvider,
-              last_connection_test: {
-                service_ok: true,
-                model_ok: true,
-                structured_ok: false,
-                tested_at: "1789114968",
-              },
-            },
-          ],
-        }),
+  it.each(["connection", "structured output"] as const)(
+    "blocks AI search when %s readiness is missing",
+    async (missing) => {
+      const baseline = await readyStatus();
+      const lastConnectionTest = missing === "connection"
+        ? { service_ok: true, model_ok: false, structured_ok: null, tested_at: "2026-10-15T00:00:00Z" }
+        : { service_ok: true, model_ok: true, structured_ok: false, tested_at: "2026-10-15T00:00:00Z" };
+      const status: LlmRuntimeStatus = {
+        ...baseline,
+        provider: { ...baseline.provider!, last_connection_test: lastConnectionTest },
+      };
+      const reason = missing === "connection"
+        ? "当前模型配置尚未通过连接测试"
+        : "当前模型尚未通过结构化输出测试";
+      const assisted = vi.fn(async () => page);
+      const facade = await renderWithAssist({
+        llmFacade: llmFacadeWith({ status }),
+        facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
       });
 
-      expect(await screen.findByText(/AI 辅助连接已验证/)).toBeVisible();
-      expect(screen.queryByText(/连接尚未验证/)).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "前往设置" })).not.toBeInTheDocument();
+      expect(await screen.findByText(new RegExp(reason))).toBeVisible();
+      await click(screen.getByRole("button", { name: "搜索" }));
+      await screen.findByText("PDF Reader");
+      expect(assisted).not.toHaveBeenCalled();
+      expect(facade.searchOnlineSources).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("shows a read error, blocks AI, and recovers through the shared retry action", async () => {
+    const ready = await readyStatus();
+    let shouldFail = true;
+    const readRuntimeStatus = vi.fn(async () => {
+      if (shouldFail) {
+        shouldFail = false;
+        throw new Error("IPC unavailable");
+      }
+      return ready;
     });
-
-    it("keeps the unverified copy when no fresh test result exists", async () => {
-      await renderWithAssist({
-        llmFacade: llmFacadeWith({
-          providers: [{ ...onlineProvider, last_connection_test: null }],
-        }),
-      });
-
-      expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
-      expect(screen.queryByText(/AI 辅助连接已验证/)).not.toBeInTheDocument();
-    });
-
-    it("does not treat a failed connection test as verified", async () => {
-      await renderWithAssist({
-        llmFacade: llmFacadeWith({
-          providers: [
-            {
-              ...onlineProvider,
-              last_connection_test: {
-                service_ok: true,
-                model_ok: false,
-                structured_ok: null,
-                tested_at: "1789114968",
-              },
-            },
-          ],
-        }),
-      });
-
-      expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
-      expect(screen.queryByText(/AI 辅助连接已验证/)).not.toBeInTheDocument();
-    });
-  });
-
-  it("falls back to the unverified state when the configuration cannot be read and still allows the real attempt", async () => {
     const assisted = vi.fn(async () => page);
-    await renderWithAssist({
-      llmFacade: llmFacadeWith({ readError: new Error("IPC unavailable") }),
+    const facade = await renderWithAssist({
+      llmFacade: { readRuntimeStatus },
       facade: baseFacade({ searchOnlineSourcesAssisted: assisted }),
     });
 
-    expect(await screen.findByText(/连接尚未验证/)).toBeVisible();
-
+    expect(await screen.findByText("暂时无法读取 AI 能力状态。")).toBeVisible();
+    await click(screen.getByRole("button", { name: "重新读取" }));
+    await waitFor(() => expect(readRuntimeStatus).toHaveBeenCalledTimes(2));
     await click(screen.getByRole("button", { name: "搜索" }));
     await screen.findByText("PDF Reader");
     expect(assisted).toHaveBeenCalledWith("pdf");
+    expect(facade.searchOnlineSources).not.toHaveBeenCalled();
   });
 
-  it("clears the readiness notice when AI assist is switched off again", async () => {
-    await renderWithAssist({ llmFacade: llmFacadeWith({ providers: [] }) });
-
-    expect(await screen.findByText(/尚未配置可用的 LLM 供应商/)).toBeVisible();
-
+  it("clears the notice when AI assist is switched off", async () => {
+    const baseline = await readyStatus();
+    await renderWithAssist({
+      llmFacade: llmFacadeWith({ status: { ...baseline, provider: null } }),
+    });
+    expect(await screen.findByText("尚未选择此操作实际使用的模型供应商。")).toBeVisible();
     await click(screen.getByLabelText("AI 搜索辅助"));
-
-    expect(screen.queryByText(/尚未配置可用的 LLM 供应商/)).not.toBeInTheDocument();
+    expect(screen.queryByText("尚未选择此操作实际使用的模型供应商。")).not.toBeInTheDocument();
   });
 });

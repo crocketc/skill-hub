@@ -1,5 +1,7 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as testingRender, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
@@ -10,6 +12,14 @@ import type { DiscoverySnapshot, ScanResult } from "../../api/bindings";
 import { createOperationTracker } from "../../platform/operationTracker";
 import type { DiscoveryFacade } from "./api";
 import { DiscoveryPage, type DiscoveryModuleView } from "./DiscoveryPage";
+
+function render(ui: ReactElement) {
+  return testingRender(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {ui}
+    </QueryClientProvider>,
+  );
+}
 
 const MODULE_VIEWS: DiscoveryModuleView[] = ["local", "online", "repo", "manual"];
 
@@ -124,8 +134,8 @@ it("hosts the original module capabilities on their own subpages", async () => {
   render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter><AppNotificationsProvider>
-      <DiscoveryPage view="online" />
-    </AppNotificationsProvider></MemoryRouter>
+        <DiscoveryPage view="online" />
+      </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
   expect(screen.getByRole("heading", { name: "在线发现" })).toBeVisible();
@@ -271,8 +281,8 @@ it("routes an installed online hit into the import wizard on the online subpage"
   render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter><AppNotificationsProvider>
-      <DiscoveryPage view="online" discoveryFacade={facade} />
-    </AppNotificationsProvider></MemoryRouter>
+        <DiscoveryPage view="online" discoveryFacade={facade} />
+      </AppNotificationsProvider></MemoryRouter>
     </I18nextProvider>,
   );
 

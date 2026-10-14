@@ -16,10 +16,11 @@ const REASON_KEYS: Record<LlmCapabilityBlockReason, string> = {
 
 interface LlmCapabilityStatusNoticeProps {
   capability: LlmCapabilityState;
+  beforeOpenSettings?: () => void;
 }
 
 /** Shared, cause-aware status feedback for AI actions. Ready state stays quiet. */
-export function LlmCapabilityStatusNotice({ capability }: LlmCapabilityStatusNoticeProps) {
+export function LlmCapabilityStatusNotice({ capability, beforeOpenSettings }: LlmCapabilityStatusNoticeProps) {
   const { t } = useTranslation();
   if (capability.state === "ready") return null;
 
@@ -49,7 +50,14 @@ export function LlmCapabilityStatusNotice({ capability }: LlmCapabilityStatusNot
         {reasons.map((reason) => <li key={reason}>{t(REASON_KEYS[reason] as never)}</li>)}
       </ul>
       {needsSettings ? (
-        <Link to={settingsHref}>
+        <Link
+          onClick={(event) => {
+            if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+              beforeOpenSettings?.();
+            }
+          }}
+          to={settingsHref}
+        >
           {t("settings.llm.status.openSettings")}
         </Link>
       ) : null}

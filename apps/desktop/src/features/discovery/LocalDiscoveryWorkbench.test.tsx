@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nextProvider } from "react-i18next";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
@@ -226,9 +227,11 @@ it("searches skills.sh and renders the real source results", async () => {
     },
   ]));
   render(
-    <I18nextProvider i18n={createSkillHubI18nSync()}>
-      <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources, ...repoDiscoveryStubs }} onImportDirectory={() => undefined} onStartImport={() => undefined} />
-    </I18nextProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <I18nextProvider i18n={createSkillHubI18nSync()}>
+        <OnlineDiscovery facade={{ getDiscoverySnapshot: async () => snapshot, scanTargets: async () => scanResult, searchOnlineSources, ...repoDiscoveryStubs }} onImportDirectory={() => undefined} onStartImport={() => undefined} />
+      </I18nextProvider>
+    </QueryClientProvider>,
   );
 
   const input = screen.getByRole("textbox", { name: "搜索 skills.sh" }) as HTMLInputElement;

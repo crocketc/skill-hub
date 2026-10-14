@@ -13,7 +13,7 @@ import { Button } from "../../ui/Button";
 import { Icon, type IconName } from "../../ui/Icon";
 import { LocalDiscovery } from "./LocalDiscovery";
 import { LocalDiscoveryWorkbench } from "./LocalDiscoveryWorkbench";
-import { OnlineDiscovery } from "./OnlineDiscovery";
+import { OnlineDiscovery, type OnlineSearchNavigationContext } from "./OnlineDiscovery";
 import { RepoDiscovery } from "./RepoDiscovery";
 import { ManualSourceDiscovery } from "./ManualSourceDiscovery";
 import type { DiscoveryFacade } from "./api";
@@ -47,8 +47,8 @@ export interface DiscoveryPageProps {
   onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   /** 生产路由提供：打开治理待办时刷新真实关系概览并回到本地发现入口。 */
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
-  /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
-  onOpenSettings?: () => void;
+  /** Navigation identity used for the one-shot online-search return handoff. */
+  onlineSearchNavigation?: OnlineSearchNavigationContext;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
   importedNames?: () => Promise<string[]>;
 }
@@ -135,7 +135,7 @@ export function DiscoveryPage({
   onOpenLibrary,
   onOpenGovernance,
   onOpenGovernanceTask,
-  onOpenSettings,
+  onlineSearchNavigation,
   importedNames,
 }: DiscoveryPageProps) {
   const { t } = useTranslation();
@@ -248,7 +248,7 @@ export function DiscoveryPage({
       onOpenLibrary={onOpenLibrary}
       onOpenGovernance={onOpenGovernance}
       onOpenGovernanceTask={onOpenGovernanceTask}
-      onOpenSettings={onOpenSettings}
+      onlineSearchNavigation={onlineSearchNavigation}
       tracker={tracker}
       view={view}
       wizard={wizard}
@@ -318,8 +318,7 @@ interface DiscoveryModulePageProps {
   onOpenLibrary?: () => void;
   onOpenGovernance?: (batch: ImportBatchSummary | null) => void;
   onOpenGovernanceTask?: (task: NonNullable<ImportResult["governanceTasks"]>[number]) => void;
-  /** AI 就绪提示的"前往设置"动作；路由层注入应用内导航，缺省整页跳转兜底。 */
-  onOpenSettings?: () => void;
+  onlineSearchNavigation?: OnlineSearchNavigationContext;
   /** C2 收口：可选地提供库内 Skill 显示名，用于在线结果"已在库"标记。 */
   importedNames?: () => Promise<string[]>;
 }
@@ -343,7 +342,7 @@ function DiscoveryModulePage({
   onOpenLibrary,
   onOpenGovernance,
   onOpenGovernanceTask,
-  onOpenSettings,
+  onlineSearchNavigation,
   importedNames,
 }: DiscoveryModulePageProps) {
   const { t } = useTranslation();
@@ -408,10 +407,10 @@ function DiscoveryModulePage({
         <OnlineDiscovery
           importedNames={importedNames}
           facade={facade}
+          navigationContext={onlineSearchNavigation}
           // P1-04：在线安装走单 Skill 专用安装入口（下载目录=唯一来源）。
           onImportDirectory={wizard.openWizardWithSingleSkill}
           onStartImport={wizard.openImportWizard}
-          onOpenSettings={onOpenSettings}
         />
       ) : null}
       {view === "repo" && facade ? (

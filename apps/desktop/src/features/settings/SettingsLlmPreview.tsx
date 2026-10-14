@@ -109,6 +109,10 @@ function wantsSemanticSetupScenario(): boolean {
   return new URLSearchParams(window.location.search).get("scenario") === "semantic-setup";
 }
 
+function wantsSearchAssistSetupScenario(): boolean {
+  return new URLSearchParams(window.location.search).get("scenario") === "search-assist-setup";
+}
+
 function previewLlmFacade(): LlmAdminFacade {
   const longScenario = wantsLongScenario();
   let providers: LlmProviderView[] = longScenario
@@ -119,7 +123,7 @@ function previewLlmFacade(): LlmAdminFacade {
       safety_check: !wantsSafetySetupScenario(),
       semantic_duplicate: !wantsSemanticSetupScenario(),
       description_translation: !wantsTranslationSetupScenario(),
-      online_search_assist: false,
+      online_search_assist: !wantsSearchAssistSetupScenario(),
     },
     aiOutputLanguage: "system",
   };

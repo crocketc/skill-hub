@@ -96,6 +96,40 @@ test("AI-assisted online search marks extended hits and keeps the plain query re
   await expect(page.getByText("PDF Reader")).toBeVisible();
 });
 
+test("online-search settings return restores the query, results and assist selection without re-searching", async ({ page }) => {
+  await page.goto("/__preview/discovery-online?scenario=search-assist-setup");
+
+  const query = page.getByLabel("Search skills.sh");
+  const assist = page.getByLabel("AI search assist");
+  await query.fill("pdf");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("PDF Reader")).toBeVisible();
+  await expect(page.getByTestId("assist-skills.sh/community/pdf-tools")).toHaveCount(0);
+
+  await assist.check();
+  await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toBeVisible();
+  await page.getByRole("link", { name: "Open Network & AI settings" }).click();
+  await expect(page).toHaveURL(/\/__preview\/settings-llm\?section=networkAi#settings-panel-networkAi$/);
+
+  const searchAssistSetting = page.getByRole("switch", { name: "Online search assist" });
+  await expect(searchAssistSetting).not.toBeChecked();
+  await searchAssistSetting.check();
+  await expect(searchAssistSetting).toBeChecked();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/__preview\/discovery-online\?scenario=search-assist-setup$/);
+  await expect(query).toHaveValue("pdf");
+  await expect(assist).toBeChecked();
+  await expect(page.getByText("PDF Reader")).toBeVisible();
+  await expect(page.getByTestId("assist-skills.sh/community/pdf-tools")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toHaveCount(0);
+
+  // Status refresh must not rerun the search/model task; search remains an explicit action.
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("status")).toContainText('AI extended query "pdf extraction tables" added 1 hits');
+  await expect(page.getByTestId("assist-skills.sh/community/pdf-tools")).toBeVisible();
+});
+
 test("the import wizard offers an optional AI pre-check with per-object outcomes", async ({
   page,
 }) => {

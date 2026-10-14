@@ -1,4 +1,6 @@
 import { type DownloadedRepoSkill, type SourceSearchPage } from "../../api/bindings";
+import { useLocation, useNavigationType } from "react-router-dom";
+import { getPreviewLlmFacade } from "../settings/SettingsLlmPreview";
 import { OnlineDiscovery } from "./OnlineDiscovery";
 import type { DiscoveryFacade } from "./api";
 
@@ -51,6 +53,8 @@ const ASSISTED_PAGE: SourceSearchPage = {
  * without touching the network.
  */
 export function OnlineDiscoveryPreview() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
   const facade: DiscoveryFacade = {
     async getDiscoverySnapshot() {
       throw new Error("preview keeps to the online workbench");
@@ -86,6 +90,12 @@ export function OnlineDiscoveryPreview() {
     <main className="sh-page">
       <OnlineDiscovery
         facade={facade}
+        llmFacade={getPreviewLlmFacade()}
+        navigationContext={{
+          pathname: location.pathname,
+          key: location.key,
+          action: navigationType,
+        }}
         onImportDirectory={() => undefined}
         onStartImport={() => undefined}
       />
