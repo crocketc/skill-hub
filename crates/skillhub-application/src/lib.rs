@@ -12558,6 +12558,7 @@ impl LocalApplicationFacade {
                 &skillhub_storage::DeploymentPreviewSnapshot {
                     preview_id: preview_id.clone(),
                     payload_json: payload,
+                    request_json: None,
                     status: "active".to_owned(),
                     created_at: now,
                     expires_at: now + DEPLOYMENT_PREVIEW_TTL_SECONDS,

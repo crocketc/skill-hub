@@ -1,3 +1,4 @@
+use rusqlite::Connection;
 use skillhub_storage::{Database, RecoveryPoint, CURRENT_SCHEMA_VERSION};
 use tempfile::tempdir;
 
@@ -140,6 +141,46 @@ fn v21_keeps_preview_snapshots_and_commit_results_well_formed() {
         })
         .unwrap();
     assert_eq!(violations, 0);
+}
+
+#[test]
+fn v32_adds_an_optional_replayable_request_to_legacy_preview_snapshots() {
+    let root = tempdir().unwrap();
+    let path = root.path().join("skillhub.sqlite");
+    {
+        let db = Database::open(&path).unwrap();
+        db.deployment_preview_repository()
+            .insert(&skillhub_storage::DeploymentPreviewSnapshot {
+                preview_id: "legacy-request".into(),
+                payload_json: "{}".into(),
+                request_json: None,
+                status: "active".into(),
+                created_at: 1,
+                expires_at: 2,
+            })
+            .unwrap();
+    }
+    {
+        // Recreate the v31 schema to exercise the actual upgrade path rather
+        // than only the fresh-database migration chain.
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "DROP INDEX idx_deployment_preview_recent_requests;
+                 ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+                 PRAGMA user_version=31;",
+            )
+            .unwrap();
+    }
+
+    let upgraded = Database::open(&path).unwrap();
+    assert_eq!(upgraded.schema_version().unwrap(), CURRENT_SCHEMA_VERSION);
+    let legacy = upgraded
+        .deployment_preview_repository()
+        .get("legacy-request")
+        .unwrap()
+        .expect("existing preview row must survive migration");
+    assert_eq!(legacy.request_json, None);
 }
 
 #[test]

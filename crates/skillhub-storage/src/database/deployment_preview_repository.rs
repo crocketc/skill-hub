@@ -13,6 +13,10 @@ fn database_error(error: rusqlite::Error) -> AppError {
 pub struct DeploymentPreviewSnapshot {
     pub preview_id: String,
     pub payload_json: String,
+    /// Original user selection without confirmations or conflict decisions.
+    /// Older snapshots have no saved request and remain valid for commits
+    /// until their regular expiry.
+    pub request_json: Option<String>,
     pub status: String,
     pub created_at: i64,
     pub expires_at: i64,
@@ -45,12 +49,13 @@ impl<'a> DeploymentPreviewRepository<'a> {
             .connection
             .execute(
                 "INSERT INTO deployment_preview_snapshots
-                 (preview_id, payload_json, status, created_at, expires_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 (preview_id, payload_json, request_json, status, created_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(preview_id) DO NOTHING",
                 params![
                     snapshot.preview_id,
                     snapshot.payload_json,
+                    snapshot.request_json,
                     snapshot.status,
                     snapshot.created_at,
                     snapshot.expires_at
@@ -74,16 +79,17 @@ impl<'a> DeploymentPreviewRepository<'a> {
         self.database
             .connection
             .query_row(
-                "SELECT preview_id, payload_json, status, created_at, expires_at
+                "SELECT preview_id, payload_json, request_json, status, created_at, expires_at
                  FROM deployment_preview_snapshots WHERE preview_id = ?1",
                 [preview_id],
                 |row| {
                     Ok(DeploymentPreviewSnapshot {
                         preview_id: row.get(0)?,
                         payload_json: row.get(1)?,
-                        status: row.get(2)?,
-                        created_at: row.get(3)?,
-                        expires_at: row.get(4)?,
+                        request_json: row.get(2)?,
+                        status: row.get(3)?,
+                        created_at: row.get(4)?,
+                        expires_at: row.get(5)?,
                     })
                 },
             )
@@ -101,6 +107,42 @@ impl<'a> DeploymentPreviewRepository<'a> {
         Ok(self
             .get(preview_id)?
             .filter(|snapshot| snapshot.status == "active" && snapshot.expires_at > now))
+    }
+
+    /// Returns recent uncommitted previews that have a replayable selection.
+    /// Expired previews are intentionally included: callers must create a new
+    /// preview before they can commit anything. The hard cap bounds database
+    /// work and UI payload size even if a caller requests more.
+    pub fn list_recent_requests(
+        &self,
+        created_since: i64,
+        limit: usize,
+    ) -> AppResult<Vec<DeploymentPreviewSnapshot>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX).clamp(0, 10);
+        let mut statement = self
+            .database
+            .connection
+            .prepare(
+                "SELECT preview_id, payload_json, request_json, status, created_at, expires_at
+                 FROM deployment_preview_snapshots
+                 WHERE status='active' AND request_json IS NOT NULL AND created_at>=?1
+                 ORDER BY created_at DESC, preview_id ASC
+                 LIMIT ?2",
+            )
+            .map_err(database_error)?;
+        let rows = statement
+            .query_map(params![created_since, limit], |row| {
+                Ok(DeploymentPreviewSnapshot {
+                    preview_id: row.get(0)?,
+                    payload_json: row.get(1)?,
+                    request_json: row.get(2)?,
+                    status: row.get(3)?,
+                    created_at: row.get(4)?,
+                    expires_at: row.get(5)?,
+                })
+            })
+            .map_err(database_error)?;
+        rows.map(|row| row.map_err(database_error)).collect()
     }
 
     /// Persists workflow checkpoints in an active preview without consuming

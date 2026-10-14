@@ -4,10 +4,61 @@ fn snapshot(id: &str, created_at: i64, expires_at: i64, status: &str) -> Deploym
     DeploymentPreviewSnapshot {
         preview_id: id.into(),
         payload_json: format!(r#"{{"preview_id":"{id}"}}"#),
+        request_json: None,
         status: status.into(),
         created_at,
         expires_at,
     }
+}
+
+#[test]
+fn recent_uncommitted_requests_survive_restart_and_are_bounded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("skillhub.sqlite");
+    let saved_request = r#"{"items":[{"skill_id":"skill-1","logical_target_ids":["target-a"],"preference":"automatic"}],"confirmations":{},"exclusions":[]}"#;
+    {
+        let db = Database::open(&path).unwrap();
+        let repository = db.deployment_preview_repository();
+        let mut older = snapshot("older", 100, 200, "active");
+        older.request_json = Some(saved_request.to_owned());
+        repository.insert(&older).unwrap();
+
+        let mut newest = snapshot("newest", 300, 320, "active");
+        newest.request_json = Some(saved_request.to_owned());
+        repository.insert(&newest).unwrap();
+
+        let mut consumed = snapshot("consumed", 350, 450, "consumed");
+        consumed.request_json = Some(saved_request.to_owned());
+        repository.insert(&consumed).unwrap();
+
+        repository
+            .insert(&snapshot("legacy", 375, 475, "active"))
+            .unwrap();
+    }
+
+    let reopened = Database::open(&path).unwrap();
+    let repository = reopened.deployment_preview_repository();
+    // At logical time 400 this preview has expired, but its original
+    // selection remains available so the user can request a fresh preview.
+    assert!(repository.get_active("newest", 400).unwrap().is_none());
+    let stored = repository
+        .get("newest")
+        .unwrap()
+        .expect("saved snapshot remains readable after restart");
+    assert_eq!(stored.request_json.as_deref(), Some(saved_request));
+
+    let recent = repository.list_recent_requests(250, 10).unwrap();
+    assert_eq!(
+        recent
+            .iter()
+            .map(|snapshot| snapshot.preview_id.as_str())
+            .collect::<Vec<_>>(),
+        ["newest"]
+    );
+
+    let bounded = repository.list_recent_requests(0, 1).unwrap();
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(bounded[0].preview_id, "newest");
 }
 
 #[test]
