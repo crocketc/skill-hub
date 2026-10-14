@@ -41,6 +41,25 @@ it("presents MiniMax Code with its readable brand and desktop type", async () =>
   expect(screen.queryByText("minimax-code.desktop")).not.toBeInTheDocument();
 });
 
+it("keeps the brand logo compact while showing a readable platform type in graph density", async () => {
+  const { container } = await renderPresentation({
+    agentId: "deepseek-harness.desktop",
+    density: "compact",
+    showKind: true,
+  });
+
+  expect(container.querySelector(".sh-brand-tag--icon-only img")).toHaveAttribute(
+    "src",
+    "/brand/agents/lobehub/deepseek-harness.svg",
+  );
+  expect(screen.getByText("桌面端")).toBeVisible();
+  expect(container.querySelector(".sh-agent-presentation")).toHaveAttribute(
+    "aria-label",
+    "DeepSeek Harness · 桌面端",
+  );
+  expect(screen.queryByText("DeepSeek Harness")).not.toBeInTheDocument();
+});
+
 it("does not expose technical instance names next to the brand and platform type", async () => {
   await renderPresentation({
     agentId: "anthropic.claude-code",

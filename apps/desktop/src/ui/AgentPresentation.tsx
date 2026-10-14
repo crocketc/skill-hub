@@ -143,6 +143,8 @@ export interface AgentPresentationProps {
   sharedAgentBrandKinds?: Record<string, readonly string[]>;
   /** Use a popover for the overflow badge when the presenter is outside another interactive control. */
   sharedBrandOverflowInteractive?: boolean;
+  /** Render the platform type badge even when the brand mark uses compact density. */
+  showKind?: boolean;
   /** Optional detail route for the represented Agent or shared directory. */
   detailTo?: string;
   deploymentStatus?: "deployed" | "partially_deployed" | "not_deployed" | "unknown";
@@ -160,6 +162,7 @@ export function AgentPresentation({
   sharedAgentBrands = [],
   sharedAgentBrandKinds = {},
   sharedBrandOverflowInteractive = true,
+  showKind = false,
   detailTo,
   deploymentStatus = "unknown",
   density = "full",
@@ -263,10 +266,15 @@ export function AgentPresentation({
   );
   const agentIdentity = (
     <>
-      <BrandTag brand={resolvedBrand} className={brandClassName} iconOnly={density === "compact"} />
-      {!isShared && density === "full" ? (
+      <BrandTag
+        brand={resolvedBrand}
+        className={brandClassName}
+        iconOnly={density === "compact"}
+        title={brandDisplayName(resolvedBrand)}
+      />
+      {!isShared && (density === "full" || showKind) ? (
         <>
-          {deploymentStatus === "deployed" || deploymentStatus === "partially_deployed" ? (
+          {density === "full" && (deploymentStatus === "deployed" || deploymentStatus === "partially_deployed") ? (
             <span
               aria-label={deploymentStatus === "deployed" ? String(t("agents.cardDeploymentStatus.deployed")) : String(t("agents.cardDeploymentStatus.partiallyDeployed"))}
               className={`sh-agent-presentation__deployment-status${deploymentStatus === "partially_deployed" ? " is-partial" : ""}`}

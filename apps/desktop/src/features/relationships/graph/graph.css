@@ -394,6 +394,11 @@
   padding: 0.25rem 0.35rem;
 }
 
+.sh-graph-canvas__surface--sparse .sh-graph-node--agent {
+  inline-size: min(8.5rem, calc(100% - 1rem));
+  max-inline-size: 8.5rem;
+}
+
 .sh-graph-canvas__surface--sparse .sh-graph-node__kind {
   font-size: 0.55rem;
 }
@@ -525,6 +530,9 @@
 }
 
 .sh-graph-node .sh-agent-presentation__kind {
+  flex: 0 1 auto;
+  max-width: calc(100% - 1.75rem);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

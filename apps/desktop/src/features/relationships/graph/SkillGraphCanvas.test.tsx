@@ -313,6 +313,36 @@ describe("SkillGraphCanvas interaction", () => {
     expect(screen.getByTestId("skill-graph-surface").querySelectorAll(".sh-graph-edge__line")).toHaveLength(3);
   });
 
+  it("shows agent brand marks and platform types without a generic Agent label", async () => {
+    const graph = graphFixture();
+    graph.nodes = [
+      graph.nodes[0]!,
+      node({ node_id: "n-agent-long-brand", kind: "agent", agent_client_id: "deepseek-harness.desktop" }),
+      node({ node_id: "n-agent-unknown-brand", kind: "agent", agent_client_id: "mistral-code" }),
+    ];
+    graph.edges = [
+      { ...graph.edges[1]!, edge_id: "e-long-brand", to_node_id: "n-agent-long-brand" },
+      { ...graph.edges[1]!, edge_id: "e-unknown-brand", to_node_id: "n-agent-unknown-brand" },
+    ];
+    const projection = projectGraph(graph, NO_FILTERS, ALL_DISPLAY_ON);
+    const onSelectNode = vi.fn();
+    await renderCanvas({ projection, onSelectNode });
+
+    const longBrandNode = screen.getByRole("button", { name: "DeepSeek Harness · Desktop app" });
+    const unknownBrandNode = screen.getByRole("button", { name: "Mistral Code · Terminal" });
+    expect(longBrandNode).toBeVisible();
+    expect(longBrandNode.querySelector(".sh-graph-node__kind")).toBeNull();
+    expect(longBrandNode.querySelector(".sh-agent-presentation__kind")).toHaveTextContent("Desktop app");
+    expect(longBrandNode.querySelector(".sh-agent-presentation--compact .sh-brand-tag--icon-only img"))
+      .toHaveAttribute("src", "/brand/agents/lobehub/deepseek-harness.svg");
+    expect(unknownBrandNode).toBeVisible();
+    expect(unknownBrandNode.querySelector(".sh-brand-tag--neutral .sh-brand-tag__fallback")).toHaveTextContent("M");
+    expect(unknownBrandNode.querySelector(".sh-agent-presentation__kind")).toHaveTextContent("Terminal");
+
+    fireEvent.click(longBrandNode);
+    expect(onSelectNode).toHaveBeenCalledWith("n-agent-long-brand");
+  });
+
   it("marks sparse graphs for compact node presentation", async () => {
     await renderCanvas({ projection: sparseProjection() });
 

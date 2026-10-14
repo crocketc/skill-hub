@@ -526,7 +526,7 @@ export function SkillGraphCanvas({
                   selected ? "is-selected" : "",
                 ].filter(Boolean).join(" ")}
                 style={{ left: projected.x, top: projected.y }}
-                title={fullPath ?? label ?? undefined}
+                title={node.kind === "agent" ? undefined : fullPath ?? label ?? undefined}
                 aria-label={node.kind === "agent" && node.agent_client_id
                   ? undefined
                   : fullPath
@@ -544,14 +544,16 @@ export function SkillGraphCanvas({
                 onPointerCancel={onNodeDrag ? handleNodePointerCancel : undefined}
                 onClick={handleClick}
               >
-                <span aria-hidden="true" className="sh-graph-node__kind">
-                  {kindLabel}
-                </span>
-                {node.kind === "agent" && node.agent_client_id ? (
-                  <AgentIdentity agentId={node.agent_client_id} density="compact" />
-                ) : label ? (
-                  <span className="sh-graph-node__label">{label}</span>
-                ) : null}
+                {node.kind === "agent" ? (
+                  <AgentIdentity agentId={node.agent_client_id ?? ""} density="compact" showKind />
+                ) : (
+                  <>
+                    <span aria-hidden="true" className="sh-graph-node__kind">
+                      {kindLabel}
+                    </span>
+                    {label ? <span className="sh-graph-node__label">{label}</span> : null}
+                  </>
+                )}
               </button>
             );
           })}

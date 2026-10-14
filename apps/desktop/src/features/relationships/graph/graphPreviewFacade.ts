@@ -3,6 +3,17 @@ import type { RelationshipsFacade } from "../api";
 
 const LONG_PATH_SAMPLE_ID = "skill-long-path-preview";
 const LONG_SOURCE_PATH = "/Users/preview/Library/Application Support/SkillHub/agents/organization/skills/relationships/graph/verification/samples/a-path-that-is-deliberately-long-for-the-details-panel/SKILL.md";
+const AGENT_BRAND_SAMPLE_ID = "skill-agent-brand-preview";
+const AGENT_BRAND_SAMPLE_CLIENTS = [
+  "deepseek-harness.desktop",
+  "mistral-code",
+  "openai.codex-cli",
+  "codebuddy.workbuddy",
+  "google.antigravity.sdk",
+  "cursor.ide-extension",
+  "openclaw.agent",
+  "github-copilot.cloud",
+];
 
 const candidates = [
   {
@@ -30,7 +41,7 @@ const candidates = [
 function graphFor(skillId: string): SkillRelationshipGraphResult {
   const candidate = candidates.find((item) => item.skill_id === skillId);
   const includeLongPath = skillId === LONG_PATH_SAMPLE_ID;
-  return {
+  const graph: SkillRelationshipGraphResult = {
     center_skill_id: skillId,
     collapsed_count: 0,
     edges: includeLongPath
@@ -109,6 +120,53 @@ function graphFor(skillId: string): SkillRelationshipGraphResult {
     ],
     relationship_revision: "preview-graph-v1",
   };
+  if (skillId !== AGENT_BRAND_SAMPLE_ID) return graph;
+
+  const centerNodeId = `preview-center-${skillId}`;
+  const agentNodes = AGENT_BRAND_SAMPLE_CLIENTS.map((agentClientId, index) => ({
+    active: true,
+    agent_client_id: agentClientId,
+    collapsed_count: 0,
+    collapsed_kind: null,
+    conflict_id: null,
+    directory_node_id: null,
+    display_name: null,
+    kind: "agent" as const,
+    last_verified_at: "2026-09-10T08:00:00Z",
+    match_state: "content_verified" as const,
+    node_id: `preview-agent-${index}`,
+    path: null,
+    profile_id: null,
+    provenance_id: null,
+    reference_only: false,
+    relation_id: `preview-agent-relation-${index}`,
+    relationship: "managed_link" as const,
+    role: null,
+    skill_id: null,
+    source: null,
+  }));
+  return {
+    ...graph,
+    edges: agentNodes.map((agent, index) => ({
+      active: true,
+      conflict_id: null,
+      edge_id: `preview-agent-edge-${index}`,
+      evidence_relation_ids: [],
+      from_node_id: centerNodeId,
+      governance: null,
+      kind: "deployment" as const,
+      last_verified_at: "2026-09-10T08:00:00Z",
+      match_state: "content_verified" as const,
+      provenance_id: null,
+      relation_id: agent.relation_id,
+      relationship: "managed_link" as const,
+      relationship_kind: null,
+      target_identity: null,
+      to_node_id: agent.node_id,
+    })),
+    fact_counts: { ...graph.fact_counts, deployment_relations: agentNodes.length },
+    nodes: [...graph.nodes, ...agentNodes],
+  };
 }
 
 /** Deterministic in-memory graph data used only by the development browser preview. */
@@ -130,7 +188,20 @@ export const graphPreviewFacade: RelationshipsFacade = {
           tags: ["preview"],
         }]
       : [];
-    return [...candidates, ...longPathSample].filter((candidate) =>
+    const agentBrandSample = typeof window !== "undefined"
+      && new URLSearchParams(window.location.search).get("fixture") === "agent-brands"
+      ? [{
+          display_name: "Agent brand preview",
+          last_verified_at: "2026-09-10T08:00:00Z",
+          matched_alias: null,
+          relationship_count: AGENT_BRAND_SAMPLE_CLIENTS.length,
+          relationship_revision: "preview-graph-v1",
+          runtime_name: "agent-brand-preview",
+          skill_id: AGENT_BRAND_SAMPLE_ID,
+          tags: ["preview"],
+        }]
+      : [];
+    return [...candidates, ...longPathSample, ...agentBrandSample].filter((candidate) =>
       (!query || candidate.display_name.toLowerCase().includes(query) || candidate.runtime_name.includes(query))
       && tags.every((tag) => candidate.tags.includes(tag)),
     );

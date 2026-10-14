@@ -45,6 +45,15 @@ describe("relationship workbench layout at a compact 800x600 window", () => {
     );
   });
 
+  it("keeps compact Agent identity badges readable in sparse graph nodes", () => {
+    expect(graphCss).toMatch(
+      /\.sh-graph-canvas__surface--sparse\s+\.sh-graph-node--agent\s*\{[^}]*inline-size:\s*min\(8\.5rem,\s*calc\(100% - 1rem\)\)[^}]*max-inline-size:\s*8\.5rem/,
+    );
+    expect(graphCss).toMatch(
+      /\.sh-graph-node\s+\.sh-agent-presentation__kind\s*\{[^}]*max-width:\s*calc\(100% - 1\.75rem\)[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/,
+    );
+  });
+
   it("gives graph overlays shared glass surfaces and pins details to their scroll origin", () => {
     expect(graphCss).toMatch(
       /\.sh-graph-canvas__controls,\s*\.sh-graph__legend\s*\{[^}]*background:\s*color-mix\([^;]+\)[^}]*backdrop-filter:\s*blur\(6px\)/,
