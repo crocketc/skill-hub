@@ -2096,13 +2096,13 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(screen.getByTestId("skill-card-upgrade-skill-pdf")).toBeVisible();
     expect(screen.getByTestId("skill-card-risk-skill-pdf")).toBeVisible();
 
-    // P1-11 主次语义对调：卡区激活 → 快速抽屉；“查看”按钮 → 完整详情页。
+    // P1-11 主次语义对调：卡区激活 → 快速抽屉；小号“查看详情”按钮 → 完整详情页。
     fireEvent.click(screen.getByRole("heading", { name: "PDF Reader" }));
     expect(await screen.findByTestId("skill-quick-drawer")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    fireEvent.click(
-      within(screen.getByTestId("skill-card-skill-pdf")).getByRole("button", { name: "View" }),
-    );
+    const detailsButton = within(card).getByRole("button", { name: "View details" });
+    expect(detailsButton).toHaveClass("sh-button--sm");
+    fireEvent.click(detailsButton);
     expect(await screen.findByText("Skill detail page")).toBeVisible();
     expect(router.state.location.pathname).toBe("/library/skill-pdf");
     await act(async () => {
@@ -2120,6 +2120,45 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
     // 卡片视图保留分页能力。
     expect(screen.getByRole("button", { name: "Next page" })).toBeVisible();
+  });
+
+  it("shows the full-details action in Simplified Chinese", async () => {
+    const previousLanguage = skillHubI18n.language;
+    try {
+      await act(async () => { await skillHubI18n.changeLanguage("zh-CN"); });
+      renderLibrary({
+        facade: createMockSkillLibraryFacade(),
+        persistedViewMode: "unset",
+      });
+
+      const card = await screen.findByTestId("skill-card-skill-pdf");
+      expect(within(card).getByRole("button", { name: "查看详情" })).toHaveClass("sh-button--sm");
+    } finally {
+      await act(async () => { await skillHubI18n.changeLanguage(previousLanguage); });
+    }
+  });
+
+  it("keeps compact detail actions consistent across short and long card titles", async () => {
+    const longTitle = `PDF toolkit for ${"document review and extraction ".repeat(4)}`.trim();
+    renderLibrary({
+      facade: createMockSkillLibraryFacade({
+        pageItems: [
+          { ...MOCK_SKILL_PDF, id: "short-title", name: "PDF" },
+          { ...MOCK_SKILL_DOCX, id: "long-title", name: longTitle },
+        ],
+      }),
+      persistedViewMode: "unset",
+    });
+
+    const shortCard = await screen.findByTestId("skill-card-short-title");
+    const longCard = await screen.findByTestId("skill-card-long-title");
+    expect(within(shortCard).getByRole("heading", { name: "PDF" })).toBeVisible();
+    expect(within(longCard).getByRole("heading", { name: longTitle })).toBeVisible();
+    for (const card of [shortCard, longCard]) {
+      expect(within(card).getByRole("button", { name: "View details" })).toHaveClass(
+        "sh-button--sm",
+      );
+    }
   });
 
   // #14：卡片版本槽在缺版本标签时呈现统一占位文案，不得回退英文 "unknown"。

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SkillCard } from "./SkillCard";
 import type { SkillCardViewModel } from "./SkillCardViewModel";
@@ -167,6 +168,30 @@ it("never activates from clicks inside the action area", () => {
   );
 
   fireEvent.click(screen.getByRole("button", { name: "安装导入" }));
+  expect(onActivate).not.toHaveBeenCalled();
+});
+
+it("activates nested action buttons from the keyboard without activating the card", async () => {
+  const user = userEvent.setup();
+  const onActivate = vi.fn();
+  const onAction = vi.fn();
+  render(
+    <SkillCard
+      onCardActivate={onActivate}
+      primaryAction={
+        <button onClick={onAction} type="button">
+          查看详情
+        </button>
+      }
+      skill={fullCard}
+    />,
+  );
+
+  const action = screen.getByRole("button", { name: "查看详情" });
+  action.focus();
+  await user.keyboard("{Enter}");
+
+  expect(onAction).toHaveBeenCalledTimes(1);
   expect(onActivate).not.toHaveBeenCalled();
 });
 

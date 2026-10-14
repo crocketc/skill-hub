@@ -107,13 +107,51 @@ for (const width of [800, 1024, 1280, 1440]) {
 
     await expect(page.getByTestId("skill-card-skill-pdf")).toBeVisible();
     expect(await rootHasNoHorizontalOverflow(page)).toBe(true);
-    // 卡片操作区钉底可见：打开按钮始终可交互。
-    // 真实流接线轮（315e69f4）：卡片统一布局后打开按钮不再重复 Skill 名，改为「View」。
+    // 卡片操作区钉底可见：完整详情入口名称明确且始终可交互。
     await expect(
-      page.getByTestId("skill-card-skill-pdf").getByRole("button", { name: "View", exact: true }),
+      page.getByTestId("skill-card-skill-pdf").getByRole("button", { name: "View details", exact: true }),
     ).toBeVisible();
   });
 }
+
+test("compact card actions keep the selection target and keyboard details navigation at a narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto(LIBRARY_ROUTE);
+
+  const card = page.getByTestId("skill-card-skill-pdf");
+  await expect(card).toBeVisible();
+  const selectionTarget = card.locator(".sh-skill-card__select");
+  const detailsButton = card.getByRole("button", { name: "View details", exact: true });
+  const actionRow = card.locator(".sh-skill-card__actions");
+
+  const geometry = await Promise.all([
+    selectionTarget.boundingBox(),
+    detailsButton.boundingBox(),
+    actionRow.evaluate((element) => getComputedStyle(element).columnGap),
+  ]);
+  expect(geometry[0]?.width).toBeGreaterThanOrEqual(40);
+  expect(geometry[0]?.height).toBeGreaterThanOrEqual(40);
+  expect(geometry[1]?.height).toBeLessThanOrEqual(32);
+  expect(geometry[2]).toBe("4px");
+
+  const cards = page.locator("[data-skill-card]");
+  expect(await cards.count()).toBeGreaterThan(1);
+  for (const index of [0, 1]) {
+    const siblingCard = cards.nth(index);
+    const checkbox = await siblingCard.locator(".sh-skill-card__select").boundingBox();
+    const action = siblingCard.getByRole("button", { name: "View details", exact: true });
+    expect(checkbox?.width).toBeGreaterThanOrEqual(40);
+    expect(checkbox?.height).toBeGreaterThanOrEqual(40);
+    await expect(action).toHaveClass(/sh-button--sm/);
+    await expect(action).toBeVisible();
+    await expect(siblingCard.locator(".sh-skill-card__actions")).toHaveCSS("column-gap", "4px");
+  }
+
+  await detailsButton.focus();
+  await expect(detailsButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf$/);
+});
 
 test("card pagination stays reachable at the 600px minimum height", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 600 });

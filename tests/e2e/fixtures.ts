@@ -21,7 +21,7 @@ export const test = base.extend<{ app: AppDriver }>({
       },
       async importLocalFixture(fixture) {
         expect(fixture).toBe("safe-pdf");
-        // T3-B：默认卡片视图下技能名是卡片标题，同时出现在“查看”按钮文案中。
+        // T3-B：默认卡片视图下技能名是卡片标题，完整详情另有明确入口。
         await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
       },
       async expectBasicCheck(message) {

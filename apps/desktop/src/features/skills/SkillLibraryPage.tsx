@@ -1901,6 +1901,7 @@ export function SkillLibraryPage({
               event.stopPropagation();
               openSkillDetail(item.id);
             }}
+            size="sm"
             variant="secondary"
           >
             {t("skillLibrary.page.card.open")}

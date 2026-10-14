@@ -61,6 +61,11 @@
   accent-color: var(--ui-accent);
 }
 
+/* 卡片操作槽维持统一的复选框命中区，横向收紧详情入口；换行间距不变。 */
+.sh-skill-library .sh-skill-card__actions {
+  column-gap: var(--space-1);
+}
+
 /* —— 表格专业模式：单一滚动所有者 + 弹性列宽（设计规格 5.3） —— */
 
 /* base.css 将区域设为 overflow-x:hidden 并配套独立横向滚动 rail；

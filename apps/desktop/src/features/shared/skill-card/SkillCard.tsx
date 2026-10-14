@@ -109,7 +109,11 @@ export function SkillCard({
         </ul>
       ) : null}
       {primaryAction || secondaryAction ? (
-        <div className="sh-skill-card__actions" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="sh-skill-card__actions"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
           {secondaryAction}
           {primaryAction}
         </div>
