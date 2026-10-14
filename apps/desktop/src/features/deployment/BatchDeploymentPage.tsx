@@ -27,11 +27,13 @@ import {
   deploymentConflictDecisionErrors,
   isDeploymentTargetSelectable,
   isLinkMode,
+  type RecentDeploymentPreviewRequest,
 } from "./api";
 import { describeDeploymentResult } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
+import { RecentDeploymentRequests, useRecentDeploymentRequests } from "./RecentDeploymentRequests";
 
 export interface BatchDeploymentPageProps {
   facade?: BatchDeploymentFacade;
@@ -58,6 +60,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const activeFacade = useMemo(() => facade ?? createNativeBatchDeploymentFacade(), [facade]);
   const navigate = useNavigate();
   const selectedSkillIds = useMemo(() => uniqueIds(skillIds), [skillIds]);
+  const recentRequests = useRecentDeploymentRequests(activeFacade);
+  const [restoredItems, setRestoredItems] = useState<BatchPreviewItem[]>();
+  const activeSkillIds = restoredItems ? uniqueIds(restoredItems.map((item) => item.skillId)) : selectedSkillIds;
   const [targets, setTargets] = useState<DeploymentTarget[]>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [preference, setPreference] = useState<DeploymentPreference>("automatic");
@@ -220,9 +225,15 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     return { link, copy, noChange, excluded, blocked, replace, rename, skip };
   }, [preview, excludedIds, confirmedIds, conflictDecisions]);
 
-  const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
+  const runPreview = async (
+    context?: { confirmations?: Record<string, string>; exclusions?: string[] },
+    requestItems?: BatchPreviewItem[],
+    resetAllChoices = false,
+  ) => {
     setFlowError(undefined);
-    const items: BatchPreviewItem[] = selectedSkillIds.map((skillId) => ({
+    const restoredBySkill = new Map((restoredItems ?? []).map((item) => [item.skillId, item]));
+    const items: BatchPreviewItem[] = requestItems ?? activeSkillIds.map((skillId) => ({
+      ...restoredBySkill.get(skillId),
       skillId,
       targetIds: selected.map((target) => target.id),
       preference,
@@ -237,9 +248,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       setResults(undefined);
       // 排除项保留用户意图（后端预览不回传排除）；确认范围以后端显式判定
       // 恢复（14.7）：指纹漂移的确认不复活，重新要求用户处理。
-      setExcludedIds((current) => new Set([...current].filter((pairId) =>
+      setExcludedIds(resetAllChoices ? new Set() : (current) => new Set([...current].filter((pairId) =>
         response.pairs.some((pair) => pair.pairId === pairId))));
-      const preserved = new Set(response.preservedConfirmationIds);
+      const preserved = new Set(resetAllChoices ? [] : response.preservedConfirmationIds);
       setConfirmedIds(new Set(response.pairs
         .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
         .map((pair) => pair.pairId)));
@@ -252,6 +263,23 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
+  };
+
+  const recheckRecentRequest = (request: RecentDeploymentPreviewRequest) => {
+    if (request.items.length === 0) return;
+    const targetIds = [...new Set(request.items.flatMap((item) => item.targetIds))];
+    setRestoredItems(request.items);
+    setSelectedIds(targetIds);
+    setPreference(request.items[0].preference);
+    setPreview(undefined);
+    setResults(undefined);
+    setExcludedIds(new Set());
+    setConfirmedIds(new Set());
+    setConfirmedFallbackIds(new Set());
+    setConflictDecisions({});
+    setConfirmedSharedIds(new Set());
+    setFlowError(undefined);
+    void runPreview(undefined, request.items, true);
   };
 
   const ensureTargetDirectory = async (target: DeploymentTarget) => {
@@ -355,7 +383,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     }
   };
 
-  if (selectedSkillIds.length === 0) return <DataState message={t("deployment.states.noSkills")} state="empty" />;
+  if (activeSkillIds.length === 0) return <DataState message={t("deployment.states.noSkills")} state="empty" />;
 
   // 展示层映射：每个阶段归属唯一流程步骤；失败态回到触发它的步骤。
   const phase: FlowPhase = listError
@@ -512,7 +540,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       status={status}
       steps={steps}
       stepsLabel={t("deployment.steps.label")}
-      title={t("deployment.batch.heading", { count: selectedSkillIds.length })}
+      title={t("deployment.batch.heading", { count: activeSkillIds.length })}
     >
       <p className="sh-deployment-flow__description">{t("deployment.batch.description")}</p>
       {preselectNotice ? <p role="status">{preselectNotice}</p> : null}
@@ -520,6 +548,14 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
       {phase === "empty" ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
+      {phase === "targets" ? (
+        <RecentDeploymentRequests
+          onRecheck={recheckRecentRequest}
+          onRetry={recentRequests.retry}
+          requests={recentRequests.requests}
+          state={recentRequests.state}
+        />
+      ) : null}
       {/* DEV-17：计划区是独立呈现单元——预览步/提交步不再并列渲染目标
           长列表，「上一步」返回选择步且勾选保持。 */}
       {targets && targets.length > 0 && phase === "targets" ? <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">

@@ -23,6 +23,7 @@ import {
   type DeploymentTarget,
   type PairSelection,
   type PreviewConfirmations,
+  type RecentDeploymentPreviewRequest,
 } from "./api";
 
 function targetsResult(result: AppQueryResult): NativeDeploymentTarget[] {
@@ -42,6 +43,13 @@ function directoryProjectionResult(result: AppQueryResult): AgentDirectoryProjec
 function previewResult(result: AppQueryResult) {
   if (result.type !== "deployment_batch_preview") {
     throw new Error("deployment.preview_unexpected_result");
+  }
+  return result.payload;
+}
+
+function recentPreviewRequestsResult(result: AppQueryResult) {
+  if (result.type !== "recent_deployment_preview_requests") {
+    throw new Error("deployment.recent_requests_unexpected_result");
   }
   return result.payload;
 }
@@ -161,6 +169,23 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
       return result.payload.map((project) => ({ id: project.id, agentIds: project.agent_ids ?? [] }));
     },
 
+    listRecentPreviewRequests: async (): Promise<RecentDeploymentPreviewRequest[]> => {
+      const result = await queryApplication({ type: "list_recent_deployment_preview_requests", payload: null });
+      return recentPreviewRequestsResult(result).map((record) => ({
+        previewId: record.preview_id,
+        createdAt: record.created_at,
+        // Treat persisted rows as selection intent only; historical confirmations
+        // and exclusions never cross into the UI model.
+        items: record.request.items.map((item) => ({
+          skillId: item.skill_id,
+          versionId: item.version_id ?? undefined,
+          runtimeName: item.runtime_name ?? undefined,
+          targetIds: item.logical_target_ids,
+          preference: item.preference as DeploymentPreference,
+        })),
+      }));
+    },
+
     async preview(
       items: BatchPreviewItem[],
       context?: { confirmations?: PreviewConfirmations; exclusions?: string[] },
@@ -171,7 +196,7 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           items: items.map((item) => ({
             skill_id: item.skillId,
             version_id: item.versionId ?? null,
-            runtime_name: null,
+            runtime_name: item.runtimeName ?? null,
             logical_target_ids: item.targetIds,
             preference: item.preference,
           })),

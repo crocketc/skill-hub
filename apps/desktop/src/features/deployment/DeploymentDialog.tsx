@@ -24,12 +24,14 @@ import {
   type DeploymentPreviewBatch,
   type DeploymentResult,
   type DeploymentTarget,
+  type RecentDeploymentPreviewRequest,
   groupPairsByDisposition,
   deploymentConflictDecisionErrors,
 } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
 import { DeploymentDispositionGroup, type DispositionGroupSelection } from "./DeploymentDispositionGroup";
+import { RecentDeploymentRequests, useRecentDeploymentRequests } from "./RecentDeploymentRequests";
 
 export interface DeploymentDialogProps {
   /** 单项部署复用批次预览契约：一个 Skill 的 pair 流（任务 14）。 */
@@ -70,6 +72,8 @@ export function DeploymentDialog({
     [facade],
   );
   const [targets, setTargets] = useState<DeploymentTarget[]>();
+  const recentRequests = useRecentDeploymentRequests(activeFacade);
+  const [restoredItem, setRestoredItem] = useState<BatchPreviewItem>();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [preference, setPreference] = useState<DeploymentPreference>("automatic");
   const [preview, setPreview] = useState<DeploymentPreviewBatch>();
@@ -124,16 +128,23 @@ export function DeploymentDialog({
     || included(pair)
     || (pair.disposition === "recommend_copy" && confirmedIds.has(pair.pairId))).length ?? 0;
 
-  const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
+  const runPreview = async (
+    context?: { confirmations?: Record<string, string>; exclusions?: string[] },
+    requestItem?: BatchPreviewItem,
+    resetAllChoices = false,
+  ) => {
     setFlowError(undefined);
     setSecurityAlertBlocked(false);
-    const item: BatchPreviewItem = {
-      skillId,
-      targetIds: selected.map((target) => target.id),
-      preference,
-      // 版本由调用方指定时透传；"current" 交给后端解析当前库版本。
-      versionId: versionId === "current" ? undefined : versionId,
-    };
+    const item: BatchPreviewItem = requestItem ?? (restoredItem
+      ? { ...restoredItem, targetIds: selectedIds, preference }
+      : {
+        skillId,
+        targetIds: selected.map((target) => target.id),
+        preference,
+        // 版本由调用方指定时透传；"current" 交给后端解析当前库版本。
+        versionId: versionId === "current" ? undefined : versionId,
+        runtimeName,
+      });
     try {
       const response = await activeFacade.preview([item], context);
       fingerprintsRef.current = Object.fromEntries(
@@ -146,7 +157,7 @@ export function DeploymentDialog({
       setConflictDecisions({});
       setConfirmedSharedIds(new Set());
       setConfirmedFallbackIds(new Set());
-      const preserved = new Set(response.preservedConfirmationIds);
+      const preserved = new Set(resetAllChoices ? [] : response.preservedConfirmationIds);
       setConfirmedIds(new Set(response.pairs
         .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
         .map((pair) => pair.pairId)));
@@ -177,6 +188,22 @@ export function DeploymentDialog({
     } finally {
       setCreatingTargetId(undefined);
     }
+  };
+
+  const recheckRecentRequest = (request: RecentDeploymentPreviewRequest) => {
+    const item = request.items[0];
+    if (!item || request.items.length !== 1 || item.skillId !== skillId) return;
+    setRestoredItem(item);
+    setSelectedIds(item.targetIds);
+    setPreference(item.preference);
+    setPreview(undefined);
+    setResults(undefined);
+    setExcludedIds(new Set());
+    setConfirmedIds(new Set());
+    setConfirmedFallbackIds(new Set());
+    setConflictDecisions({});
+    setConfirmedSharedIds(new Set());
+    void runPreview(undefined, item, true);
   };
 
   const commit = async () => {
@@ -433,6 +460,15 @@ export function DeploymentDialog({
       {phase === "list-error" ? <DataState message={listError ?? ""} state="error" /> : null}
       {phase === "loading" ? <DataState message={t("deployment.states.loading")} state="loading" /> : null}
       {phase === "empty" ? <DataState message={t("deployment.states.empty")} state="empty" /> : null}
+      {phase === "targets" ? (
+        <RecentDeploymentRequests
+          onRecheck={recheckRecentRequest}
+          onRetry={recentRequests.retry}
+          requests={recentRequests.requests.filter((request) =>
+            request.items.length === 1 && request.items[0].skillId === skillId)}
+          state={recentRequests.state}
+        />
+      ) : null}
       {targets && targets.length > 0 ? (
         <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">
           <div className="sh-section-heading">

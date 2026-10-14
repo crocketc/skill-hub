@@ -16,6 +16,7 @@ import {
   type DeploymentPreference,
   type DeploymentPreviewBatch,
   type DeploymentTarget,
+  type RecentDeploymentPreviewRequest,
 } from "./api";
 import { buildAgentDirectoryCardModels } from "../agents/agentCardModel";
 import type { AgentDirectoryMemberFact, AgentDirectoryProjection } from "../../api/bindings";
@@ -30,6 +31,65 @@ async function renderBatchPage(facade: BatchDeploymentFacade, skillIds: string[]
     </I18nextProvider>,
   );
 }
+
+it("rechecks the full saved batch with fresh facts and no prior decisions", async () => {
+  const user = userEvent.setup();
+  const saved: RecentDeploymentPreviewRequest = {
+    previewId: "preview-old-batch",
+    createdAt: "2026-10-15T03:00:00Z",
+    items: [
+      { skillId: "skill-a", versionId: "version-a", runtimeName: "skill-a-old", targetIds: ["codex-cli"], preference: "link" },
+      { skillId: "skill-b", targetIds: ["claude-code"], preference: "copy" },
+    ],
+  };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([]));
+  await renderBatchPage(batchFacade(() => previewBatch([]), {
+    listRecentPreviewRequests: async () => [saved],
+    preview,
+  }), ["skill-current"]);
+
+  expect(await screen.findByText("上次派发选择")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "重新检查" }));
+
+  expect(preview).toHaveBeenCalledWith(saved.items, undefined);
+  expect(await screen.findByText("添加 2 个 Skill")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "添加计划" })).toBeVisible();
+});
+
+it("keeps target selection usable when loading recent choices fails", async () => {
+  const saved: RecentDeploymentPreviewRequest = {
+    previewId: "preview-after-retry",
+    createdAt: "2026-10-15T03:00:00Z",
+    items: [{ skillId: "skill-current", targetIds: ["codex-cli"], preference: "automatic" }],
+  };
+  const listRecentPreviewRequests = vi.fn<NonNullable<BatchDeploymentFacade["listRecentPreviewRequests"]>>()
+    .mockRejectedValueOnce(new Error("recent list unavailable"))
+    .mockResolvedValueOnce([saved]);
+  await renderBatchPage(batchFacade(() => previewBatch([]), {
+    listRecentPreviewRequests,
+  }), ["skill-current"]);
+
+  const recent = await screen.findByRole("region", { name: "上次派发选择" });
+  expect(await within(recent).findByRole("alert")).toHaveTextContent("无法读取最近的派发选择");
+  expect(screen.getByTestId("deployment-target-grid")).toBeVisible();
+  const target = screen.getByRole("checkbox", { name: "Codex CLI" });
+  expect(target).toBeEnabled();
+  await userEvent.setup().click(target);
+  expect(screen.getByRole("button", { name: "预览" })).toBeEnabled();
+  await userEvent.setup().click(within(recent).getByRole("button", { name: "重试读取" }));
+  expect(await within(recent).findByRole("button", { name: "重新检查" })).toBeVisible();
+  expect(listRecentPreviewRequests).toHaveBeenCalledTimes(2);
+});
+
+it("shows an empty recent-selection state while keeping the batch flow available", async () => {
+  await renderBatchPage(batchFacade(() => previewBatch([]), {
+    listRecentPreviewRequests: async () => [],
+  }), ["skill-current"]);
+
+  const recent = await screen.findByRole("region", { name: "上次派发选择" });
+  expect(await within(recent).findByRole("status")).toHaveTextContent("最近 24 小时没有可重新检查的选择");
+  expect(screen.getByTestId("deployment-target-grid")).toBeVisible();
+});
 
 let pairSeq = 0;
 

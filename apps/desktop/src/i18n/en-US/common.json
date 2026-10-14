@@ -2078,6 +2078,17 @@
     },
     "heading": "Preview before changing Agent targets",
     "description": "Select one or more targets, inspect the physical plan, then commit explicitly.",
+    "recent": {
+      "heading": "Recent dispatch selections",
+      "description": "Rechecking reads the current Skill, version, targets, and conflicts. Earlier confirmations and exclusions are not reused.",
+      "loading": "Loading recent dispatch selections…",
+      "empty": "No selections are available to recheck from the last 24 hours.",
+      "error": "Recent dispatch selections could not be loaded. You can still choose targets and continue.",
+      "retry": "Retry loading",
+      "recheck": "Recheck",
+      "summary": "{{skills}} Skills · {{targets}} targets",
+      "unknownTime": "Time unavailable"
+    },
     "states": {
       "loading": "Loading targets",
       "empty": "No writable Agent targets found",

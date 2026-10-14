@@ -2078,6 +2078,17 @@
     },
     "heading": "先预览，再修改 Agent 目标",
     "description": "选择一个或多个目标，检查物理计划后再显式提交。",
+    "recent": {
+      "heading": "上次派发选择",
+      "description": "重新检查会读取当前技能、版本、目标和冲突；上次的确认与排除选择不会沿用。",
+      "loading": "正在读取最近的派发选择…",
+      "empty": "最近 24 小时没有可重新检查的选择。",
+      "error": "无法读取最近的派发选择，仍可继续选择目标并派发。",
+      "retry": "重试读取",
+      "recheck": "重新检查",
+      "summary": "{{skills}} 项技能 · {{targets}} 个目标",
+      "unknownTime": "时间未知"
+    },
     "states": {
       "loading": "正在加载目标",
       "empty": "未发现可写入的 Agent 目标",

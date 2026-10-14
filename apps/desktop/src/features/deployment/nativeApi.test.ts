@@ -185,6 +185,53 @@ it("previews the whole batch in one native call and maps pair facts", async () =
   expect(preview.pairs).toEqual([previewBatch.pairs[0]]);
 });
 
+it("loads recent deployment requests as fresh user selections", async () => {
+  vi.mocked(queryApplication).mockResolvedValue({
+    type: "recent_deployment_preview_requests",
+    payload: [{
+      preview_id: "preview-old",
+      created_at: "2026-10-15T03:00:00Z",
+      request: {
+        items: [{
+          skill_id: "skill-pdf",
+          version_id: "version-old",
+          runtime_name: "pdf-old",
+          logical_target_ids: ["codex-global"],
+          preference: "link",
+        }],
+        confirmations: { "stale-pair": "must-not-cross-the-boundary" },
+        exclusions: ["stale-pair"],
+      },
+    }],
+  } as never);
+
+  await expect(createNativeBatchDeploymentFacade().listRecentPreviewRequests?.()).resolves.toEqual([{
+    previewId: "preview-old",
+    createdAt: "2026-10-15T03:00:00Z",
+    items: [{
+      skillId: "skill-pdf",
+      versionId: "version-old",
+      runtimeName: "pdf-old",
+      targetIds: ["codex-global"],
+      preference: "link",
+    }],
+  }]);
+  expect(queryApplication).toHaveBeenCalledWith({ type: "list_recent_deployment_preview_requests", payload: null });
+});
+
+it("passes a restored runtime name into the new preview request", async () => {
+  mockPreviewResponse();
+
+  await createNativeBatchDeploymentFacade().preview([{ ...items[0], runtimeName: "restored-name" }]);
+
+  expect(queryApplication).toHaveBeenCalledWith(expect.objectContaining({
+    type: "get_deployment_batch_preview",
+    payload: expect.objectContaining({
+      items: [expect.objectContaining({ runtime_name: "restored-name" })],
+    }),
+  }));
+});
+
 it("sends held confirmation fingerprints and exclusions on a re-preview", async () => {
   mockPreviewResponse(nativePairs, ["skill-pdf:fs-codex"]);
 

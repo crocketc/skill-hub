@@ -14,6 +14,7 @@ import {
   type DeploymentPreviewBatch,
   type DeploymentResult,
   type DeploymentTarget,
+  type RecentDeploymentPreviewRequest,
 } from "./api";
 import type { AgentCardModel } from "../agents/agentCardModel";
 import { DeploymentDialog } from "./DeploymentDialog";
@@ -89,6 +90,38 @@ async function renderDialog(facade: BatchDeploymentFacade, onCommitted?: (result
   );
   return i18n;
 }
+
+it("rechecks only a recent single-Skill request and does not reuse its previous decisions", async () => {
+  const user = userEvent.setup();
+  const saved: RecentDeploymentPreviewRequest = {
+    previewId: "preview-old",
+    createdAt: "2026-10-15T03:00:00Z",
+    items: [{
+      skillId: "skill-pdf",
+      versionId: "version-old",
+      runtimeName: "pdf-old",
+      targetIds: ["codex-cli"],
+      preference: "link",
+    }],
+  };
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>(async () => previewBatch([pair()], ["skill-pdf:fs-1"]));
+  const facade = facadeFixture([], {
+    listRecentPreviewRequests: async () => [saved, {
+      ...saved,
+      previewId: "preview-other-skill",
+      items: [{ ...saved.items[0], skillId: "skill-other" }],
+    }],
+    preview,
+  });
+  await renderDialog(facade);
+
+  expect(await screen.findByText("上次派发选择")).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "重新检查" })).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "重新检查" }));
+
+  expect(preview).toHaveBeenCalledWith([saved.items[0]], undefined);
+  expect(await screen.findByRole("heading", { name: "添加计划" })).toBeVisible();
+});
 
 it("supports one or many Agent targets and reports each pair result", async () => {
   const user = userEvent.setup();

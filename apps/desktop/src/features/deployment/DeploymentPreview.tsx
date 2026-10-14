@@ -7,6 +7,7 @@ import type {
   BatchPreviewItem,
   DeploymentPairPreview,
   DeploymentPreviewBatch,
+  RecentDeploymentPreviewRequest,
   DeploymentTarget,
 } from "./api";
 import type { AgentCardModel } from "../agents/agentCardModel";
@@ -135,6 +136,8 @@ type PreviewScenario =
   | "conflict-batch"
   | "conflict-stale-single"
   | "conflict-stale-batch"
+  | "recent-single"
+  | "recent-batch"
   | "path-layout";
 
 const scenarios: readonly PreviewScenario[] = [
@@ -159,6 +162,8 @@ const scenarios: readonly PreviewScenario[] = [
   "conflict-batch",
   "conflict-stale-single",
   "conflict-stale-batch",
+  "recent-single",
+  "recent-batch",
   "path-layout",
 ];
 
@@ -172,6 +177,7 @@ const BATCH_SCENARIOS: readonly PreviewScenario[] = [
   "pending-batch",
   "conflict-batch",
   "conflict-stale-batch",
+  "recent-batch",
 ];
 
 function isBatchScenario(scenario: PreviewScenario): boolean {
@@ -333,7 +339,7 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
   let previewAttempt = 0;
   let rejectStaleCommit = scenario.startsWith("conflict-stale-");
   let pendingDirectoryCreated = false;
-  return {
+  const facade: BatchDeploymentFacade = {
     listTargets: async () => {
       if (scenario === "unavailable") {
         throw new Error("preview.deploy_targets_unavailable");
@@ -450,6 +456,19 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
       });
     },
   };
+  if (scenario === "recent-single" || scenario === "recent-batch") {
+    facade.listRecentPreviewRequests = async (): Promise<RecentDeploymentPreviewRequest[]> => [{
+      previewId: "preview-saved-selection",
+      createdAt: "2026-10-15T03:00:00Z",
+      items: scenario === "recent-single"
+        ? [{ skillId: "preview-skill", versionId: "saved-v1", runtimeName: "saved-name", targetIds: ["target-1"], preference: "automatic" }]
+        : [
+          { skillId: "preview-skill-1", targetIds: ["target-1"], preference: "automatic" },
+          { skillId: "preview-skill-2", targetIds: ["target-2"], preference: "automatic" },
+        ],
+    }];
+  }
+  return facade;
 }
 
 /**

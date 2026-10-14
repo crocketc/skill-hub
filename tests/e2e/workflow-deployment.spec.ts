@@ -38,6 +38,34 @@ function conflictRow(page: Page, skillName: string, targetName: string) {
 }
 
 test.describe("deployment flow shell", () => {
+  test("rechecks a saved single-Skill selection with the keyboard at a narrow width", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 760 });
+    await page.goto("/__preview/deployment?scenario=recent-single");
+
+    const recent = page.getByRole("region", { name: "Recent dispatch selections" });
+    await expect(recent).toBeVisible();
+    await expect(recent).toContainText("Earlier confirmations and exclusions are not reused.");
+    const recheck = recent.getByRole("button", { name: "Recheck" });
+    await recheck.focus();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByTestId("deployment-target-grid").getByLabel("Preview Agent 1")).toBeChecked();
+    await expectNoRootHorizontalOverflow(page);
+  });
+
+  test("rechecks all Skills in a saved batch and updates the batch scope", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=recent-batch");
+
+    const recent = page.getByRole("region", { name: "Recent dispatch selections" });
+    await expect(recent.getByRole("button", { name: "Recheck" })).toBeVisible();
+    await recent.getByRole("button", { name: "Recheck" }).click();
+
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Add 2 Skills" })).toBeVisible();
+  });
+
   test("creates a missing directory and continues the single dispatch flow", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=pending-single");

@@ -48,6 +48,53 @@
   overflow-wrap: anywhere;
 }
 
+.sh-deployment-recent-requests__list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sh-deployment-recent-requests__item {
+  align-items: center;
+  border-top: 1px solid var(--ui-border-subtle);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding-block: var(--space-2);
+}
+
+.sh-deployment-recent-requests__item > div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sh-deployment-recent-requests__item strong,
+.sh-deployment-recent-requests__item small {
+  overflow-wrap: anywhere;
+}
+
+.sh-deployment-recent-requests__item small {
+  color: var(--ui-ink-muted);
+}
+
+.sh-deployment-recent-requests__error {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+@media (max-width: 36rem) {
+  .sh-deployment-recent-requests__item {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* 状态徽标带图标时的对齐；警告文本允许换行。 */
 .sh-deployment-flow__section .sh-status {
   display: inline-flex;

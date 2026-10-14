@@ -242,8 +242,17 @@ export type BatchPreviewItem = {
   skillId: string;
   /** 缺省时由后端解析该 Skill 的当前库版本。 */
   versionId?: string;
+  /** 缺省时由后端解析版本声明的运行名。 */
+  runtimeName?: string;
   targetIds: string[];
   preference: DeploymentPreference;
+};
+
+/** 仅供用户重新读取当前事实的短期派发选择，不包含任何已确认决定。 */
+export type RecentDeploymentPreviewRequest = {
+  previewId: string;
+  createdAt: string;
+  items: BatchPreviewItem[];
 };
 
 /** 客户端在重预览时回传的确认：pair id → 用户确认时持有的指纹。 */
@@ -344,6 +353,8 @@ export type BatchDeploymentResult = DeploymentResult & { skillId: string };
  */
 export interface BatchDeploymentFacade {
   listTargets(): Promise<DeploymentTarget[]>;
+  /** 可选能力：单独读取可重新检查的近期派发选择。 */
+  listRecentPreviewRequests?(): Promise<RecentDeploymentPreviewRequest[]>;
   /** Creates a missing profile-declared directory after explicit confirmation. */
   ensureTargetDirectory?(targetId: string): Promise<void>;
   preview(
