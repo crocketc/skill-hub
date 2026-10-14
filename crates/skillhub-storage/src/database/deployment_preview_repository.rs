@@ -123,10 +123,17 @@ impl<'a> DeploymentPreviewRepository<'a> {
             .database
             .connection
             .prepare(
-                "SELECT preview_id, payload_json, request_json, status, created_at, expires_at
-                 FROM deployment_preview_snapshots
-                 WHERE status='active' AND request_json IS NOT NULL AND created_at>=?1
-                 ORDER BY created_at DESC, preview_id ASC
+                "SELECT snapshot.preview_id, snapshot.payload_json, snapshot.request_json,
+                        snapshot.status, snapshot.created_at, snapshot.expires_at
+                 FROM deployment_preview_snapshots AS snapshot
+                 WHERE snapshot.status='active'
+                   AND snapshot.request_json IS NOT NULL
+                   AND snapshot.created_at>=?1
+                   AND NOT EXISTS (
+                       SELECT 1 FROM deployment_preview_commits AS committed
+                       WHERE committed.preview_id=snapshot.preview_id
+                   )
+                 ORDER BY snapshot.created_at DESC, snapshot.preview_id ASC
                  LIMIT ?2",
             )
             .map_err(database_error)?;

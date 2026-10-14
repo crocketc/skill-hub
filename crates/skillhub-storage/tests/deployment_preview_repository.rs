@@ -62,6 +62,24 @@ fn recent_uncommitted_requests_survive_restart_and_are_bounded() {
 }
 
 #[test]
+fn recent_requests_exclude_snapshots_with_a_recorded_commit_result() {
+    let db = Database::open_in_memory().unwrap();
+    let mut committed = snapshot("committed-but-active", 100, 900, "active");
+    committed.request_json = Some(r#"{"items":[{"skill_id":"skill-1"}]}"#.into());
+    let repository = db.deployment_preview_repository();
+    repository.insert(&committed).unwrap();
+    repository
+        .insert_commit_result("commit-key", "committed-but-active", "{}", 200)
+        .unwrap();
+
+    let recent = repository.list_recent_requests(0, 10).unwrap();
+    assert!(
+        recent.is_empty(),
+        "a snapshot with a durable commit result is not an uncommitted selection"
+    );
+}
+
+#[test]
 fn active_snapshots_round_trip_and_survive_a_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("skillhub.sqlite");

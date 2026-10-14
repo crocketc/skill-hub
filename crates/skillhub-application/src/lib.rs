@@ -11590,6 +11590,9 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::GetDeploymentBatchPreview(request) => {
                 self.get_deployment_batch_preview(request)
             }
+            AppQuery::ListRecentDeploymentPreviewRequests(_) => {
+                self.list_recent_deployment_preview_requests()
+            }
             AppQuery::ListDeploymentTargets(_) => self.list_deployment_targets(),
             AppQuery::GetBasicCheckResult(request) => self.get_check_result(
                 request.skill_id,
@@ -12553,12 +12556,17 @@ impl LocalApplicationFacade {
             rename_dispatches: Vec::new(),
         })
         .map_err(|_| internal("query.get_deployment_batch_preview"))?;
+        let mut saved_request = request.clone();
+        saved_request.confirmations.clear();
+        saved_request.exclusions.clear();
+        let request_json = serde_json::to_string(&saved_request)
+            .map_err(|_| internal("query.get_deployment_batch_preview.request"))?;
         self.with_database("query.get_deployment_batch_preview", |database| {
             database.deployment_preview_repository().insert(
                 &skillhub_storage::DeploymentPreviewSnapshot {
                     preview_id: preview_id.clone(),
                     payload_json: payload,
-                    request_json: None,
+                    request_json: Some(request_json),
                     status: "active".to_owned(),
                     created_at: now,
                     expires_at: now + DEPLOYMENT_PREVIEW_TTL_SECONDS,
@@ -12573,6 +12581,48 @@ impl LocalApplicationFacade {
                 preserved_confirmation_ids,
             },
         ))
+    }
+
+    fn list_recent_deployment_preview_requests(&self) -> AppResult<AppQueryResult> {
+        const RETENTION_SECONDS: i64 = 24 * 60 * 60;
+        const MAX_REQUESTS: usize = 10;
+
+        let now = now_epoch_seconds();
+        let snapshots = self.with_database(
+            "query.list_recent_deployment_preview_requests",
+            |database| {
+                database
+                    .deployment_preview_repository()
+                    .list_recent_requests(now.saturating_sub(RETENTION_SECONDS), MAX_REQUESTS)
+            },
+        )?;
+        let mut requests = Vec::with_capacity(snapshots.len());
+        for snapshot in snapshots {
+            // Future timestamps and malformed/legacy request payloads are
+            // isolated to their row; they must not hide other saved choices.
+            if snapshot.created_at > now {
+                continue;
+            }
+            let Some(request_json) = snapshot.request_json.as_deref() else {
+                continue;
+            };
+            let Ok(mut request) =
+                serde_json::from_str::<skillhub_core::api::GetDeploymentBatchPreview>(request_json)
+            else {
+                continue;
+            };
+            if request.items.is_empty() {
+                continue;
+            }
+            request.confirmations.clear();
+            request.exclusions.clear();
+            requests.push(skillhub_core::api::RecentDeploymentPreviewRequest {
+                preview_id: snapshot.preview_id,
+                created_at: format_rfc3339_utc(snapshot.created_at),
+                request,
+            });
+        }
+        Ok(AppQueryResult::RecentDeploymentPreviewRequests(requests))
     }
 
     /// Resolves one request item into per-pair previews.  Every logical

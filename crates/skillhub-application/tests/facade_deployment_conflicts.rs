@@ -2,8 +2,9 @@ use skillhub_application::LocalApplicationFacade;
 use skillhub_core::api::{
     AppCommandResult, AppQueryResult, CommitDeployment, CommitDeploymentPreview,
     DeploymentBatchPreview, DeploymentBatchPreviewRequestItem, DeploymentPairSelection,
-    GetDeploymentBatchPreview, GetDeploymentPlan, ListDeployments, PrepareDeployment,
-    SaveAsCopyInheritance, SaveAsCopyOrigin, SaveMarkdownAsCopy,
+    GetDeploymentBatchPreview, GetDeploymentPlan, ListDeployments,
+    ListRecentDeploymentPreviewRequests, PrepareDeployment, SaveAsCopyInheritance,
+    SaveAsCopyOrigin, SaveMarkdownAsCopy,
 };
 use skillhub_core::catalog::{CatalogRepository, Skill};
 use skillhub_core::deployment::{
@@ -305,6 +306,136 @@ async fn conflict_preview_for_targets(
         panic!("expected deployment preview");
     };
     preview
+}
+
+#[tokio::test]
+async fn preview_persists_only_selection_and_recent_query_returns_it() {
+    let harness = harness().await;
+    let request = GetDeploymentBatchPreview {
+        items: vec![DeploymentBatchPreviewRequestItem {
+            skill_id: harness.source_skill.id(),
+            version_id: Some(harness.source_version.clone()),
+            runtime_name: Some("shared-runtime".into()),
+            logical_target_ids: vec!["claude-global".into()],
+            preference: DeploymentPreference::Copy,
+        }],
+        confirmations: [("old-pair".into(), "old-fingerprint".into())]
+            .into_iter()
+            .collect(),
+        exclusions: vec!["old-exclusion".into()],
+    };
+
+    let result = harness
+        .facade
+        .query(RootAppQuery::GetDeploymentBatchPreview(request))
+        .await
+        .expect("preview should be created");
+    let AppQueryResult::DeploymentBatchPreview(preview) = result else {
+        panic!("expected deployment preview");
+    };
+
+    let persisted_request: GetDeploymentBatchPreview = {
+        let database = harness.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let stored = database
+            .deployment_preview_repository()
+            .get(&preview.preview_id)
+            .unwrap()
+            .expect("preview row should be stored");
+        serde_json::from_str(stored.request_json.as_deref().unwrap()).unwrap()
+    };
+    assert!(persisted_request.confirmations.is_empty());
+    assert!(persisted_request.exclusions.is_empty());
+
+    let result = harness
+        .facade
+        .query(RootAppQuery::ListRecentDeploymentPreviewRequests(
+            ListRecentDeploymentPreviewRequests,
+        ))
+        .await
+        .expect("recent selection query should succeed");
+    let AppQueryResult::RecentDeploymentPreviewRequests(requests) = result else {
+        panic!("expected recent deployment preview requests");
+    };
+
+    let saved = requests
+        .iter()
+        .find(|saved| saved.preview_id == preview.preview_id)
+        .expect("new preview selection should be listed");
+    assert_eq!(saved.request.items.len(), 1);
+    assert_eq!(saved.request.items[0].skill_id, harness.source_skill.id());
+    assert_eq!(saved.request.items[0].logical_target_ids, ["claude-global"]);
+    assert!(saved.request.confirmations.is_empty());
+    assert!(saved.request.exclusions.is_empty());
+}
+
+#[tokio::test]
+async fn recent_request_query_skips_malformed_rows_and_keeps_expired_selections() {
+    let harness = harness().await;
+    let request_json = serde_json::to_string(&GetDeploymentBatchPreview {
+        items: vec![DeploymentBatchPreviewRequestItem {
+            skill_id: harness.source_skill.id(),
+            version_id: Some(harness.source_version.clone()),
+            runtime_name: None,
+            logical_target_ids: vec!["claude-global".into()],
+            preference: DeploymentPreference::Copy,
+        }],
+        confirmations: std::collections::BTreeMap::new(),
+        exclusions: Vec::new(),
+    })
+    .unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    {
+        let database = harness.facade.database_for_tests();
+        let database = database.lock().unwrap();
+        let repository = database.deployment_preview_repository();
+        repository
+            .insert(&skillhub_storage::DeploymentPreviewSnapshot {
+                preview_id: "expired-selection".into(),
+                payload_json: "{}".into(),
+                request_json: Some(request_json.clone()),
+                status: "active".into(),
+                created_at: now - 10,
+                expires_at: now - 1,
+            })
+            .unwrap();
+        repository
+            .insert(&skillhub_storage::DeploymentPreviewSnapshot {
+                preview_id: "malformed-selection".into(),
+                payload_json: "{}".into(),
+                request_json: Some("not-json".into()),
+                status: "active".into(),
+                created_at: now - 5,
+                expires_at: now + 100,
+            })
+            .unwrap();
+        repository
+            .insert(&skillhub_storage::DeploymentPreviewSnapshot {
+                preview_id: "old-selection".into(),
+                payload_json: "{}".into(),
+                request_json: Some(request_json),
+                status: "active".into(),
+                created_at: now - 86_401,
+                expires_at: now + 100,
+            })
+            .unwrap();
+    }
+
+    let result = harness
+        .facade
+        .query(RootAppQuery::ListRecentDeploymentPreviewRequests(
+            ListRecentDeploymentPreviewRequests,
+        ))
+        .await
+        .expect("one malformed request must not fail the list query");
+    let AppQueryResult::RecentDeploymentPreviewRequests(requests) = result else {
+        panic!("expected recent deployment preview requests");
+    };
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].preview_id, "expired-selection");
 }
 
 fn set_shared_discovery(harness: &Harness, consumers: &[(&str, &str)]) {

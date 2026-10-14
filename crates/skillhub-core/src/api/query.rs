@@ -751,6 +751,21 @@ pub struct DeploymentBatchPreviewRequestItem {
     pub preference: crate::deployment::DeploymentPreference,
 }
 
+/// Lists the most recent deployment selections that can be freshly checked.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListRecentDeploymentPreviewRequests;
+
+/// A short-lived user selection for creating a new deployment preview.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct RecentDeploymentPreviewRequest {
+    pub preview_id: String,
+    /// RFC-3339 UTC instant when the original preview was created.
+    pub created_at: String,
+    /// Confirmation and exclusion decisions are always empty in this result.
+    pub request: GetDeploymentBatchPreview,
+}
+
 /// Side-effect-free batch deployment preview request.  The client names
 /// Skills, targets and a preference; confirmations map a pair id to the
 /// confirmation fingerprint the client still holds, and exclusions list pair
@@ -1447,6 +1462,8 @@ pub enum AppQuery {
     GetDeploymentPlan(GetDeploymentPlan),
     #[serde(rename = "get_deployment_batch_preview")]
     GetDeploymentBatchPreview(GetDeploymentBatchPreview),
+    #[serde(rename = "list_recent_deployment_preview_requests")]
+    ListRecentDeploymentPreviewRequests(ListRecentDeploymentPreviewRequests),
     #[serde(rename = "list_deployment_targets")]
     ListDeploymentTargets(ListDeploymentTargets),
     #[serde(rename = "get_agent_directory_projection")]
@@ -1590,6 +1607,8 @@ pub enum AppQueryResult {
     DeploymentPlan(DeploymentPlan),
     #[serde(rename = "deployment_batch_preview")]
     DeploymentBatchPreview(DeploymentBatchPreview),
+    #[serde(rename = "recent_deployment_preview_requests")]
+    RecentDeploymentPreviewRequests(Vec<RecentDeploymentPreviewRequest>),
     #[serde(rename = "deployment_targets")]
     DeploymentTargets(Vec<DeploymentTarget>),
     #[serde(rename = "agent_directory_projection")]
