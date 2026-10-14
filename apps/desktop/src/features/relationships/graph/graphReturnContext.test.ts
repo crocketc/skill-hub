@@ -4,6 +4,7 @@ import {
   createDetailGraphReturnContext,
   createDrawerGraphReturnContext,
   readGraphReturnTarget,
+  resolveGraphReturnHistoryDelta,
 } from "./graphReturnContext";
 
 const NOW = 1_800_000_000_000;
@@ -52,6 +53,26 @@ describe("graph source return context", () => {
     });
   });
 
+  it("carries the source history index so graph return can restore the original entry", () => {
+    const context = createDetailGraphReturnContext({
+      now: NOW,
+      pathname: "/library/skill-pdf",
+      search: "?q=pdf",
+      skillId: "skill-pdf",
+      sourceHistoryIndex: 3,
+      state: null,
+    });
+
+    expect(readGraphReturnTarget({ graphSource: context }, NOW)?.sourceHistoryIndex).toBe(3);
+  });
+
+  it("pops every intervening graph history entry to the source", () => {
+    expect(resolveGraphReturnHistoryDelta(2, 5)).toBe(-3);
+    expect(resolveGraphReturnHistoryDelta(undefined, 5)).toBeUndefined();
+    expect(resolveGraphReturnHistoryDelta(5, 5)).toBeUndefined();
+    expect(resolveGraphReturnHistoryDelta(6, 5)).toBeUndefined();
+  });
+
   it("rejects mismatched, expired, malformed and external source routes", () => {
     const context = createDrawerGraphReturnContext({
       now: NOW,
@@ -64,6 +85,7 @@ describe("graph source return context", () => {
     expect(readGraphReturnTarget({ graphSource: { ...context, returnTo: "https://evil.example/" } }, NOW)).toBeUndefined();
     expect(readGraphReturnTarget({ graphSource: { ...context, returnTo: "/library/other-skill" } }, NOW)).toBeUndefined();
     expect(readGraphReturnTarget({ graphSource: { ...context, returnTo: "//evil.example/library" } }, NOW)).toBeUndefined();
+    expect(readGraphReturnTarget({ graphSource: { ...context, sourceHistoryIndex: -1 } }, NOW)).toBeUndefined();
   });
 
   it("rejects unsupported source paths and unsafe detail anchors", () => {

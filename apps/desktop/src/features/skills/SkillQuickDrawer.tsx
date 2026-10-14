@@ -19,7 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { buildGovernanceDrawerReturnTo } from "../relationships/governance/libraryReturnContext";
-import { createDrawerGraphReturnContext } from "../relationships/graph/graphReturnContext";
+import { createDrawerGraphReturnContext, readRouterHistoryIndex } from "../relationships/graph/graphReturnContext";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
@@ -588,6 +588,7 @@ export function SkillQuickDrawer({
         pathname: location.pathname,
         search: location.search,
         skillId,
+        sourceHistoryIndex: readRouterHistoryIndex(),
       })
     : undefined;
 

@@ -1243,7 +1243,7 @@ describe("SkillDetailPage shell", () => {
     expect(removalFacade.prepareDelete).not.toHaveBeenCalled();
   });
 
-  it("returns to the Skill library with the drawer reopen context carried in the search", async () => {
+  it("does not duplicate the app titlebar with a page-level library return link", async () => {
     await renderDetail({
       entry: {
         pathname: "/library/skill-pdf",
@@ -1258,15 +1258,11 @@ describe("SkillDetailPage shell", () => {
       },
     });
 
-    const back = await screen.findByRole("link", { name: "返回技能库" });
-    expect(back).toHaveAttribute(
-      "href",
-      "/library?q=pdf&sort=version%3Adesc&skill=skill-pdf",
-    );
     expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "返回技能库" })).not.toBeInTheDocument();
   });
 
-  it("returns to the preview Skill library instead of the unavailable production route", async () => {
+  it("does not render a page-level library return link on preview details either", async () => {
     await renderDetail({
       entry: {
         pathname: "/__preview/skill-detail/skill-pdf",
@@ -1281,10 +1277,8 @@ describe("SkillDetailPage shell", () => {
       },
     });
 
-    expect(await screen.findByRole("link", { name: "返回技能库" })).toHaveAttribute(
-      "href",
-      "/__preview/skill-library?q=pdf&skill=skill-pdf",
-    );
+    expect(await screen.findByRole("heading", { name: "PDF Reader" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "返回技能库" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Next Skill" })).toHaveAttribute(
       "href",
       "/__preview/skill-detail/skill-sheet?q=pdf",

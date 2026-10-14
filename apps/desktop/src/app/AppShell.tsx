@@ -99,7 +99,30 @@ export function resolveRouteTitleKey(pathname: string): RouteTitleKey {
  * Returns the parent tab for sub-routes reached from a main navigation tab,
  * or null when the route already is a main tab (no back affordance needed).
  */
-export function resolveSubRouteFallback(pathname: string): string | null {
+export function resolveSubRouteFallback(
+  pathname: string,
+  search = "",
+): string | null {
+  const skillDetailMatch = pathname.match(/^\/library\/([^/]+)$/);
+  const previewSkillDetailMatch = pathname.match(/^\/__preview\/skill-detail\/([^/]+)$/);
+  const detailMatch = skillDetailMatch ?? previewSkillDetailMatch;
+  if (detailMatch && detailMatch[1] !== "combinations") {
+    let skillId: string;
+    try {
+      skillId = decodeURIComponent(detailMatch[1]);
+    } catch {
+      return null;
+    }
+    if (!skillId.trim()) return null;
+
+    const params = new URLSearchParams(search);
+    if (previewSkillDetailMatch) params.delete("detailPrototype");
+    params.set("skill", skillId);
+    const libraryPath = previewSkillDetailMatch
+      ? "/__preview/skill-library"
+      : "/library";
+    return `${libraryPath}?${params.toString()}`;
+  }
   if (pathname.startsWith("/library/") && pathname.endsWith("/deploy")) {
     return "/library";
   }
@@ -191,7 +214,8 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   const pending = usePendingItems(nativePendingFacade);
   const reducedMotion = useSkillHubReducedMotion();
   const { t } = useTranslation();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -253,7 +277,7 @@ export function AppShell({ refreshSnapshot, snapshot, verification }: AppShellPr
   }, []);
 
   const title = t(resolveRouteTitleKey(pathname));
-  const backFallback = resolveSubRouteFallback(pathname);
+  const backFallback = resolveSubRouteFallback(pathname, location.search);
   const historyControls = resolveShellHistoryControls(
     readHistoryPosition(),
     backFallback,

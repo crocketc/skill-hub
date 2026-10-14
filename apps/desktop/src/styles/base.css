@@ -1921,12 +1921,6 @@ a {
   gap: var(--space-4);
 }
 
-.sh-skill-detail__back {
-  color: var(--color-text-secondary);
-  font-size: 0.875rem;
-  width: fit-content;
-}
-
 .sh-skill-detail__title-row {
   align-items: flex-end;
   display: flex;

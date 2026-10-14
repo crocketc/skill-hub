@@ -23,12 +23,36 @@ export interface GraphSourceContext {
   issuedAt: number;
   returnTo: string;
   libraryReturn?: SkillLibraryReturnState;
+  sourceHistoryIndex?: number;
 }
 
 export interface GraphReturnTarget {
   kind: GraphSourceKind;
   to: string;
   state: { libraryReturn: SkillLibraryReturnState } | undefined;
+  sourceHistoryIndex?: number;
+}
+
+export function readRouterHistoryIndex(): number | undefined {
+  if (typeof window === "undefined") return undefined;
+  const idx = (window.history.state as { idx?: unknown } | null)?.idx;
+  return typeof idx === "number" && Number.isSafeInteger(idx) && idx >= 0
+    ? idx
+    : undefined;
+}
+
+export function resolveGraphReturnHistoryDelta(
+  sourceHistoryIndex: number | undefined,
+  currentHistoryIndex: number | undefined,
+): number | undefined {
+  if (
+    sourceHistoryIndex === undefined
+    || currentHistoryIndex === undefined
+    || sourceHistoryIndex >= currentHistoryIndex
+  ) {
+    return undefined;
+  }
+  return sourceHistoryIndex - currentHistoryIndex;
 }
 
 function validSkillId(skillId: string): boolean {
@@ -55,6 +79,7 @@ function buildContext(
   returnTo: string,
   libraryReturn: SkillLibraryReturnState | undefined,
   issuedAt: number,
+  sourceHistoryIndex: number | undefined,
 ): GraphSourceContext | undefined {
   if (!validSkillId(skillId) || !Number.isFinite(issuedAt)) return undefined;
   return {
@@ -63,6 +88,7 @@ function buildContext(
     ...(libraryReturn ? { libraryReturn } : {}),
     returnTo,
     skillId,
+    ...(sourceHistoryIndex === undefined ? {} : { sourceHistoryIndex }),
     version: SOURCE_CONTEXT_VERSION,
   };
 }
@@ -73,9 +99,10 @@ export function createDrawerGraphReturnContext(input: {
   pathname: string;
   search: string;
   libraryReturn?: SkillLibraryReturnState;
+  sourceHistoryIndex?: number;
   now?: number;
 }): GraphSourceContext | undefined {
-  const { skillId, pathname, search, libraryReturn, now = Date.now() } = input;
+  const { skillId, pathname, search, libraryReturn, sourceHistoryIndex, now = Date.now() } = input;
   if (pathname !== "/library" && pathname !== "/__preview/skill-library") return undefined;
   if (!validSkillId(skillId)) return undefined;
 
@@ -83,7 +110,14 @@ export function createDrawerGraphReturnContext(input: {
   const params = serializeSkillLibrarySearchParams(parsed.query, skillId);
   const basePath = pathname === "/library" ? "/library" : "/__preview/skill-library";
   const returnTo = `${basePath}?${params.toString()}`;
-  return buildContext("drawer", skillId, returnTo, validLibraryReturn(libraryReturn, skillId), now);
+  return buildContext(
+    "drawer",
+    skillId,
+    returnTo,
+    validLibraryReturn(libraryReturn, skillId),
+    now,
+    sourceHistoryIndex,
+  );
 }
 
 /** Build an allowlisted detail target while retaining its current library context. */
@@ -93,9 +127,10 @@ export function createDetailGraphReturnContext(input: {
   search: string;
   hash?: string;
   state: unknown;
+  sourceHistoryIndex?: number;
   now?: number;
 }): GraphSourceContext | undefined {
-  const { skillId, pathname, search, hash = "", state, now = Date.now() } = input;
+  const { skillId, pathname, search, hash = "", state, sourceHistoryIndex, now = Date.now() } = input;
   if (!validSkillId(skillId)) return undefined;
   const encodedSkillId = encodeURIComponent(skillId);
   const allowedPaths = new Set([`/library/${encodedSkillId}`, `/__preview/skill-detail/${encodedSkillId}`]);
@@ -106,7 +141,7 @@ export function createDetailGraphReturnContext(input: {
   const returnTo = `${pathname}${search}${safeHash}`;
   const parsedLibraryReturn = readLibraryReturnState(state);
   if (parsedLibraryReturn && parsedLibraryReturn.focusSkillId !== skillId) return undefined;
-  return buildContext("detail", skillId, returnTo, parsedLibraryReturn, now);
+  return buildContext("detail", skillId, returnTo, parsedLibraryReturn, now, sourceHistoryIndex);
 }
 
 function isSafeSearch(search: string): boolean {
@@ -176,6 +211,7 @@ export function readGraphReturnTarget(
   const kind = source.kind;
   const skillId = source.skillId;
   const issuedAt = source.issuedAt;
+  const sourceHistoryIndex = source.sourceHistoryIndex;
   if (
     (kind !== "drawer" && kind !== "detail")
     || typeof skillId !== "string"
@@ -185,6 +221,10 @@ export function readGraphReturnTarget(
     || !Number.isFinite(issuedAt)
     || issuedAt > now + 60_000
     || now - issuedAt > SOURCE_CONTEXT_MAX_AGE_MS
+    || (sourceHistoryIndex !== undefined
+      && (typeof sourceHistoryIndex !== "number"
+        || !Number.isSafeInteger(sourceHistoryIndex)
+        || sourceHistoryIndex < 0))
   ) {
     return undefined;
   }
@@ -199,5 +239,6 @@ export function readGraphReturnTarget(
     kind,
     state: libraryReturn ? { libraryReturn } : undefined,
     to,
+    ...(typeof sourceHistoryIndex === "number" ? { sourceHistoryIndex } : {}),
   };
 }

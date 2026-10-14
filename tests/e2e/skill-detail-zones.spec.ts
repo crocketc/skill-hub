@@ -46,8 +46,11 @@ test("organizes the detail page into six information zones", async ({ page }) =>
     ).toBeVisible();
   }
 
-  // 侧栏身份区：返回链接、当前版本与技能操作组常驻。
-  await expect(page.getByRole("link", { name: "返回技能库" })).toBeVisible();
+  // 详情只使用应用标题栏返回，不在侧栏重复显示返回技能库。
+  await expect(page.getByRole("button", { name: "Back" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回技能库" })).toHaveCount(0);
+
+  // 侧栏身份区：当前版本与技能操作组常驻。
   await expect(page.getByText("当前版本 · v2.4.1")).toBeVisible();
   await expect(page.locator('[aria-label="技能操作"]').getByRole("button", { name: "派发" })).toBeVisible();
 

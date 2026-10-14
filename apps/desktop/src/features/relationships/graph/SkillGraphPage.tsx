@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { DataState } from "../../../ui/DataState";
 import type {
   RelationshipGraphParams,
@@ -24,7 +24,11 @@ import {
 } from "./forceLayout";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import { useRelationshipsReturnState } from "../returnState";
-import { readGraphReturnTarget } from "./graphReturnContext";
+import {
+  readGraphReturnTarget,
+  readRouterHistoryIndex,
+  resolveGraphReturnHistoryDelta,
+} from "./graphReturnContext";
 import {
   ALL_DISPLAY_ON,
   CANVAS_SIZE,
@@ -266,6 +270,7 @@ export function SkillGraphPage({
 }: SkillGraphPageProps) {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlState = useMemo(() => parseGraphSearchParams(searchParams), [searchParams]);
   const { skillId } = urlState;
@@ -682,8 +687,26 @@ export function SkillGraphPage({
           {graphReturnTarget ? (
             <Link
               className="sh-button sh-button--secondary sh-button--sm"
+              replace
               state={graphReturnTarget.state}
               to={graphReturnTarget.to}
+              onClick={(event) => {
+                if (
+                  event.button !== 0
+                  || event.metaKey
+                  || event.ctrlKey
+                  || event.shiftKey
+                  || event.altKey
+                ) return;
+                const delta = resolveGraphReturnHistoryDelta(
+                  graphReturnTarget.sourceHistoryIndex,
+                  readRouterHistoryIndex(),
+                );
+                if (delta !== undefined) {
+                  event.preventDefault();
+                  navigate(delta);
+                }
+              }}
             >
               {t("relationships.graph.returnToSource")}
             </Link>

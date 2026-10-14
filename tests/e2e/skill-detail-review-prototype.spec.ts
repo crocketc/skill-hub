@@ -16,7 +16,8 @@ test("the drawer and full detail return to the same selected Skill", async ({ pa
   // 往返上下文只靠库页 search 参数承载；原型形态已无旗标可断言。
   await expect(page).toHaveURL(/skill-detail\/skill-pdf/);
   await expect(page).toHaveURL(/text=pdf/);
-  await page.getByRole("link", { name: "返回技能库" }).click();
+  await expect(page.getByRole("link", { name: "返回技能库" })).toHaveCount(0);
+  await page.getByRole("button", { name: "返回" }).click();
 
   await expect(page).toHaveURL(/__preview\/skill-library/);
   await expect(page).toHaveURL(/skill=skill-pdf/);
@@ -50,8 +51,20 @@ test("the detail graph entry returns to the same detail and keeps its library co
 
   await expect(page).toHaveURL(/__preview\/skill-detail\/skill-pdf\?q=pdf/);
   await expect(page.getByTestId("skill-detail-review")).toBeVisible();
-  await page.getByRole("link", { name: "返回技能库" }).click();
+  await expect(page.getByRole("link", { name: "返回技能库" })).toHaveCount(0);
+  await page.getByRole("button", { name: "返回" }).click();
   await expect(page).toHaveURL(/__preview\/skill-library\?q=pdf/);
+});
+
+test("titlebar back from a directly opened detail focuses the current Skill in the library", async ({ page }) => {
+  await page.goto("/__preview/skill-detail/skill-pdf?q=pdf");
+
+  await expect(page.getByTestId("skill-detail-review")).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回技能库" })).toHaveCount(0);
+  await page.getByRole("button", { name: "返回" }).click();
+
+  await expect(page).toHaveURL(/__preview\/skill-library\?q=pdf&skill=skill-pdf$/);
+  await expect(page.getByTestId("drawer-panel")).toBeVisible();
 });
 
 test("a DEV detail route without prototype parameters renders the promoted review experience", async ({ page }) => {

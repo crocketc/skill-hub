@@ -56,7 +56,6 @@ interface SkillDetailReviewExperienceProps {
   /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
   directoryOpener?: DirectoryOpener;
   libraryReturn?: SkillLibraryReturnState;
-  returnToLibrary: string;
   facade: SkillDetailFacade;
   insights?: SkillDetailInsights;
   markdownFacade?: MarkdownFacade;
@@ -103,7 +102,6 @@ export function SkillDetailReviewExperience({
   graphSource,
   directoryOpener,
   libraryReturn,
-  returnToLibrary,
   facade,
   insights,
   markdownFacade,
@@ -163,13 +161,6 @@ export function SkillDetailReviewExperience({
     <section className="sh-skill-detail sh-skill-detail--review" data-testid="skill-detail-review">
       <div className="sh-skill-detail__layout sh-skill-detail-review__layout">
         <aside className="sh-skill-detail__rail sh-skill-detail-review__rail">
-          <Link
-            className="sh-skill-detail__back"
-            state={libraryReturn ? { libraryReturn } : undefined}
-            to={returnToLibrary}
-          >
-            返回技能库
-          </Link>
           <div className="sh-skill-detail-review__identity">
             <div className="sh-skill-detail-review__identity-name">
               <h1>{summary.name}</h1>

@@ -47,7 +47,7 @@ import { relationshipsKeys } from "../relationships/api";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
 import { buildGovernanceLibraryReturnTo } from "../relationships/governance/libraryReturnContext";
-import { createDetailGraphReturnContext } from "../relationships/graph/graphReturnContext";
+import { createDetailGraphReturnContext, readRouterHistoryIndex } from "../relationships/graph/graphReturnContext";
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { UsageManageDialog } from "../relationships/governance/UsageManageDialog";
 import { usageDestinationCards, type UsageDestinationsState } from "./usageDestinations";
@@ -108,6 +108,7 @@ export function SkillDetailPage({
       pathname: location.pathname,
       search: location.search,
       skillId,
+      sourceHistoryIndex: readRouterHistoryIndex(),
       state: location.state,
     }),
     [location.hash, location.key, location.pathname, location.search, location.state, skillId],
@@ -562,12 +563,6 @@ export function SkillDetailPage({
     );
   }
 
-  // 返回技能库时携带 skill 参数：技能库据其重新打开该技能的抽屉，
-  // 保持「库 ↔ 详情」往返上下文（detailContext 契约）。
-  const reviewReturnParams = new URLSearchParams(backSearch);
-  reviewReturnParams.delete("detailPrototype");
-  reviewReturnParams.set("skill", skillId);
-
   return (
     <>
       <SkillDetailReviewExperience
@@ -595,7 +590,6 @@ export function SkillDetailPage({
         summary={summaryQuery.data}
         usageDestinations={usageDestinations}
         libraryReturn={libraryReturn}
-        returnToLibrary={`${backPathname}?${reviewReturnParams.toString()}`}
       />
       {usageReleaseOpen ? (
         <UndeployDialog
