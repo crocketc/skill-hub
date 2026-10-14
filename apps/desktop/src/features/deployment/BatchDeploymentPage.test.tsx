@@ -2,7 +2,7 @@ import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { createSkillHubI18n } from "../../i18n";
 import { createOperationTracker } from "../../platform/operationTracker";
 import { BatchDeploymentPage } from "./BatchDeploymentPage";
@@ -825,6 +825,69 @@ it("aggregates mixed pair outcomes into succeeded, skipped and failed groups", a
   expect(summary).toHaveTextContent("跳过 1");
   expect(summary).toHaveTextContent("失败 1");
   expect(screen.getAllByTestId("batch-outcome-failed")).toHaveLength(1);
+});
+
+it("re-previews only the failed Skill-target pairs when retrying a partial batch", async () => {
+  const user = userEvent.setup();
+  const [codex, claude] = deploymentTargetsFixture();
+  let resolveTargets!: (targets: DeploymentTarget[]) => void;
+  const targetsPromise = new Promise<DeploymentTarget[]>((resolve) => {
+    resolveTargets = resolve;
+  });
+  const pairs = [
+    pair({ pairId: "skill-a:codex-cli", skillId: "skill-a", skillDisplayName: "Skill A", logicalTargetIds: [codex.id], targetLabel: codex.label }),
+    pair({ pairId: "skill-a:claude-code", skillId: "skill-a", skillDisplayName: "Skill A", logicalTargetIds: [claude.id], targetLabel: claude.label }),
+    pair({ pairId: "skill-b:codex-cli", skillId: "skill-b", skillDisplayName: "Skill B", logicalTargetIds: [codex.id], targetLabel: codex.label }),
+    pair({ pairId: "skill-b:claude-code", skillId: "skill-b", skillDisplayName: "Skill B", logicalTargetIds: [claude.id], targetLabel: claude.label }),
+  ];
+  const failedPairIds = new Set(["skill-a:claude-code", "skill-b:codex-cli"]);
+  const retryPairs = pairs.filter((candidate) => failedPairIds.has(candidate.pairId));
+  let resolveRetryPreview!: (response: DeploymentPreviewBatch) => void;
+  const retryPreview = new Promise<DeploymentPreviewBatch>((resolve) => {
+    resolveRetryPreview = resolve;
+  });
+  const preview = vi.fn<BatchDeploymentFacade["preview"]>()
+    .mockResolvedValueOnce(previewBatch(pairs))
+    .mockReturnValueOnce(retryPreview);
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async (previewArg) => previewArg.pairs.map((candidate) => ({
+    skillId: candidate.skillId,
+    displayName: candidate.skillDisplayName,
+    targetId: candidate.logicalTargetIds[0] ?? "",
+    label: candidate.targetLabel,
+    status: failedPairIds.has(candidate.pairId) ? "failed" as const : "succeeded" as const,
+    message: "结果说明",
+  })));
+  await renderBatchPage({
+    listTargets: () => targetsPromise,
+    preview,
+    commit,
+  }, ["skill-a", "skill-b"]);
+
+  await act(async () => {
+    resolveTargets([codex, claude]);
+    await targetsPromise;
+  });
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByLabelText("Claude Code"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("button", { name: "确认添加" }));
+  expect(await screen.findByTestId("batch-summary")).toHaveTextContent("失败 2");
+
+  await user.click(screen.getByRole("button", { name: "重试失败目标" }));
+
+  expect(preview).toHaveBeenCalledTimes(2);
+  expect(preview.mock.calls[1][0]).toEqual([
+    { skillId: "skill-a", targetIds: ["claude-code"], preference: "automatic" },
+    { skillId: "skill-b", targetIds: ["codex-cli"], preference: "automatic" },
+  ]);
+  expect(preview.mock.calls[1][1]).toBeUndefined();
+  await act(async () => {
+    resolveRetryPreview(previewBatch(retryPairs));
+    await retryPreview;
+  });
+  expect(await screen.findByRole("heading", { name: "添加计划" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+  expect(await screen.findByTestId("batch-summary")).toHaveTextContent("失败 2");
 });
 
 it("preselects the target passed via the target search parameter", async () => {

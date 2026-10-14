@@ -47,6 +47,14 @@ export interface BatchDeploymentPageProps {
 
 type FlowPhase = "list-error" | "loading" | "empty" | "targets" | "plan" | "committing" | "results";
 
+type BatchRetryReturnState = {
+  results: BatchDeploymentResult[];
+  preview: DeploymentPreviewBatch;
+  restoredItems?: BatchPreviewItem[];
+  selectedIds: string[];
+  preference: DeploymentPreference;
+};
+
 const STEP_KEYS = ["targets", "preview", "commit", "results"] as const;
 
 function uniqueIds(skillIds: string[]) {
@@ -77,6 +85,8 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const [previewStale, setPreviewStale] = useState(false);
   const fingerprintsRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<BatchDeploymentResult[]>();
+  const [retryReturnState, setRetryReturnState] = useState<BatchRetryReturnState>();
+  const [retrying, setRetrying] = useState(false);
   const [listError, setListError] = useState<string>();
   const [flowError, setFlowError] = useState<string>();
   const [committing, setCommitting] = useState(false);
@@ -267,6 +277,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
 
   const recheckRecentRequest = (request: RecentDeploymentPreviewRequest) => {
     if (request.items.length === 0) return;
+    setRetryReturnState(undefined);
     const targetIds = [...new Set(request.items.flatMap((item) => item.targetIds))];
     setRestoredItems(request.items);
     setSelectedIds(targetIds);
@@ -314,6 +325,17 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     await runPreview({ confirmations, exclusions: [...excludedIds] });
   };
   const backToTargets = () => {
+    if (retryReturnState) {
+      setResults(retryReturnState.results);
+      setPreview(retryReturnState.preview);
+      setRestoredItems(retryReturnState.restoredItems);
+      setSelectedIds(retryReturnState.selectedIds);
+      setPreference(retryReturnState.preference);
+      setRetryReturnState(undefined);
+      setPreviewStale(false);
+      setFlowError(undefined);
+      return;
+    }
     setPreview(undefined);
     setPreviewStale(false);
     setFlowError(undefined);
@@ -379,6 +401,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         },
       });
       setResults(committed);
+      setRetryReturnState(undefined);
       onCommitted?.(committed);
     } catch (reason) {
       if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
@@ -421,6 +444,49 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     }]))
     .values()];
   const failedResults = results?.filter((result) => result.status === "failed") ?? [];
+  const retryFailed = () => {
+    if (!results || !preview || failedResults.length === 0 || retrying) return;
+    const retryItemsByPair = new Map<string, BatchPreviewItem>();
+    for (const result of failedResults) {
+      const pair = preview.pairs.find((candidate) => candidate.skillId === result.skillId
+        && candidate.logicalTargetIds.includes(result.targetId));
+      if (!pair) continue;
+      const pairKey = `${result.skillId}\u0000${result.targetId}`;
+      if (retryItemsByPair.has(pairKey)) continue;
+      const original = restoredItems?.find((item) => item.skillId === result.skillId
+        && item.targetIds.includes(result.targetId));
+      retryItemsByPair.set(pairKey, {
+        skillId: result.skillId,
+        versionId: original?.versionId,
+        runtimeName: original?.runtimeName,
+        targetIds: [result.targetId],
+        preference: pair.preference,
+      });
+    }
+    const retryItems = [...retryItemsByPair.values()];
+    if (retryItems.length === 0) return;
+
+    setRetryReturnState({
+      results,
+      preview,
+      restoredItems,
+      selectedIds,
+      preference,
+    });
+    setRetrying(true);
+    setRestoredItems(retryItems);
+    setSelectedIds(uniqueIds(retryItems.flatMap((item) => item.targetIds)));
+    setPreference(retryItems[0].preference);
+    setExcludedIds(new Set());
+    setConfirmedIds(new Set());
+    setConfirmedFallbackIds(new Set());
+    setConflictDecisions({});
+    setConfirmedSharedIds(new Set());
+    setExclusionsDirty(false);
+    setConfirmationsDirty(false);
+    setPreviewStale(false);
+    void runPreview(undefined, retryItems, true).finally(() => setRetrying(false));
+  };
   const status: ImportStatus | null =
     phase === "list-error"
       ? { kind: "failure", text: listError ?? "" }
@@ -536,6 +602,12 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         )}
       </div>
     </>
+  ) : phase === "results" && failedResults.length > 0 ? (
+    <div className="sh-import-wizard__actions-group">
+      <Button disabled={retrying} onClick={retryFailed} variant="secondary">
+        {t("deployment.retryFailed")}
+      </Button>
+    </div>
   ) : undefined;
 
   return (

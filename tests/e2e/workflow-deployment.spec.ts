@@ -419,6 +419,31 @@ test.describe("batch deployment flow", () => {
     await expect(summary.getByTestId("batch-outcome-succeeded")).toHaveCount(0);
   });
 
+  test("retries only failed targets from a partial batch before a new preview", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=batch-partial");
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByLabel("Preview Agent 2").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+
+    const summary = page.getByTestId("batch-summary");
+    await expect(summary).toContainText("8 succeeded");
+    await expect(summary).toContainText("8 failed");
+    await page.getByRole("button", { name: "Retry failed targets" }).click();
+
+    // 重试只重新预览失败目标；成功目标不重放，且仍须用户再次确认提交。
+    await expect(page.getByRole("heading", { name: "Add 8 Skills" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    const retryPairs = page.getByTestId("disposition-row");
+    await expect(retryPairs).toHaveCount(8);
+    await expect(retryPairs.filter({ hasText: "Preview Agent 2" })).toHaveCount(8);
+    await expect(retryPairs.filter({ hasText: "Preview Agent 1" })).toHaveCount(0);
+    await expect(page.getByTestId("deployment-target-grid")).toHaveCount(0);
+    // 预览仍报告目标不可达，不能绕过新事实直接提交。
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
+  });
+
   test("keeps the commit unreachable when the batch preview fails", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch-preview-fail");
