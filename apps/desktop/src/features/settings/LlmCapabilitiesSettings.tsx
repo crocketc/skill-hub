@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Field } from "../../ui/Field";
 import { Select } from "../../ui/Select";
@@ -9,6 +10,7 @@ import {
   type LlmCapabilityState,
   unavailableLlmFacade,
 } from "./llmApi";
+import { invalidateLlmStatus } from "./llmStatus";
 
 const CAPABILITY_KEYS = [
   { key: "safety_check", scopeKey: "scopeSafety" },
@@ -23,6 +25,7 @@ type CapabilityKey = (typeof CAPABILITY_KEYS)[number]["key"];
  * has not opted into. Each switch shows exactly what data leaves the device. */
 export function LlmCapabilitiesSettings({ facade = unavailableLlmFacade }: { facade?: LlmAdminFacade }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [state, setState] = useState<LlmCapabilityState | undefined>(undefined);
   const [error, setError] = useState<string>();
 
@@ -39,6 +42,7 @@ export function LlmCapabilitiesSettings({ facade = unavailableLlmFacade }: { fac
     setState(next);
     facade
       .writeCapabilityState(next)
+      .then(() => invalidateLlmStatus(queryClient))
       .catch((reason: unknown) => setError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "tasks.notices.failureUnknown")));
   };
 

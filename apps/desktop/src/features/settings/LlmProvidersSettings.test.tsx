@@ -1,9 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
+import { llmStatusQueryKey } from "./llmStatus";
 import {
   type ConnectionTestResult,
   type LlmAdminFacade,
@@ -189,14 +191,21 @@ function recordingFacade(options: {
   return { facade, saves, connectionTests, testResult: options.testResult };
 }
 
-function renderCard(facade: LlmAdminFacade, i18n: Awaited<ReturnType<typeof createSkillHubI18n>>) {
-  return render(
+function renderCard(
+  facade: LlmAdminFacade,
+  i18n: Awaited<ReturnType<typeof createSkillHubI18n>>,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  const view = render(
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
-        <LlmProvidersSettings facade={facade} />
+        <QueryClientProvider client={queryClient}>
+          <LlmProvidersSettings facade={facade} />
+        </QueryClientProvider>
       </ThemeProvider>
     </I18nextProvider>,
   );
+  return { ...view, queryClient };
 }
 
 it("lists providers with credential status, deployment badge and default marker", async () => {
@@ -223,15 +232,34 @@ it("reports the currently usable provider to the surrounding settings surface", 
   render(
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
-        <LlmProvidersSettings
-          facade={facade}
-          onProviderStatusChange={onProviderStatusChange}
-        />
+        <QueryClientProvider client={new QueryClient()}>
+          <LlmProvidersSettings
+            facade={facade}
+            onProviderStatusChange={onProviderStatusChange}
+          />
+        </QueryClientProvider>
       </ThemeProvider>
     </I18nextProvider>,
   );
 
   await waitFor(() => expect(onProviderStatusChange).toHaveBeenLastCalledWith("DeepSeek"));
+});
+
+it("invalidates the shared AI status after a provider selection changes", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade({ providers: PROVIDERS });
+  facade.setDefaultProvider = async () => {};
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+  renderCard(facade, i18n, queryClient);
+
+  const row = (await screen.findByText("Ollama")).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "设为默认" }));
+
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: llmStatusQueryKey }),
+  );
 });
 
 it("renders every provider as a full-width entity row with endpoint, model and enabled state", async () => {

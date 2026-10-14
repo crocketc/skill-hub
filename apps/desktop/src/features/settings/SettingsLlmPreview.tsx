@@ -109,6 +109,24 @@ function previewLlmFacade(): LlmAdminFacade {
     async listProviders() {
       return providers;
     },
+    async readRuntimeStatus() {
+      const selected = providers.find((provider) => provider.is_default && provider.config.enabled);
+      return {
+        provider: selected
+          ? {
+              id: selected.config.id,
+              deployment: selected.config.deployment,
+              endpoint_configured: selected.config.endpoint.trim().length > 0,
+              model_configured: selected.config.model.trim().length > 0,
+              credential_configured: selected.credential_configured ?? false,
+              last_connection_test: selected.last_connection_test ?? null,
+            }
+          : null,
+        capabilities: capabilities.capabilities,
+        ai_output_language: capabilities.aiOutputLanguage,
+        runner_available: true,
+      };
+    },
     async listPresets() {
       return PREVIEW_PRESETS;
     },

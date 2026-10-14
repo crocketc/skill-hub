@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { describeNativeError } from "../../api/nativeErrors";
 import { Button } from "../../ui/Button";
@@ -18,6 +19,7 @@ import {
   usableLlmProviderLabel,
   unavailableLlmFacade,
 } from "./llmApi";
+import { invalidateLlmStatus } from "./llmStatus";
 import { ConnectionReportList } from "./ConnectionReportList";
 import { LlmProviderRow } from "./LlmProviderRow";
 
@@ -89,6 +91,7 @@ export function LlmProvidersSettings({
   onProviderStatusChange?: (providerLabel: string) => void;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [providers, setProviders] = useState<LlmProviderView[]>();
   const [presets, setPresets] = useState<LlmProviderPreset[]>();
   const [draft, setDraft] = useState<LlmProviderDraft>({ ...EMPTY_DRAFT });
@@ -129,13 +132,16 @@ export function LlmProvidersSettings({
 
   useEffect(refresh, [facade, onProviderStatusChange]);
 
-  const guard = (action: () => Promise<void>) => {
+  const guard = (action: () => Promise<void>, refreshSharedStatus = false) => {
     if (busy) return;
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
     action()
-      .then(refresh)
+      .then(async () => {
+        if (refreshSharedStatus) await invalidateLlmStatus(queryClient);
+        refresh();
+      })
       .catch((reason: unknown) => setError(describe(reason)))
       .finally(() => setBusy(false));
   };
@@ -192,7 +198,7 @@ export function LlmProvidersSettings({
     guard(async () => {
       await facade.saveProvider(draft, draft.credential !== null);
       closeEditor();
-    });
+    }, true);
 
   const clearCredential = (id: string) => {
     if (busy) return;
@@ -203,6 +209,7 @@ export function LlmProvidersSettings({
       .clearCredential(id)
       .then(() => {
         setNotice(t("settings.llm.credentialCleared"));
+        void invalidateLlmStatus(queryClient);
         refresh();
       })
       .catch((reason: unknown) => setError(describe(reason)))
@@ -318,7 +325,7 @@ export function LlmProvidersSettings({
       } catch (reason) {
         setDraftAction({ kind: "actionFailed", message: describe(reason) });
       }
-    });
+    }, true);
   };
 
   const testConnection = (target: LlmProviderDraft) =>
@@ -328,7 +335,7 @@ export function LlmProvidersSettings({
         ...current.filter((report) => report.providerId !== target.id),
         { providerId: target.id, result },
       ]);
-    });
+    }, true);
 
   return (
     <section aria-labelledby="settings-llm-providers-heading" className="sh-settings-card">
@@ -600,12 +607,12 @@ export function LlmProvidersSettings({
               busy={busy}
               key={view.config.id}
               onClearCredential={() => clearCredential(view.config.id)}
-              onDelete={() => guard(() => facade.deleteProvider(view.config.id))}
+              onDelete={() => guard(() => facade.deleteProvider(view.config.id), true)}
               onEdit={(event) => openEdit(view, event)}
-              onSetDefault={() => guard(() => facade.setDefaultProvider(view.config.id))}
+              onSetDefault={() => guard(() => facade.setDefaultProvider(view.config.id), true)}
               onTest={() => void testConnection(draftFromView(view))}
               onToggleEnabled={() =>
-                guard(() => facade.setProviderEnabled(view.config.id, !view.config.enabled))
+                guard(() => facade.setProviderEnabled(view.config.id, !view.config.enabled), true)
               }
               report={report}
               view={view}

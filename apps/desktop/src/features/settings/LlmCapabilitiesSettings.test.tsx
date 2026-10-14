@@ -1,11 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { ThemeProvider } from "../../styles/ThemeProvider";
 import { type LlmAdminFacade, type LlmCapabilityState, unavailableLlmFacade } from "./llmApi";
 import { LlmCapabilitiesSettings } from "./LlmCapabilitiesSettings";
+import { llmStatusQueryKey } from "./llmStatus";
 
 const ALL_OFF: LlmCapabilityState = {
   capabilities: {
@@ -34,14 +36,21 @@ function recordingFacade(initial: LlmCapabilityState): {
   return { facade, writes };
 }
 
-function renderCard(facade: LlmAdminFacade, i18n: Awaited<ReturnType<typeof createSkillHubI18n>>) {
-  return render(
+function renderCard(
+  facade: LlmAdminFacade,
+  i18n: Awaited<ReturnType<typeof createSkillHubI18n>>,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
+  const view = render(
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
-        <LlmCapabilitiesSettings facade={facade} />
+        <QueryClientProvider client={queryClient}>
+          <LlmCapabilitiesSettings facade={facade} />
+        </QueryClientProvider>
       </ThemeProvider>
     </I18nextProvider>,
   );
+  return { ...view, queryClient };
 }
 
 const CAPABILITY_NAMES = ["AI 安全检查", "AI 语义重复分析", "描述翻译", "联网搜索辅助"] as const;
@@ -89,6 +98,21 @@ it("writes the full merged preference set when one capability is enabled", async
     },
     aiOutputLanguage: "system",
   });
+});
+
+it("invalidates the shared AI status after a capability switch is saved", async () => {
+  const user = userEvent.setup();
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const { facade } = recordingFacade(ALL_OFF);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+  renderCard(facade, i18n, queryClient);
+
+  await user.click(await screen.findByRole("switch", { name: "AI 安全检查" }));
+
+  await waitFor(() =>
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: llmStatusQueryKey }),
+  );
 });
 
 it("persists the AI output language independently of the interface language", async () => {

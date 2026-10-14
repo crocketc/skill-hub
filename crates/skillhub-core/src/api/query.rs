@@ -1390,6 +1390,8 @@ pub enum AppQuery {
     ListRunningLlmChecks,
     #[serde(rename = "list_llm_providers")]
     ListLlmProviders,
+    #[serde(rename = "get_llm_runtime_status")]
+    GetLlmRuntimeStatus,
     #[serde(rename = "list_translations")]
     ListTranslations(ListTranslations),
     #[serde(rename = "list_llm_provider_presets")]
@@ -1653,6 +1655,8 @@ pub enum AppQueryResult {
     RunningLlmChecks(Vec<LlmCheckRun>),
     #[serde(rename = "llm_providers")]
     LlmProviders(Vec<crate::llm::LlmProviderView>),
+    #[serde(rename = "llm_runtime_status")]
+    LlmRuntimeStatus(crate::llm::LlmRuntimeStatus),
     #[serde(rename = "translations")]
     Translations(Vec<crate::llm::TranslationView>),
     #[serde(rename = "llm_provider_presets")]

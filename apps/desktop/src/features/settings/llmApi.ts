@@ -11,6 +11,7 @@ import {
   type LlmProviderConfig,
   type LlmProviderPreset,
   type LlmProviderView,
+  type LlmRuntimeStatus,
   type LlmStructuredOutputStrategy,
 } from "../../api/bindings";
 
@@ -24,6 +25,7 @@ export type {
   LlmProviderConfig,
   LlmProviderPreset,
   LlmProviderView,
+  LlmRuntimeStatus,
   LlmStructuredOutputStrategy,
 };
 
@@ -64,6 +66,7 @@ export type LlmCapabilityState = {
 
 export interface LlmAdminFacade {
   listProviders(): Promise<LlmProviderView[]>;
+  readRuntimeStatus(): Promise<LlmRuntimeStatus>;
   listPresets(): Promise<LlmProviderPreset[]>;
   saveProvider(draft: LlmProviderDraft, replaceCredential: boolean): Promise<void>;
   clearCredential(id: string): Promise<void>;
@@ -135,6 +138,9 @@ export const unavailableLlmFacade: LlmAdminFacade = {
   async listProviders() {
     throw new Error("LLM administration is unavailable in this context.");
   },
+  async readRuntimeStatus() {
+    throw new Error("LLM administration is unavailable in this context.");
+  },
   async listPresets() {
     throw new Error("LLM administration is unavailable in this context.");
   },
@@ -182,6 +188,13 @@ export const nativeLlmFacade: LlmAdminFacade = {
     const result = await queryApplication({ type: "list_llm_providers" });
     if (result.type !== "llm_providers") {
       throw new Error("list_llm_providers returned an unexpected native result.");
+    }
+    return result.payload;
+  },
+  async readRuntimeStatus() {
+    const result = await queryApplication({ type: "get_llm_runtime_status" });
+    if (result.type !== "llm_runtime_status") {
+      throw new Error("get_llm_runtime_status returned an unexpected native result.");
     }
     return result.payload;
   },

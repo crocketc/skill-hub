@@ -137,6 +137,87 @@ fn facade_with(
 }
 
 #[tokio::test]
+async fn runtime_status_reports_the_provider_the_backend_will_use() {
+    let store = Arc::new(SharedCredentialStore::default());
+    let facade = facade_with(store, Arc::new(FakeAdmin::default()), NetworkGate::open());
+    for config in [
+        provider_config_for("provider-a", "Provider A", "model-a"),
+        provider_config_for("provider-b", "Provider B", "model-b"),
+    ] {
+        facade
+            .execute(AppCommand::SaveLlmProvider(SaveLlmProvider {
+                provider: config.clone(),
+                credential: Some(format!("secret-{}", config.id)),
+            }))
+            .await
+            .expect("save provider");
+    }
+    facade
+        .execute(AppCommand::SetDefaultLlmProvider(SetDefaultLlmProvider {
+            id: Some("provider-b".to_owned()),
+        }))
+        .await
+        .expect("select provider");
+
+    let result = facade
+        .query(AppQuery::GetLlmRuntimeStatus)
+        .await
+        .expect("runtime status");
+    let skillhub_core::api::AppQueryResult::LlmRuntimeStatus(status) = result else {
+        panic!("expected runtime status");
+    };
+    let provider = status.provider.expect("selected provider");
+    assert_eq!(provider.id, "provider-b");
+    assert_eq!(provider.deployment, LlmDeployment::Online);
+    assert!(provider.endpoint_configured);
+    assert!(provider.model_configured);
+    assert!(provider.credential_configured);
+    assert!(provider.last_connection_test.is_none());
+    assert!(status.runner_available);
+}
+
+#[tokio::test]
+async fn runtime_status_reports_legacy_fallback_selection_without_guessing_from_provider_list() {
+    let store = Arc::new(SharedCredentialStore::default());
+    let database = Database::open_in_memory().expect("database");
+    database
+        .llm_profile_repository()
+        .save(
+            &LlmProfile::new(
+                "legacy-provider",
+                "https://legacy.example.test/v1",
+                "legacy-model",
+                Some(CredentialRef::new("legacy-provider-key")),
+            )
+            .expect("legacy profile"),
+        )
+        .expect("save legacy profile");
+    let root = tempfile::tempdir().expect("library root");
+    let facade = LocalApplicationFacade::new_with_library_and_llm_runner(
+        database,
+        root.path(),
+        Arc::new(NoopRunner),
+    )
+    .with_llm_runtime(
+        NetworkGate::open(),
+        store as Arc<dyn CredentialStore>,
+        Arc::new(FakeAdmin::default()),
+    );
+
+    let result = facade
+        .query(AppQuery::GetLlmRuntimeStatus)
+        .await
+        .expect("runtime status");
+    let skillhub_core::api::AppQueryResult::LlmRuntimeStatus(status) = result else {
+        panic!("expected runtime status");
+    };
+    let provider = status.provider.expect("legacy fallback provider");
+    assert_eq!(provider.id, "legacy-provider");
+    assert!(!provider.credential_configured);
+    assert!(provider.last_connection_test.is_none());
+}
+
+#[tokio::test]
 async fn saving_a_provider_stores_the_credential_and_reports_status() {
     let store = Arc::new(SharedCredentialStore::default());
     let facade = facade_with(

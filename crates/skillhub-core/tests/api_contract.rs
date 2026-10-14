@@ -679,6 +679,32 @@ fn llm_safety_commands_and_query_have_stable_wire_shapes() {
 }
 
 #[test]
+fn llm_runtime_status_query_and_result_have_stable_wire_shapes() {
+    assert_eq!(
+        serde_json::to_value(AppQuery::GetLlmRuntimeStatus).unwrap()["type"],
+        "get_llm_runtime_status"
+    );
+    let result = AppQueryResult::LlmRuntimeStatus(skillhub_core::llm::LlmRuntimeStatus {
+        provider: Some(skillhub_core::llm::LlmRuntimeProviderStatus {
+            id: "provider-a".to_owned(),
+            deployment: skillhub_core::llm::LlmDeployment::Online,
+            endpoint_configured: true,
+            model_configured: true,
+            credential_configured: true,
+            last_connection_test: None,
+        }),
+        capabilities: skillhub_core::settings::LlmCapabilitySettings::default(),
+        ai_output_language: "system".to_owned(),
+        runner_available: true,
+    });
+    let json = serde_json::to_value(result).unwrap();
+    assert_eq!(json["type"], "llm_runtime_status");
+    assert_eq!(json["payload"]["provider"]["id"], "provider-a");
+    assert_eq!(json["payload"]["provider"]["deployment"], "online");
+    assert_eq!(json["payload"]["runner_available"], true);
+}
+
+#[test]
 fn semantic_duplicate_command_has_stable_wire_shape() {
     let command = AppCommand::AnalyzeSemanticDuplicates(skillhub_core::AnalyzeSemanticDuplicates {
         skill_id: skillhub_core::SkillId::new(),

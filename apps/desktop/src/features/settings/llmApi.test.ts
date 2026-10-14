@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { executeCommand } from "../../api/bindings";
+import { executeCommand, queryApplication } from "../../api/bindings";
 import {
   draftFromView,
   nativeLlmFacade,
@@ -13,6 +13,7 @@ vi.mock("../../api/bindings", () => ({
 }));
 
 const execute = vi.mocked(executeCommand);
+const query = vi.mocked(queryApplication);
 
 function view(overrides: Partial<LlmProviderView["config"]> = {}): LlmProviderView {
   return {
@@ -50,6 +51,25 @@ function draft(overrides: Partial<LlmProviderDraft> = {}): LlmProviderDraft {
 
 beforeEach(() => {
   execute.mockReset();
+  query.mockReset();
+});
+
+it("reads backend-selected AI runtime status through the typed query", async () => {
+  const status = {
+    provider: null,
+    capabilities: {
+      safety_check: true,
+      semantic_duplicate: false,
+      description_translation: false,
+      online_search_assist: false,
+    },
+    ai_output_language: "system",
+    runner_available: false,
+  };
+  query.mockResolvedValue({ type: "llm_runtime_status", payload: status });
+
+  await expect(nativeLlmFacade.readRuntimeStatus()).resolves.toEqual(status);
+  expect(query).toHaveBeenCalledWith({ type: "get_llm_runtime_status" });
 });
 
 it("clears only the saved credential through the typed native command", async () => {

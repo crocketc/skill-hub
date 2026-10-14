@@ -86,8 +86,9 @@ use skillhub_core::import::{original_migration_backup_key, resolve_original_migr
 use skillhub_core::llm::translation::TranslationRecord;
 use skillhub_core::llm::{
     ConnectionTestResult, CredentialRef, CredentialStore, LastConnectionTestView, LlmAdmin,
-    LlmConnectionIdentity, LlmProfile, LlmProviderConfig, LlmProviderView, LlmTaskKind,
-    LlmTaskRunner, NetworkGate, TranslationResult, TranslationView,
+    LlmConnectionIdentity, LlmProfile, LlmProviderConfig, LlmProviderView,
+    LlmRuntimeProviderStatus, LlmRuntimeStatus, LlmTaskKind, LlmTaskRunner, NetworkGate,
+    TranslationResult, TranslationView,
 };
 use skillhub_core::relationship::{DirectoryRole, SourceCopyRelationFact};
 use skillhub_core::source::{
@@ -423,6 +424,24 @@ fn fresh_connection_test(
 ) -> Option<LastConnectionTestView> {
     let identity = LlmConnectionIdentity::from_provider_config(config, credential_configured);
     let entry = tests.get(&config.id)?;
+    if entry.fingerprint != identity.fingerprint() {
+        return None;
+    }
+    Some(LastConnectionTestView {
+        service_ok: entry.service_ok,
+        model_ok: entry.model_ok,
+        structured_ok: entry.structured_ok,
+        tested_at: entry.tested_at.clone(),
+    })
+}
+
+fn fresh_connection_test_for_profile(
+    tests: &std::collections::BTreeMap<String, PersistedConnectionTest>,
+    profile: &LlmProfile,
+    credential_configured: bool,
+) -> Option<LastConnectionTestView> {
+    let identity = LlmConnectionIdentity::from_profile(profile, credential_configured);
+    let entry = tests.get(&profile.provider)?;
     if entry.fingerprint != identity.fingerprint() {
         return None;
     }
@@ -4163,7 +4182,16 @@ impl LocalApplicationFacade {
             .llm_runner
             .clone()
             .ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
-        let profile = self.with_database(operation, |database| {
+        let profile = self.selected_llm_profile(operation)?;
+        let profile =
+            profile.ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
+        Ok((runner, profile))
+    }
+
+    /// Keep status reads and actual task execution on the same provider
+    /// selection path, including the legacy profile fallback.
+    fn selected_llm_profile(&self, operation: &'static str) -> AppResult<Option<LlmProfile>> {
+        self.with_database(operation, |database| {
             let preferences = database.desktop_settings_repository().get()?;
             if let Some(id) = &preferences.default_llm_provider_id {
                 if let Some(config) = database.llm_provider_repository().get(id)? {
@@ -4173,10 +4201,7 @@ impl LocalApplicationFacade {
                 }
             }
             Ok(database.llm_profile_repository().list()?.into_iter().next())
-        })?;
-        let profile =
-            profile.ok_or_else(|| AppError::new(ErrorCode::LlmNotConfigured, Severity::Info))?;
-        Ok((runner, profile))
+        })
     }
 
     fn llm_capabilities(&self) -> AppResult<skillhub_core::settings::LlmCapabilitySettings> {
@@ -4539,6 +4564,43 @@ impl LocalApplicationFacade {
             });
         }
         Ok(AppQueryResult::LlmProviders(providers))
+    }
+
+    async fn get_llm_runtime_status(&self) -> AppResult<AppQueryResult> {
+        let preferences = self
+            .with_database("query.llm_runtime_status.preferences", |database| {
+                database.desktop_settings_repository().get()
+            })?;
+        let selected = self.selected_llm_profile("query.llm_runtime_status.provider")?;
+        let provider = if let Some(profile) = selected {
+            let credential_configured = self
+                .credential_reference_configured(&profile.credential_ref)
+                .await?;
+            let tests = self
+                .with_database("query.llm_runtime_status.connection_test", |database| {
+                    database.llm_connection_test_repository().load()
+                })?;
+            Some(LlmRuntimeProviderStatus {
+                id: profile.provider.clone(),
+                deployment: profile.deployment,
+                endpoint_configured: !profile.endpoint.trim().is_empty(),
+                model_configured: !profile.model.trim().is_empty(),
+                credential_configured,
+                last_connection_test: fresh_connection_test_for_profile(
+                    &tests,
+                    &profile,
+                    credential_configured,
+                ),
+            })
+        } else {
+            None
+        };
+        Ok(AppQueryResult::LlmRuntimeStatus(LlmRuntimeStatus {
+            provider,
+            capabilities: preferences.llm_capabilities,
+            ai_output_language: preferences.ai_output_language,
+            runner_available: self.llm_runner.is_some(),
+        }))
     }
 
     fn list_llm_provider_presets(&self) -> AppResult<AppQueryResult> {
@@ -11515,6 +11577,7 @@ impl ApplicationFacade for LocalApplicationFacade {
             AppQuery::ListSkillOperations(request) => self.list_skill_operations(request.skill_id),
             AppQuery::ListRunningLlmChecks => self.list_running_llm_checks(),
             AppQuery::ListLlmProviders => self.list_llm_providers().await,
+            AppQuery::GetLlmRuntimeStatus => self.get_llm_runtime_status().await,
             AppQuery::ListTranslations(request) => self.list_translations(request.skill_id),
             AppQuery::ListLlmProviderPresets => self.list_llm_provider_presets(),
             AppQuery::CheckSourceUpdates(request) => self.check_source_updates(request).await,

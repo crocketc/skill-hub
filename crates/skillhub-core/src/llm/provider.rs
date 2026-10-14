@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use url::Url;
 
+use crate::settings::LlmCapabilitySettings;
 use crate::{AppError, AppResult, ErrorCode, Severity};
 
 use super::compatibility::{
@@ -378,6 +379,31 @@ pub struct LlmProviderView {
     /// 最近一次连接测试结果；无记录或指纹已失效时为 `None`。
     #[serde(default)]
     pub last_connection_test: Option<LastConnectionTestView>,
+}
+
+/// Read-only view of the model configuration the application will select for
+/// its next AI task. This uses the same backend selection path as task calls,
+/// including a legacy profile fallback, without exposing endpoints or secrets.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct LlmRuntimeProviderStatus {
+    pub id: String,
+    pub deployment: LlmDeployment,
+    pub endpoint_configured: bool,
+    pub model_configured: bool,
+    pub credential_configured: bool,
+    pub last_connection_test: Option<LastConnectionTestView>,
+}
+
+/// Shared, local-only AI readiness facts. It does not imply any capability is
+/// enabled and does not initiate a model request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct LlmRuntimeStatus {
+    pub provider: Option<LlmRuntimeProviderStatus>,
+    pub capabilities: LlmCapabilitySettings,
+    pub ai_output_language: String,
+    pub runner_available: bool,
 }
 
 fn endpoint_not_allowed(reason: &'static str) -> AppError {
