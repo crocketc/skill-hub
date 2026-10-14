@@ -10613,6 +10613,24 @@ impl ApplicationFacade for LocalApplicationFacade {
                     },
                 ));
             }
+            AppCommand::RestoreDeploymentConflictBackup(request) => {
+                let _mutation = self.relation_migration_lock.lock().map_err(|_| {
+                    internal("execute.restore_deployment_conflict_backup.mutation_lock")
+                })?;
+                let operation_id = deployment_conflict_service::restore_backup(
+                    &self.database,
+                    &self.library_runtime,
+                    &request.backup_id,
+                )?;
+                return Ok(AppCommandResult::OperationSummary(
+                    skillhub_core::OperationSummary {
+                        operation_id,
+                        phase: skillhub_core::OperationPhase::Committed,
+                        message_code: "recovery.deployment_conflict_backup_restored".to_owned(),
+                        error_code: None,
+                    },
+                ));
+            }
             AppCommand::PrepareCallPolicyChange(request) => {
                 return self
                     .call_policy_service
@@ -11542,6 +11560,10 @@ impl ApplicationFacade for LocalApplicationFacade {
                 .list()
                 .await
                 .map(AppQueryResult::RecoveryCandidates),
+            AppQuery::ListDeploymentConflictBackups => {
+                deployment_conflict_service::list_backups(&self.database, &self.library_runtime)
+                    .map(AppQueryResult::DeploymentConflictBackups)
+            }
             AppQuery::GetCallPolicy(request) => self
                 .call_policy_service
                 .inspect(request.skill_id)
@@ -13150,15 +13172,14 @@ impl LocalApplicationFacade {
                             None,
                         );
                         result.deployment_id = Some(receipt.deployment_id);
-                        result.replaced =
-                            Some(skillhub_core::api::DeploymentConflictReplacementSummary {
-                                previous_skill_id: occupant
-                                    .skill_id
-                                    .expect("revalidated occupant has a Skill identity"),
+                        result.replaced = occupant.skill_id.map(|previous_skill_id| {
+                            skillhub_core::api::DeploymentConflictReplacementSummary {
+                                previous_skill_id,
                                 previous_skill_display_name: occupant.skill_display_name.clone(),
                                 runtime_name: occupant.runtime_name.clone(),
                                 target_label: pair.target_label.clone(),
-                            });
+                            }
+                        });
                         results.push(result);
                     }
                     Err(error) => {
@@ -14529,6 +14550,18 @@ impl LocalApplicationFacade {
         preview
             .available_actions
             .push(skillhub_core::deployment::DeploymentConflictAction::RenameAndDeploy);
+        if occupant.ownership == ExistingOwnership::Unknown {
+            if occupant.content_fingerprint.is_some()
+                && deployment_conflict_service::can_backup_unknown_entry(Path::new(
+                    &occupant.target_path,
+                ))
+            {
+                preview
+                    .available_actions
+                    .push(skillhub_core::deployment::DeploymentConflictAction::ReplaceTarget);
+            }
+            return Ok(preview);
+        }
         if occupant.ownership != ExistingOwnership::Managed
             || occupant
                 .skill_id
@@ -23681,6 +23714,20 @@ impl RecoveryBackend for LocalRecoveryBackend {
                         &self.library_runtime,
                         record,
                     ),
+                    deployment_conflict_service::UNKNOWN_REPLACEMENT_KIND => {
+                        deployment_conflict_service::unknown_replacement_recovery_actions(
+                            &self.database,
+                            &self.library_runtime,
+                            record,
+                        )
+                    }
+                    deployment_conflict_service::BACKUP_RESTORE_KIND => {
+                        deployment_conflict_service::backup_restore_recovery_actions(
+                            &self.database,
+                            &self.library_runtime,
+                            record,
+                        )
+                    }
                     "deploy_skill" if self.load_validated_deployment_recovery(record).is_ok() => {
                         vec![RecoveryAction::RollbackOperation]
                     }
@@ -23743,16 +23790,42 @@ impl RecoveryBackend for LocalRecoveryBackend {
                 .get_sync(operation_id)?
                 .map(|record| record.kind)
         };
-        if operation_kind.as_deref() == Some(deployment_conflict_service::OPERATION_KIND) {
+        if matches!(
+            operation_kind.as_deref(),
+            Some(deployment_conflict_service::OPERATION_KIND)
+                | Some(deployment_conflict_service::UNKNOWN_REPLACEMENT_KIND)
+                | Some(deployment_conflict_service::BACKUP_RESTORE_KIND)
+        ) {
             let _mutation = self.relation_migration_lock.lock().map_err(|_| {
                 internal("recovery.resolve.deployment_conflict_replace.mutation_lock")
             })?;
-            return deployment_conflict_service::resolve_recovery(
-                &self.database,
-                &self.library_runtime,
-                operation_id,
-                action,
-            );
+            return match operation_kind.as_deref() {
+                Some(deployment_conflict_service::OPERATION_KIND) => {
+                    deployment_conflict_service::resolve_recovery(
+                        &self.database,
+                        &self.library_runtime,
+                        operation_id,
+                        action,
+                    )
+                }
+                Some(deployment_conflict_service::UNKNOWN_REPLACEMENT_KIND) => {
+                    deployment_conflict_service::resolve_unknown_replacement_recovery(
+                        &self.database,
+                        &self.library_runtime,
+                        operation_id,
+                        action,
+                    )
+                }
+                Some(deployment_conflict_service::BACKUP_RESTORE_KIND) => {
+                    deployment_conflict_service::resolve_backup_restore_recovery(
+                        &self.database,
+                        &self.library_runtime,
+                        operation_id,
+                        action,
+                    )
+                }
+                _ => unreachable!("matched deployment conflict operation kind"),
+            };
         }
         if operation_kind.as_deref() == Some("usage_release") {
             let database = self

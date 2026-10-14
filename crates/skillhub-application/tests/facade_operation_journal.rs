@@ -947,7 +947,7 @@ async fn a_failed_deployment_commit_rolls_back_cleanly_and_retry_reuses_the_reco
         version_id: version_id.clone(),
         runtime_name: "retryable".into(),
         mode: DeploymentMode::ManagedCopy,
-        warnings: Vec::new(),
+        warnings: vec!["deployment.securityWarnings.notChecked".into()],
         conflicts: Vec::new(),
         targets: vec![TargetPlan {
             physical_target_id: target_id,

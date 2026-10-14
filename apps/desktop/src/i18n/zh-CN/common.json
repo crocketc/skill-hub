@@ -2730,8 +2730,25 @@
     },
     "tabs": {
       "records": "操作记录",
-      "backupRestore": "未完成操作",
-      "backupRestoreHint": "备份与恢复的完整流程在“数据保护”页；此处承接需要确认的恢复事项。"
+      "unfinished": "未完成操作",
+      "replaced": "已替换内容",
+      "backupRestoreHint": "选择可安全继续或撤销的操作；处理后系统会重新检查结果。"
+    },
+    "backups": {
+      "heading": "已替换的内容",
+      "hint": "这里保存了替换前的内容。恢复时，当前内容也会另存为一条可恢复记录。",
+      "empty": "暂无可恢复的替换内容。",
+      "target": "目标：{{target}}",
+      "entryKinds": {
+        "directory": "目录",
+        "file": "文件",
+        "symbolic_link": "符号链接",
+        "directory_link": "目录联接"
+      },
+      "restore": "恢复这份内容",
+      "restoreTitle": "恢复替换前的内容？",
+      "restoreDescription": "将“{{entry}}”恢复到{{target}}。当前内容会另存为一条可恢复记录。",
+      "confirmRestore": "确认恢复"
     },
     "unknownOperation": "未知操作"
   },
@@ -3681,6 +3698,8 @@
     "kinds": {
       "delete_skill": "删除技能",
       "deploy_skill": "派发技能",
+      "deployment_conflict_unknown_replace": "替换未识别的目标内容",
+      "deployment_conflict_backup_restore": "恢复替换前的内容",
       "import_skill": "导入技能",
       "migrate_original": "迁移原始目录",
       "relink_source_copy": "重新关联来源文件",

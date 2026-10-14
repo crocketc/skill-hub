@@ -1,4 +1,6 @@
-import type { RecoveryAction } from "../../api/bindings";
+import type { DeploymentConflictBackup, RecoveryAction } from "../../api/bindings";
+
+export type { DeploymentConflictBackup };
 
 export type OperationPhase = "planned" | "prepared" | "applying" | "verifying" | "committed" | "needs_recovery" | "rolled_back";
 export type OperationState = {
@@ -32,6 +34,10 @@ export interface OperationFacade {
    * `action` 由候选自己声明，后端会拒绝候选未声明的动作。
    */
   resolveRecovery(operationId: string, action: RecoveryAction): Promise<void>;
+  /** Lists verified, committed content backups created by conflict replacement. */
+  listDeploymentConflictBackups(): Promise<DeploymentConflictBackup[]>;
+  /** Restores a verified replacement backup and preserves the current target as a new backup. */
+  restoreDeploymentConflictBackup(backupId: string): Promise<void>;
 }
 
 /** 最近操作记录（来自 BootstrapSnapshot.recent_operations 的持久化事实）。 */
@@ -67,4 +73,6 @@ export const unavailableOperationFacade: OperationFacade = {
   get: () => unavailable("operation_get"),
   listRecoveryCandidates: () => unavailable("recovery_list"),
   resolveRecovery: () => unavailable("recovery_resolve"),
+  listDeploymentConflictBackups: () => unavailable("deployment_conflict_backups_list"),
+  restoreDeploymentConflictBackup: () => unavailable("deployment_conflict_backup_restore"),
 };

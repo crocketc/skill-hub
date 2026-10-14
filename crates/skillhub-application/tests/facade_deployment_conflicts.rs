@@ -409,6 +409,132 @@ async fn managed_replacement_transfers_only_the_selected_deployment() {
 }
 
 #[tokio::test]
+async fn unknown_directory_replacement_is_restorable_without_creating_a_recovery_gate() {
+    use skillhub_core::api::{
+        AppCommand, AppCommandResult, AppQuery, AppQueryResult, RestoreDeploymentConflictBackup,
+    };
+
+    let harness = harness().await;
+    let original = harness.target_root.path().join("shared-runtime");
+    std::fs::create_dir(&original).expect("create unknown original directory");
+    std::fs::write(original.join("keep.txt"), "original user content")
+        .expect("write unknown original content");
+
+    let preview = conflict_preview(&harness).await;
+    let pair = preview
+        .pairs
+        .iter()
+        .find(|pair| pair.skill_id == harness.source_skill.id())
+        .expect("source pair");
+    assert!(pair
+        .conflict
+        .as_ref()
+        .expect("unknown conflict")
+        .available_actions
+        .contains(&DeploymentConflictAction::ReplaceTarget));
+
+    let committed = harness
+        .facade
+        .execute(AppCommand::CommitDeploymentPreview(
+            CommitDeploymentPreview {
+                preview_id: preview.preview_id,
+                pairs: vec![DeploymentPairSelection {
+                    pair_id: pair.pair_id.clone(),
+                    disposition: DeploymentPairDisposition::ReplaceTarget,
+                    confirm_fallback: false,
+                }],
+            },
+        ))
+        .await
+        .expect("replace unknown directory");
+    let AppCommandResult::DeploymentPreviewCommitResult(committed) = committed else {
+        panic!("expected deployment result");
+    };
+    assert_eq!(
+        committed.pairs[0].outcome,
+        skillhub_core::api::DeploymentPairCommitOutcome::Deployed,
+        "replacement result: {:?}",
+        committed.pairs[0]
+    );
+    assert_eq!(
+        std::fs::read_to_string(original.join("SKILL.md")).expect("new managed content"),
+        skill_markdown("shared-runtime", "replacement contents")
+    );
+
+    let backups = harness
+        .facade
+        .query(AppQuery::ListDeploymentConflictBackups)
+        .await
+        .expect("list replaced content");
+    let AppQueryResult::DeploymentConflictBackups(backups) = backups else {
+        panic!("expected replaced-content list");
+    };
+    assert_eq!(backups.len(), 1);
+    assert_eq!(backups[0].entry_name, "shared-runtime");
+    assert_eq!(
+        backups[0].entry_kind,
+        skillhub_core::api::DeploymentConflictBackupEntryKind::Directory
+    );
+
+    let unfinished = harness
+        .facade
+        .query(AppQuery::ListRecoveryCandidates)
+        .await
+        .expect("list unfinished operations");
+    let AppQueryResult::RecoveryCandidates(unfinished) = unfinished else {
+        panic!("expected recovery candidates");
+    };
+    assert!(
+        unfinished.is_empty(),
+        "a committed backup is not unfinished work"
+    );
+
+    let backup_id = backups[0].backup_id.clone();
+    let restored = harness
+        .facade
+        .execute(AppCommand::RestoreDeploymentConflictBackup(
+            RestoreDeploymentConflictBackup {
+                backup_id: backup_id.clone(),
+            },
+        ))
+        .await
+        .expect("restore unknown original");
+    assert!(matches!(restored, AppCommandResult::OperationSummary(_)));
+    assert_eq!(
+        std::fs::read_to_string(original.join("keep.txt")).expect("restored original content"),
+        "original user content"
+    );
+    assert!(!original.join("SKILL.md").exists());
+
+    let restored_again = harness
+        .facade
+        .execute(AppCommand::RestoreDeploymentConflictBackup(
+            RestoreDeploymentConflictBackup { backup_id },
+        ))
+        .await
+        .expect("repeated restore is idempotent");
+    assert!(matches!(
+        restored_again,
+        AppCommandResult::OperationSummary(_)
+    ));
+
+    let replacement_backups = harness
+        .facade
+        .query(AppQuery::ListDeploymentConflictBackups)
+        .await
+        .expect("list replacement backup after restore");
+    let AppQueryResult::DeploymentConflictBackups(replacement_backups) = replacement_backups else {
+        panic!("expected replaced-content list");
+    };
+    assert_eq!(replacement_backups.len(), 1);
+    assert_eq!(
+        replacement_backups[0].entry_kind,
+        skillhub_core::api::DeploymentConflictBackupEntryKind::Directory
+    );
+    assert!(replacement_backups[0].backup_id != backups[0].backup_id);
+}
+
+#[tokio::test]
 async fn changed_managed_occupant_is_left_untouched_and_blocks_replacement() {
     let harness = harness().await;
     let occupant_id = deploy_occupant(&harness).await;

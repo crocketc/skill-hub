@@ -54,6 +54,7 @@ pub const SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS: &[&str] = &[
     "save_markdown_content",
     "reconcile_restore_deployment",
     "deployment_conflict_replace",
+    "deployment_conflict_unknown_replace",
     "reconcile_collect_changes",
     "reconcile_ignore_external_change",
 ];
@@ -97,6 +98,8 @@ pub const KNOWN_OPERATION_KINDS: &[&str] = &[
     "save_markdown_content",
     "save_markdown_as_copy",
     "deployment_conflict_replace",
+    "deployment_conflict_unknown_replace",
+    "deployment_conflict_backup_restore",
     "relink_source_copy",
     "remove_ignore_rule",
     "reconcile_collect_changes",
@@ -149,6 +152,24 @@ mod recovery_policy_tests {
         ));
         assert!(operation_requires_recovery_gate(
             "deployment_conflict_replace",
+            OperationPhase::Applying
+        ));
+        assert!(is_known_operation_kind(
+            "deployment_conflict_unknown_replace"
+        ));
+        assert!(is_known_operation_kind(
+            "deployment_conflict_backup_restore"
+        ));
+        assert!(!operation_requires_recovery_gate(
+            "deployment_conflict_unknown_replace",
+            OperationPhase::Prepared
+        ));
+        assert!(operation_requires_recovery_gate(
+            "deployment_conflict_unknown_replace",
+            OperationPhase::Applying
+        ));
+        assert!(operation_requires_recovery_gate(
+            "deployment_conflict_backup_restore",
             OperationPhase::Applying
         ));
         assert!(operation_requires_recovery_gate(

@@ -882,6 +882,29 @@ pub struct DeploymentTarget {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct ListDeploymentTargets;
 
+/// Lists safely verifiable backups created by unknown deployment conflict replacement.
+/// Returned DTOs intentionally contain no filesystem path.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+pub struct ListDeploymentConflictBackups;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentConflictBackupEntryKind {
+    Directory,
+    File,
+    SymbolicLink,
+    DirectoryLink,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
+pub struct DeploymentConflictBackup {
+    pub backup_id: String,
+    pub target_label: String,
+    pub entry_name: String,
+    pub entry_kind: DeploymentConflictBackupEntryKind,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 pub struct GetBasicCheckResult {
     pub skill_id: SkillId,
@@ -1432,6 +1455,8 @@ pub enum AppQuery {
     ListGovernanceHistory(crate::relationship::ListGovernanceHistory),
     #[serde(rename = "list_recovery_candidates")]
     ListRecoveryCandidates,
+    #[serde(rename = "list_deployment_conflict_backups")]
+    ListDeploymentConflictBackups,
     #[serde(rename = "get_call_policy")]
     GetCallPolicy(GetCallPolicy),
     #[serde(rename = "get_llm_safety_check_result")]
@@ -1573,6 +1598,8 @@ pub enum AppQueryResult {
     GovernanceHistoryPage(crate::relationship::GovernanceHistoryPage),
     #[serde(rename = "recovery_candidates")]
     RecoveryCandidates(Vec<crate::RecoveryCandidate>),
+    #[serde(rename = "deployment_conflict_backups")]
+    DeploymentConflictBackups(Vec<DeploymentConflictBackup>),
     #[serde(rename = "skill_operations")]
     SkillOperations(SkillOperationsResult),
     #[serde(rename = "running_llm_checks")]

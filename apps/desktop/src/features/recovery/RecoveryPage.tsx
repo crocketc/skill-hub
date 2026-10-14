@@ -11,10 +11,11 @@ import { formatOperationTimes, localizeErrorCode, operationObjectTitle } from ".
 import { OperationsList } from "../operations/OperationsList";
 import { OperationPhaseStatus } from "../operations/OperationPhaseStatus";
 import { nativeRecentOperations, type RecentOperationsReader } from "../operations/nativeApi";
-import { type OperationFacade, type OperationState, type RecoveryCandidate, unavailableOperationFacade } from "../operations/api";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { type DeploymentConflictBackup, type OperationFacade, type OperationState, type RecoveryCandidate, unavailableOperationFacade } from "../operations/api";
 import "./recovery.css";
 
-const TAB_ORDER = ["records", "backupRestore"] as const;
+const TAB_ORDER = ["records", "unfinished", "replaced"] as const;
 type RecoveryTab = (typeof TAB_ORDER)[number];
 type RecoveryResolutionAction = Extract<RecoveryAction, "complete_operation" | "rollback_operation">;
 
@@ -24,12 +25,14 @@ function isRecoveryResolutionAction(action: RecoveryAction): action is RecoveryR
 
 const TAB_IDS: Record<RecoveryTab, string> = {
   records: "recovery-tab-records",
-  backupRestore: "recovery-tab-backup",
+  unfinished: "recovery-tab-unfinished",
+  replaced: "recovery-tab-replaced",
 };
 
 const PANEL_IDS: Record<RecoveryTab, string> = {
   records: "recovery-panel-records",
-  backupRestore: "recovery-panel-backup",
+  unfinished: "recovery-panel-unfinished",
+  replaced: "recovery-panel-replaced",
 };
 
 /**
@@ -40,7 +43,7 @@ const PANEL_IDS: Record<RecoveryTab, string> = {
  */
 export function RecoveryPage({ facade = unavailableOperationFacade, recent = nativeRecentOperations, initialOperationId, onResolved }: { facade?: OperationFacade; recent?: RecentOperationsReader; initialOperationId?: string; onResolved?: () => Promise<void> }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<RecoveryTab>(initialOperationId ? "backupRestore" : "records");
+  const [tab, setTab] = useState<RecoveryTab>(initialOperationId ? "unfinished" : "records");
   const [candidates, setCandidates] = useState<RecoveryCandidate[]>();
   const [selectedId, setSelectedId] = useState<string | undefined>(initialOperationId);
   const [operation, setOperation] = useState<OperationState>();
@@ -50,9 +53,14 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
   const [operationLoading, setOperationLoading] = useState(false);
   const [resolvedAction, setResolvedAction] = useState<RecoveryResolutionAction>();
   const [busy, setBusy] = useState(false);
+  const [backups, setBackups] = useState<DeploymentConflictBackup[]>();
+  const [backupError, setBackupError] = useState<string>();
+  const [backupActionError, setBackupActionError] = useState<string>();
+  const [backupBusyId, setBackupBusyId] = useState<string>();
   const tabRefs = useRef<Partial<Record<RecoveryTab, HTMLButtonElement | null>>>({});
   const candidateRequest = useRef(0);
   const operationRequest = useRef(0);
+  const backupRequest = useRef(0);
 
   const describe = useCallback(
     (reason: unknown) => describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "recovery.errors.generic"),
@@ -69,6 +77,17 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
       setSelectedId((current) => (current && list.some((candidate) => candidate.operationId === current) ? current : list[0]?.operationId));
     } catch (reason: unknown) {
       if (request === candidateRequest.current) setCandidateError(describe(reason));
+    }
+  }, [facade, describe]);
+
+  const loadBackups = useCallback(async () => {
+    const request = ++backupRequest.current;
+    setBackupError(undefined);
+    try {
+      const list = await facade.listDeploymentConflictBackups();
+      if (request === backupRequest.current) setBackups(list);
+    } catch (reason: unknown) {
+      if (request === backupRequest.current) setBackupError(describe(reason));
     }
   }, [facade, describe]);
 
@@ -103,6 +122,11 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
     return () => { operationRequest.current += 1; };
   }, [selectedId, loadOperation]);
 
+  useEffect(() => {
+    if (tab === "replaced") void loadBackups();
+    return () => { backupRequest.current += 1; };
+  }, [tab, loadBackups]);
+
   const selectedCandidate = candidates?.find((candidate) => candidate.operationId === selectedId);
 
   const confirmRecovery = async (action: RecoveryResolutionAction) => {
@@ -119,6 +143,20 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
       setActionError(describe(reason));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const restoreBackup = async (backupId: string) => {
+    setBackupBusyId(backupId);
+    setBackupActionError(undefined);
+    try {
+      await facade.restoreDeploymentConflictBackup(backupId);
+      await loadBackups();
+      await onResolved?.();
+    } catch (reason: unknown) {
+      setBackupActionError(describe(reason));
+    } finally {
+      setBackupBusyId(undefined);
     }
   };
 
@@ -157,7 +195,7 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
               tabIndex={tab === tabKey ? 0 : -1}
               type="button"
             >
-              {tabKey === "records" ? t("recovery.tabs.records") : t("recovery.tabs.backupRestore")}
+              {tabKey === "records" ? t("recovery.tabs.records") : tabKey === "unfinished" ? t("recovery.tabs.unfinished") : t("recovery.tabs.replaced")}
             </button>
           ))}
         </div>
@@ -171,11 +209,11 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
           >
             <OperationsList recent={recent} />
           </div>
-        ) : (
+        ) : tab === "unfinished" ? (
           <div
-            aria-labelledby={TAB_IDS.backupRestore}
+            aria-labelledby={TAB_IDS.unfinished}
             className="sh-workflow-card sh-recovery__panel"
-            id={PANEL_IDS.backupRestore}
+            id={PANEL_IDS.unfinished}
             role="tabpanel"
             tabIndex={0}
           >
@@ -195,9 +233,67 @@ export function RecoveryPage({ facade = unavailableOperationFacade, recent = nat
               selectedId={selectedId}
             />
           </div>
+        ) : (
+          <div
+            aria-labelledby={TAB_IDS.replaced}
+            className="sh-workflow-card sh-recovery__panel"
+            id={PANEL_IDS.replaced}
+            role="tabpanel"
+            tabIndex={0}
+          >
+            <ReplacedContentTab
+              actionError={backupActionError}
+              backups={backups}
+              busyId={backupBusyId}
+              error={backupError}
+              onRetry={() => void loadBackups()}
+              onRestore={(backupId) => void restoreBackup(backupId)}
+            />
+          </div>
         )}
       </div>
     </PageFrame>
+  );
+}
+
+function ReplacedContentTab({ backups, error, actionError, busyId, onRetry, onRestore }: {
+  backups?: DeploymentConflictBackup[];
+  error?: string;
+  actionError?: string;
+  busyId?: string;
+  onRetry: () => void;
+  onRestore: (backupId: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (error) return <><DataState message={error} state="unavailable" /><Button onClick={onRetry}>{t("actions.retry")}</Button></>;
+  if (!backups) return <DataState message={t("recovery.loading")} state="loading" />;
+  return (
+    <section className="sh-recovery__backups" aria-label={t("recovery.backups.heading")}>
+      <p className="sh-eyebrow">{t("recovery.backups.hint")}</p>
+      {backups.length === 0 ? <p>{t("recovery.backups.empty")}</p> : (
+        <ul className="sh-workflow-list">
+          {backups.map((backup) => (
+            <li className="sh-workflow-list__item" key={backup.backup_id}>
+              <div>
+                <strong>{backup.entry_name}</strong>
+                <span>{t("recovery.backups.target", { target: backup.target_label })}</span>
+                <span>{t(`recovery.backups.entryKinds.${backup.entry_kind}`)}</span>
+              </div>
+              <ConfirmDialog
+                cancelLabel={t("actions.cancel")}
+                confirmDisabled={busyId === backup.backup_id}
+                confirmLabel={t("recovery.backups.confirmRestore")}
+                description={t("recovery.backups.restoreDescription", { entry: backup.entry_name, target: backup.target_label })}
+                onConfirm={() => onRestore(backup.backup_id)}
+                title={t("recovery.backups.restoreTitle")}
+                trigger={<Button disabled={busyId !== undefined} variant="secondary">{t("recovery.backups.restore")}</Button>}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {actionError ? <p role="status">{actionError}</p> : null}
+    </section>
   );
 }
 

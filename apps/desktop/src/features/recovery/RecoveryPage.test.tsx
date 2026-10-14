@@ -1,5 +1,4 @@
 import { act, render, screen } from "@testing-library/react";
-import { fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
@@ -50,6 +49,12 @@ function createFacade(overrides: Partial<OperationFacade> = {}): OperationFacade
     async resolveRecovery() {
       return;
     },
+    async listDeploymentConflictBackups() {
+      return [];
+    },
+    async restoreDeploymentConflictBackup() {
+      return;
+    },
     ...overrides,
   };
 }
@@ -75,6 +80,30 @@ it("defaults to the operation records tab", async () => {
 
   expect(await screen.findByRole("tab", { selected: true })).toHaveTextContent("操作记录");
   expect(screen.getByRole("tabpanel")).toBeVisible();
+});
+
+it("restores a replaced item only after confirmation and refreshes the list", async () => {
+  const user = userEvent.setup();
+  const restoreDeploymentConflictBackup = vi.fn(async () => undefined);
+  const listDeploymentConflictBackups = vi.fn()
+    .mockResolvedValueOnce([{
+      backup_id: "opaque-backup-id",
+      target_label: "Claude 全局技能",
+      entry_name: "my-skill",
+      entry_kind: "directory",
+    }])
+    .mockResolvedValueOnce([]);
+  await renderPage(createFacade({ listDeploymentConflictBackups, restoreDeploymentConflictBackup }));
+
+  await user.click(screen.getByRole("tab", { name: "已替换内容" }));
+  expect(await screen.findByText("my-skill")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "恢复这份内容" }));
+  expect(screen.getByRole("alertdialog")).toHaveTextContent("当前内容会另存为一条可恢复记录");
+  await user.click(screen.getByRole("button", { name: "确认恢复" }));
+
+  expect(restoreDeploymentConflictBackup).toHaveBeenCalledWith("opaque-backup-id");
+  expect(await screen.findByText("暂无可恢复的替换内容。")).toBeVisible();
+  expect(listDeploymentConflictBackups).toHaveBeenCalledTimes(2);
 });
 
 it("switches to the unfinished operations tab and shows the supported recovery actions", async () => {
@@ -253,19 +282,22 @@ it("wires each tab to its panel with aria-controls and roving tabindex", async (
   await renderPage();
 
   const records = screen.getByRole("tab", { name: "操作记录" });
-  const backup = screen.getByRole("tab", { name: "未完成操作" });
+  const unfinished = screen.getByRole("tab", { name: "未完成操作" });
+  const replaced = screen.getByRole("tab", { name: "已替换内容" });
 
   expect(records).toHaveAttribute("aria-controls", "recovery-panel-records");
-  expect(backup).toHaveAttribute("aria-controls", "recovery-panel-backup");
+  expect(unfinished).toHaveAttribute("aria-controls", "recovery-panel-unfinished");
+  expect(replaced).toHaveAttribute("aria-controls", "recovery-panel-replaced");
 
   // 选中页签可 Tab 进入，未选中页签由方向键到达（roving tabindex）。
   expect(records).toHaveAttribute("tabindex", "0");
-  expect(backup).toHaveAttribute("tabindex", "-1");
+  expect(unfinished).toHaveAttribute("tabindex", "-1");
+  expect(replaced).toHaveAttribute("tabindex", "-1");
 
-  await userEvent.setup().click(backup);
-  expect(backup).toHaveAttribute("tabindex", "0");
+  await userEvent.setup().click(unfinished);
+  expect(unfinished).toHaveAttribute("tabindex", "0");
   expect(records).toHaveAttribute("tabindex", "-1");
-  expect(screen.getByRole("tabpanel", { name: "未完成操作" })).toHaveAttribute("id", "recovery-panel-backup");
+  expect(screen.getByRole("tabpanel", { name: "未完成操作" })).toHaveAttribute("id", "recovery-panel-unfinished");
 });
 
 it("moves selection and focus with the arrow keys and wraps at the ends", async () => {
@@ -273,30 +305,35 @@ it("moves selection and focus with the arrow keys and wraps at the ends", async 
   await renderPage();
 
   const records = screen.getByRole("tab", { name: "操作记录" });
-  const backup = screen.getByRole("tab", { name: "未完成操作" });
+  const unfinished = screen.getByRole("tab", { name: "未完成操作" });
+  const replaced = screen.getByRole("tab", { name: "已替换内容" });
 
   await user.click(records);
   records.focus();
 
-  fireEvent.keyDown(records, { key: "ArrowRight" });
-  expect(backup).toHaveAttribute("aria-selected", "true");
-  expect(document.activeElement).toBe(backup);
+  await user.keyboard("{ArrowRight}");
+  expect(unfinished).toHaveAttribute("aria-selected", "true");
+  expect(document.activeElement).toBe(unfinished);
+
+  await user.keyboard("{ArrowRight}");
+  expect(replaced).toHaveAttribute("aria-selected", "true");
+  expect(document.activeElement).toBe(replaced);
 
   // 从末尾向右循环回第一个页签。
-  fireEvent.keyDown(backup, { key: "ArrowRight" });
+  await user.keyboard("{ArrowRight}");
   expect(records).toHaveAttribute("aria-selected", "true");
   expect(document.activeElement).toBe(records);
 
   // 从开头向左循环到最后一个页签。
-  fireEvent.keyDown(records, { key: "ArrowLeft" });
-  expect(backup).toHaveAttribute("aria-selected", "true");
-  expect(document.activeElement).toBe(backup);
+  await user.keyboard("{ArrowLeft}");
+  expect(replaced).toHaveAttribute("aria-selected", "true");
+  expect(document.activeElement).toBe(replaced);
 
-  fireEvent.keyDown(backup, { key: "Home" });
+  await user.keyboard("{Home}");
   expect(records).toHaveAttribute("aria-selected", "true");
   expect(document.activeElement).toBe(records);
 
-  fireEvent.keyDown(records, { key: "End" });
-  expect(backup).toHaveAttribute("aria-selected", "true");
-  expect(document.activeElement).toBe(backup);
+  await user.keyboard("{End}");
+  expect(replaced).toHaveAttribute("aria-selected", "true");
+  expect(document.activeElement).toBe(replaced);
 });

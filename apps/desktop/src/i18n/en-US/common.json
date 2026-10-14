@@ -2730,8 +2730,25 @@
     },
     "tabs": {
       "records": "Operation records",
-      "backupRestore": "Unfinished operations",
-      "backupRestoreHint": "The full backup/restore flow lives in Data protection; confirmations for recovery appear here."
+      "unfinished": "Unfinished operations",
+      "replaced": "Replaced content",
+      "backupRestoreHint": "Choose an operation that can be safely completed or undone. SkillHub checks the result afterward."
+    },
+    "backups": {
+      "heading": "Replaced content",
+      "hint": "Content from before replacement is saved here. Restoring it also saves the current content as another recoverable item.",
+      "empty": "No replaced content can be restored right now.",
+      "target": "Target: {{target}}",
+      "entryKinds": {
+        "directory": "Directory",
+        "file": "File",
+        "symbolic_link": "Symbolic link",
+        "directory_link": "Directory junction"
+      },
+      "restore": "Restore this content",
+      "restoreTitle": "Restore the previous content?",
+      "restoreDescription": "Restore “{{entry}}” to {{target}}. The current content will be saved as another recoverable item.",
+      "confirmRestore": "Confirm restore"
     },
     "unknownOperation": "Unknown operation"
   },
@@ -3681,6 +3698,8 @@
     "kinds": {
       "delete_skill": "Delete skill",
       "deploy_skill": "Dispatch skill",
+      "deployment_conflict_unknown_replace": "Replace an unrecognized target",
+      "deployment_conflict_backup_restore": "Restore replaced content",
       "import_skill": "Import skill",
       "migrate_original": "Migrate original directory",
       "relink_source_copy": "Relink source file",

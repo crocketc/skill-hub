@@ -955,6 +955,12 @@ pub struct ResolveRecovery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
 #[serde(deny_unknown_fields)]
+pub struct RestoreDeploymentConflictBackup {
+    pub backup_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
+#[serde(deny_unknown_fields)]
 pub struct PrepareCallPolicyChange {
     pub skill_id: SkillId,
     pub policy: crate::catalog::CallPolicy,
@@ -1590,6 +1596,8 @@ pub enum AppCommand {
     CommitRepair(CommitRepair),
     #[serde(rename = "resolve_recovery")]
     ResolveRecovery(ResolveRecovery),
+    #[serde(rename = "restore_deployment_conflict_backup")]
+    RestoreDeploymentConflictBackup(RestoreDeploymentConflictBackup),
     #[serde(rename = "prepare_call_policy_change")]
     PrepareCallPolicyChange(PrepareCallPolicyChange),
     #[serde(rename = "commit_call_policy_change")]

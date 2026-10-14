@@ -33,11 +33,12 @@ function previewPhase(): OperationPhase {
 
 /**
  * DEV-only preview for /__preview/recovery.
- * Query knobs: ?phase=rolled_back and ?error=1 for the unavailable state.
+ * Query knobs: ?phase=rolled_back, ?error=1, and ?replaced=1 for the recoverable backup flow.
  */
 export function RecoveryPreview() {
   const facade = useMemo<OperationFacade>(() => {
     let detailAttempts = 0;
+    let hasReplacedContent = previewFlag("replaced");
     return {
       get: async (operationId) => {
         if (previewFlag("detailError") && detailAttempts++ === 0) {
@@ -64,6 +65,16 @@ export function RecoveryPreview() {
         objectName: "Preview skill",
       }]),
       resolveRecovery: async () => undefined,
+      listDeploymentConflictBackups: async () => hasReplacedContent ? [{
+        backup_id: "preview-backup-1",
+        target_label: "Codex global Skills",
+        entry_name: "preview-original-skill",
+        entry_kind: "directory",
+      }] : [],
+      restoreDeploymentConflictBackup: async (backupId) => {
+        if (backupId !== "preview-backup-1") throw new Error("replaced content was not found in preview");
+        hasReplacedContent = false;
+      },
     };
   }, []);
   const recent = useMemo<RecentOperationsReader>(() => (

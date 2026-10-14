@@ -1,7 +1,7 @@
 use skillhub_core::{
-    AppCommand, AppCommandResult, AppEvent, AppQuery, ImportAction, ImportCandidate,
-    ImportDecision, OperationId, OperationPhase, OperationProgress, SourceDescriptor, SourceKind,
-    SourceLocator,
+    AppCommand, AppCommandResult, AppEvent, AppQuery, AppQueryResult, ImportAction,
+    ImportCandidate, ImportDecision, OperationId, OperationPhase, OperationProgress,
+    SourceDescriptor, SourceKind, SourceLocator,
 };
 
 #[test]
@@ -531,6 +531,46 @@ fn health_and_recovery_commands_and_queries_have_stable_wire_shapes() {
         serde_json::to_value(query).unwrap()["type"],
         "list_recovery_candidates"
     );
+}
+
+#[test]
+fn deployment_conflict_backup_contract_is_opaque_and_stable() {
+    let query = serde_json::to_value(AppQuery::ListDeploymentConflictBackups).unwrap();
+    assert_eq!(query["type"], "list_deployment_conflict_backups");
+
+    let result = serde_json::to_value(AppQueryResult::DeploymentConflictBackups(vec![
+        skillhub_core::DeploymentConflictBackup {
+            backup_id: "opaque-id".into(),
+            target_label: "Codex".into(),
+            entry_name: "writer".into(),
+            entry_kind: skillhub_core::DeploymentConflictBackupEntryKind::Directory,
+        },
+    ]))
+    .unwrap();
+    assert_eq!(result["type"], "deployment_conflict_backups");
+    let keys: std::collections::BTreeSet<&str> = result["payload"][0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        ["backup_id", "entry_kind", "entry_name", "target_label"]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(result["payload"][0]["entry_kind"], "directory");
+
+    let command = serde_json::to_value(AppCommand::RestoreDeploymentConflictBackup(
+        skillhub_core::RestoreDeploymentConflictBackup {
+            backup_id: "opaque-id".into(),
+        },
+    ))
+    .unwrap();
+    assert_eq!(command["type"], "restore_deployment_conflict_backup");
+    assert_eq!(command["payload"]["backup_id"], "opaque-id");
+    assert!(command["payload"].get("path").is_none());
 }
 
 #[test]

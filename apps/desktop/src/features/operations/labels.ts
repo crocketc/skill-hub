@@ -13,6 +13,8 @@ import { formatDateTime, type SupportedLocale } from "../../i18n";
  */
 export const KIND_LABEL_KEYS: Record<string, string> = {
   delete_skill: "operations.kinds.delete_skill",
+  deployment_conflict_unknown_replace: "operations.kinds.deployment_conflict_unknown_replace",
+  deployment_conflict_backup_restore: "operations.kinds.deployment_conflict_backup_restore",
   deploy_skill: "operations.kinds.deploy_skill",
   import_skill: "operations.kinds.import_skill",
   migrate_original: "operations.kinds.migrate_original",

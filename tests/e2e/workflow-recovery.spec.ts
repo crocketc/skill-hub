@@ -42,24 +42,24 @@ test("moves selection and focus with the arrow keys and updates the panel", asyn
   // #11（2026-10-08）页签改名：「备份恢复」→「未完成操作」（en "Unfinished operations"）；
   // 锚点随界面文案重锚，断言意图（页签导航行为）不变。
   const records = page.getByRole("tab", { name: "Operation records" });
-  const backup = page.getByRole("tab", { name: "Unfinished operations" });
+  const unfinished = page.getByRole("tab", { name: "Unfinished operations" });
   await records.click();
   await records.focus();
 
   await page.keyboard.press("ArrowRight");
-  await expect(backup).toHaveAttribute("aria-selected", "true");
+  await expect(unfinished).toHaveAttribute("aria-selected", "true");
   await expect(records).toHaveAttribute("aria-selected", "false");
   const focusedId = await page.evaluate(() => document.activeElement?.id ?? "");
-  expect(focusedId).toBe("recovery-tab-backup");
-  await expect(page.getByRole("tabpanel")).toHaveAttribute("id", "recovery-panel-backup");
+  expect(focusedId).toBe("recovery-tab-unfinished");
+  await expect(page.getByRole("tabpanel")).toHaveAttribute("id", "recovery-panel-unfinished");
 
   // Unselected tabs are skipped by Tab (roving tabindex); the panel follows.
   await page.keyboard.press("Tab");
   const afterTab = await page.evaluate(() => document.activeElement?.id ?? "");
-  expect(afterTab).toBe("recovery-panel-backup");
+  expect(afterTab).toBe("recovery-panel-unfinished");
 
   // Arrows act while focus is on a tab; wrap backwards to the first tab.
-  await backup.focus();
+  await unfinished.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(records).toHaveAttribute("aria-selected", "true");
   const backId = await page.evaluate(() => document.activeElement?.id ?? "");
@@ -95,6 +95,21 @@ test("does not invent an action for a candidate without supported recovery", asy
   await expect(page.getByText("No safe automatic recovery is available for this operation.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue operation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Undo unfinished changes" })).toHaveCount(0);
+});
+
+test("restores replaced content only after confirmation and preserves the page state", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/__preview/recovery?replaced=1");
+
+  await page.getByRole("tab", { name: "Replaced content" }).click();
+  await expect(page.getByText("preview-original-skill")).toBeVisible();
+  await page.getByRole("button", { name: "Restore this content" }).click();
+
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toContainText("The current content will be saved as another recoverable item.");
+  await confirmation.getByRole("button", { name: "Confirm restore" }).click();
+
+  await expect(page.getByText("No replaced content can be restored right now.")).toBeVisible();
 });
 
 test("keeps candidates visible and retries a single failed operation detail", async ({ page }) => {

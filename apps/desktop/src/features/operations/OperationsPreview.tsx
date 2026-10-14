@@ -90,6 +90,8 @@ export function OperationProgressPreview() {
     }),
     listRecoveryCandidates: async () => [],
     resolveRecovery: async () => undefined,
+    listDeploymentConflictBackups: async () => [],
+    restoreDeploymentConflictBackup: async () => undefined,
   }), []);
   return (
     <div className="sh-workflow-page">

@@ -74,4 +74,13 @@ export const nativeOperationFacade: OperationFacade = {
     const result = await executeCommand({ type: "resolve_recovery", payload: { operation_id: operationId, action } });
     if (result.type !== "operation_summary") throw new Error("recovery resolution returned an unexpected result");
   },
+  async listDeploymentConflictBackups() {
+    const result = await queryApplication({ type: "list_deployment_conflict_backups" });
+    if (result.type !== "deployment_conflict_backups") throw new Error("replaced-content query returned an unexpected result");
+    return result.payload;
+  },
+  async restoreDeploymentConflictBackup(backupId) {
+    const result = await executeCommand({ type: "restore_deployment_conflict_backup", payload: { backup_id: backupId } });
+    if (result.type !== "operation_summary") throw new Error("replaced-content restore returned an unexpected result");
+  },
 };

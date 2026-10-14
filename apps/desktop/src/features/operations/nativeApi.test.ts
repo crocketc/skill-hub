@@ -48,6 +48,28 @@ it("lists the recovery candidates the backend reports", async () => {
   ]);
 });
 
+it("lists only the native API's replaced-content backup records", async () => {
+  vi.mocked(queryApplication).mockResolvedValue({ type: "deployment_conflict_backups", payload: [
+    { backup_id: "opaque-1", target_label: "Agent target", entry_name: "my-skill", entry_kind: "directory" },
+  ] } as never);
+
+  await expect(nativeOperationFacade.listDeploymentConflictBackups()).resolves.toEqual([
+    { backup_id: "opaque-1", target_label: "Agent target", entry_name: "my-skill", entry_kind: "directory" },
+  ]);
+  expect(queryApplication).toHaveBeenCalledWith({ type: "list_deployment_conflict_backups" });
+});
+
+it("restores a replaced-content backup through the dedicated command", async () => {
+  vi.mocked(executeCommand).mockResolvedValue({ type: "operation_summary", payload: {} as never });
+
+  await nativeOperationFacade.restoreDeploymentConflictBackup("opaque-1");
+
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "restore_deployment_conflict_backup",
+    payload: { backup_id: "opaque-1" },
+  });
+});
+
 /**
  * 恢复必须走 `resolve_recovery`：`acknowledge_recovery` 在应用层没有实现分支，
  * 用它换来的只是 `internal.error`，恢复页会永远停在闸门里。
