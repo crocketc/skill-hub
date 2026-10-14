@@ -304,6 +304,25 @@ test.describe("batch deployment flow", () => {
     await expect(summary.getByTestId("batch-outcome-skipped")).toHaveCount(1);
   });
 
+  test("keeps batch partial success and failed target details visible", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=batch-partial");
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByLabel("Preview Agent 2").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+
+    const summary = page.getByTestId("batch-summary");
+    await expect(summary).toContainText("8 succeeded");
+    await expect(summary).toContainText("8 failed");
+    const failed = summary.getByTestId("batch-outcome-failed");
+    await expect(failed).toHaveCount(8);
+    await expect(failed.first()).toContainText("Preview Skill 1 · Preview Agent 2");
+    await expect(failed.first()).toContainText("This target was not executed and stays as it is.");
+    // 成功项以汇总计数呈现；失败目标逐项展开，不能把部分成功说成全批完成。
+    await expect(summary.getByTestId("batch-outcome-succeeded")).toHaveCount(0);
+  });
+
   test("keeps the commit unreachable when the batch preview fails", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch-preview-fail");
