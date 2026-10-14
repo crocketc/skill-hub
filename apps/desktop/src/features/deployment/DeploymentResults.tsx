@@ -20,7 +20,7 @@ export function DeploymentResults({ results, targets = [] }: { results: Deployme
           <li className="sh-workflow-list__item" data-testid="deployment-result" key={`${result.skillId ?? "single"}:${result.targetId}`}>
             <div>
               {/* DEV-18-A：主文案用展示名（回退 runtime name），裸 Skill UUID 不进首屏。 */}
-              {result.skillId ? <span>{`${result.displayName ?? t("deployment.batch.unnamedSkill")} · `}{targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label}</span> : (targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label)}
+              {result.skillId ? <span>{`${result.displayName ?? t("deployment.batch.unnamedSkill")}${result.conflictOutcome === "renamed" && result.runtimeName ? `（${result.runtimeName}）` : ""} · `}{targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label}</span> : (targetById.has(result.targetId) ? <DeploymentTargetPresentation fallback={result.label} target={targetById.get(result.targetId)} /> : result.label)}
               <p>{describeDeploymentResult(result, (key, options) => String(t(key as never, options as never)))}</p>
             </div>
             {/* DEV-99：内部 ID 全面退出界面（含技术详情折叠区）——结果行

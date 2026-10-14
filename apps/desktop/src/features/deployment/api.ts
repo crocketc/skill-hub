@@ -1,5 +1,6 @@
 import type {
   AgentDirectoryMemberFact,
+  DeploymentConflictAction as NativeDeploymentConflictAction,
   DeploymentConflictPreview as NativeDeploymentConflictPreview,
   DirectoryObservationStatus,
   TargetOperationError,
@@ -120,6 +121,11 @@ export type DeploymentResult = {
   error?: NativeAppError;
   /** 后端持久化操作记录 id（任务 4）：顶栏/通知/操作记录三端同一 id。 */
   operationId?: string;
+  /** 已完成冲突处置的结果事实；不承载任何内部实体 ID。 */
+  conflictOutcome?: "replaced" | "renamed";
+  runtimeName?: string;
+  replacedSkillDisplayName?: string;
+  recoveryRequired?: boolean;
 };
 
 export type DeploymentTranslator = (key: string, options?: Record<string, unknown>) => string;
@@ -129,6 +135,15 @@ export function describeDeploymentResult(
   result: DeploymentResult,
   translate: DeploymentTranslator,
 ): string {
+  if (result.recoveryRequired) {
+    return translate(result.message, { defaultValue: translate("deployment.results.status.message.recoveryRequired") });
+  }
+  if (result.conflictOutcome) {
+    const name = result.conflictOutcome === "renamed"
+      ? result.runtimeName ?? ""
+      : result.replacedSkillDisplayName ?? translate("deployment.conflict.unknownExistingSkill");
+    return translate(result.message, { name, defaultValue: result.message });
+  }
   if (result.error) {
     return describeNativeError(result.error, translate, "deployment.errors.generic");
   }
@@ -234,11 +249,90 @@ export type BatchPreviewItem = {
 /** 客户端在重预览时回传的确认：pair id → 用户确认时持有的指纹。 */
 export type PreviewConfirmations = Record<string, string>;
 
+export type DeploymentConflictDecision = {
+  action: NativeDeploymentConflictAction;
+  runtimeName?: string;
+};
+
+export type DeploymentConflictDecisionMap = Record<string, DeploymentConflictDecision>;
+
+/** 与后端 validate_runtime_name 保持相同的跨平台单路径段基础校验。 */
+export function isValidDeploymentRuntimeName(value: string): boolean {
+  return value.trim().length > 0
+    && value !== "."
+    && value !== ".."
+    && !/[\0/\\:]/u.test(value);
+}
+
+export function deploymentConflictDecisionErrors(
+  pairs: DeploymentPairPreview[],
+  decisions: DeploymentConflictDecisionMap,
+  confirmedFallbackIds: Set<string>,
+  confirmedSharedIds: Set<string>,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const renamesBySkill = new Map<string, Set<string>>();
+  for (const pair of pairs) {
+    const conflict = pair.conflict;
+    const decision = decisions[pair.pairId];
+    if (!conflict || !decision || decision.action !== "rename_and_deploy") continue;
+    const names = renamesBySkill.get(pair.skillId) ?? new Set<string>();
+    names.add(decision.runtimeName ?? "");
+    renamesBySkill.set(pair.skillId, names);
+  }
+  const inconsistentSkills = new Set([...renamesBySkill]
+    .filter(([, names]) => names.size > 1)
+    .map(([skillId]) => skillId));
+
+  for (const pair of pairs) {
+    const conflict = pair.conflict;
+    if (!conflict) continue;
+    const decision = decisions[pair.pairId] ?? {
+      action: conflict.default_action,
+    };
+    if (!conflict.available_actions.includes(decision.action)) {
+      errors[pair.pairId] = "deployment.conflict.errors.actionUnavailable";
+      continue;
+    }
+    if (decision.action === "rename_and_deploy") {
+      const runtimeName = decision.runtimeName ?? "";
+      if (!isValidDeploymentRuntimeName(runtimeName)) {
+        errors[pair.pairId] = "deployment.conflict.errors.runtimeNameInvalid";
+        continue;
+      }
+      if (runtimeName.toLowerCase() === pair.runtimeName.toLowerCase()) {
+        errors[pair.pairId] = "deployment.conflict.errors.runtimeNameUnchanged";
+        continue;
+      }
+      if (inconsistentSkills.has(pair.skillId)) {
+        errors[pair.pairId] = "deployment.conflict.errors.runtimeNameMismatch";
+        continue;
+      }
+    }
+    if (decision.action === "replace_target" && pair.mode === null && pair.fallbackMode !== null
+      && !confirmedFallbackIds.has(pair.pairId)) {
+      errors[pair.pairId] = "deployment.conflict.errors.fallbackConfirmationRequired";
+      continue;
+    }
+    if (decision.action !== "skip" && conflict.shared_target) {
+      if (!conflict.shared_consumers_complete || !conflict.shared_consumers?.length) {
+        errors[pair.pairId] = "deployment.conflict.errors.sharedImpactUnavailable";
+        continue;
+      }
+      if (!confirmedSharedIds.has(pair.pairId)) {
+        errors[pair.pairId] = "deployment.conflict.errors.sharedConfirmationRequired";
+      }
+    }
+  }
+  return errors;
+}
+
 /** 用户在分组里逐项取消的 pair：commit 与重预览都按 id 回传。 */
 export type PairSelection = {
   pairId: string;
   confirmFallback: boolean;
   confirmSharedTarget?: boolean;
+  conflictDecision?: DeploymentConflictDecision;
   exclude: boolean;
 };
 

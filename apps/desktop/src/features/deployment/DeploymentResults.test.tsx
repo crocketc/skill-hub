@@ -84,3 +84,49 @@ it("resolves the native success result key through the existing translation tree
 
   expect(await screen.findByText("添加成功")).toBeVisible();
 });
+
+it("explains replacement, rename, and recovery-required results with user-facing facts", async () => {
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <DeploymentResults results={[
+        {
+          skillId: "derived-skill-id",
+          displayName: "PDF 抽取器",
+          targetId: "codex-global",
+          label: "Codex CLI",
+          status: "succeeded",
+          message: "deployment.results.status.message.renamed",
+          conflictOutcome: "renamed",
+          runtimeName: "pdf-reader-v2",
+        },
+        {
+          skillId: "skill-pdf",
+          displayName: "PDF 抽取器",
+          targetId: "claude-global",
+          label: "Claude Code",
+          status: "succeeded",
+          message: "deployment.results.status.message.replaced",
+          conflictOutcome: "replaced",
+          replacedSkillDisplayName: "旧版 PDF 技能",
+        },
+        {
+          skillId: "skill-agent-secret-id",
+          displayName: "Browser Helper",
+          targetId: "cursor-global",
+          label: "Cursor",
+          status: "failed",
+          message: "deployment.results.status.message.recoveryRequired",
+          recoveryRequired: true,
+          operationId: "opaque-operation-id",
+        },
+      ]} />
+    </I18nextProvider>,
+  );
+
+  expect(await screen.findByText("PDF 抽取器（pdf-reader-v2） · Codex CLI")).toBeVisible();
+  expect(screen.getByText(/已使用新名称「pdf-reader-v2」完成派发/)).toBeVisible();
+  expect(screen.getByText(/已替换目标中的「旧版 PDF 技能」并完成派发/)).toBeVisible();
+  expect(screen.getByText(/操作未完成，需要前往操作记录恢复/)).toBeVisible();
+  expect(screen.queryByText(/opaque-operation-id|skill-agent-secret-id/)).not.toBeInTheDocument();
+});

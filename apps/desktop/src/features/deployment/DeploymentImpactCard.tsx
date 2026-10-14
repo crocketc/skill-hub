@@ -66,6 +66,38 @@ export function DeploymentImpactCard({ pair, targets }: DeploymentImpactCardProp
       {visibleWarnings.length > 0 ? <ul className="sh-deployment-impact-card__warnings">
         {visibleWarnings.map((warning) => <li key={warning}>{String(t(warning as never, { defaultValue: warning } as never))}</li>)}
       </ul> : null}
+      {pair.conflict ? <section aria-label={t("deployment.conflict.heading")} className="sh-deployment-impact-card__conflict-facts">
+        {pair.conflict.occupants.length > 0 ? <div>
+          <h4>{t("deployment.conflict.existingEntry")}</h4>
+          <ul>
+            {pair.conflict.occupants.map((occupant) => (
+              <li key={occupant.entry_identity}>
+                {occupant.skill_display_name || occupant.runtime_name}
+                {occupant.skill_display_name && occupant.runtime_name !== occupant.skill_display_name
+                  ? <small>{t("deployment.conflict.runtimeNameValue", { name: occupant.runtime_name })}</small>
+                  : null}
+              </li>
+            ))}
+          </ul>
+        </div> : null}
+        {pair.conflict.shared_target ? <div>
+          <h4>{t("deployment.conflict.sharedConsumers.heading")}</h4>
+          {pair.conflict.shared_consumers_complete && pair.conflict.shared_consumers?.length ? (
+            <ul>
+              {pair.conflict.shared_consumers.map((consumer) => (
+                <li key={`${consumer.kind}:${consumer.consumer_id}`}>
+                  <span>{t(`deployment.conflict.sharedConsumers.kind.${consumer.kind}`)}：{consumer.display_name}</span>
+                  {consumer.active_deployment_ids.length > 0 ? <small>
+                    {t("deployment.conflict.sharedConsumers.activeRelations", { count: consumer.active_deployment_ids.length })}
+                  </small> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="sh-deployment-impact-card__conflict-incomplete">
+            {t("deployment.conflict.sharedConsumers.incomplete")}
+          </p>}
+        </div> : null}
+      </section> : null}
       {hasSecurityContext ? <Link to={`/library/${encodeURIComponent(pair.skillId)}/security`}>
         {t("deployment.securityWarnings.review")}
       </Link> : null}

@@ -161,6 +161,140 @@ it("shows the security page link for a danger-level pair blocked by preview", as
     .toBe("/library/skill-pdf/security");
 });
 
+it("offers only preview-approved conflict actions and requires shared-impact confirmation", async () => {
+  const user = userEvent.setup();
+  const conflict: NonNullable<DeploymentPairPreview["conflict"]> = {
+    occupants: [{
+      ownership: "managed",
+      deployment_id: "old-deployment",
+      skill_id: "old-skill",
+      version_id: "old-version",
+      skill_display_name: "旧版 PDF 技能",
+      physical_target_id: "fs-codex",
+      runtime_name: "pdf",
+      target_path: "C:/Users/demo/.codex/skills",
+      consumers: ["old-deployment"],
+      entry_identity: "entry-1",
+      content_fingerprint: "sha256:old",
+    }],
+    shared_target: true,
+    shared_consumers_complete: true,
+    shared_consumers: [{
+      kind: "agent",
+      consumer_id: "agent:codex",
+      display_name: "Codex CLI",
+      logical_target_ids: ["codex-cli"],
+      active_deployment_ids: ["old-deployment"],
+    }],
+    shared_consumer_fingerprint: "sha256:consumers",
+    available_actions: ["replace_target", "skip"],
+    default_action: "skip",
+  };
+  const pairPreview = pair({
+    pairId: "skill-pdf:fs-codex",
+    logicalTargetIds: ["codex-cli"],
+    disposition: "blocked",
+    blockReason: "target_occupied",
+    mode: null,
+    conflict,
+  });
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async () => []);
+  const facade = facadeFixture([pairPreview], { commit });
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByText("Codex CLI", { selector: ".sh-deployment-impact-card__targets strong" })).toBeVisible();
+  expect(screen.queryByRole("radio", { name: /换名派发/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: /跳过/ })).toBeChecked();
+  expect(screen.getByText(/Agent：Codex CLI/)).toBeVisible();
+
+  await user.click(screen.getByRole("radio", { name: /替换目标/ }));
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: /已查看.*共享目录/ }));
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
+
+  expect(commit).toHaveBeenCalledWith(
+    expect.anything(),
+    [expect.objectContaining({
+      pairId: "skill-pdf:fs-codex",
+      confirmSharedTarget: true,
+      conflictDecision: expect.objectContaining({ action: "replace_target" }),
+    })],
+    expect.any(Function),
+  );
+});
+
+it("resets conflict choices when a new preview replaces the old one", async () => {
+  const user = userEvent.setup();
+  const firstPreview = pair({
+    pairId: "skill-pdf:fs-codex",
+    logicalTargetIds: ["codex-cli"],
+    disposition: "blocked",
+    blockReason: "target_occupied",
+    mode: null,
+    conflict: {
+      occupants: [],
+      shared_target: false,
+      shared_consumers_complete: false,
+      shared_consumers: [],
+      shared_consumer_fingerprint: "",
+      available_actions: ["replace_target", "skip"],
+      default_action: "skip",
+    },
+  });
+  const facade = facadeFixture([firstPreview]);
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("radio", { name: /替换目标/ }));
+  // 目标选择始终保留在页面；切换并恢复另一个目标会生成新预览，
+  // 验证新预览不会继承之前针对旧事实作出的冲突选择。
+  await user.click(screen.getByLabelText("Claude Code"));
+  await user.click(screen.getByLabelText("Claude Code"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+
+  expect(await screen.findByRole("radio", { name: /跳过/ })).toBeChecked();
+  expect(screen.getByRole("radio", { name: /替换目标/ })).not.toBeChecked();
+});
+
+it("blocks an invalid or inconsistent rename before submitting the batch", async () => {
+  const user = userEvent.setup();
+  const conflictFor = (targetId: string) => pair({
+    pairId: `skill-pdf:${targetId}`,
+    logicalTargetIds: [targetId],
+    targetLabel: targetId === "codex-cli" ? "Codex CLI" : "Claude Code",
+    disposition: "blocked",
+    blockReason: "target_occupied",
+    mode: null,
+    conflict: {
+      occupants: [],
+      shared_target: false,
+      shared_consumers_complete: false,
+      shared_consumers: [],
+      shared_consumer_fingerprint: "",
+      available_actions: ["rename_and_deploy", "skip"],
+      default_action: "skip",
+    },
+  });
+  const facade = facadeFixture([conflictFor("codex-cli"), conflictFor("claude-code")]);
+  await renderDialog(facade);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByLabelText("Claude Code"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("radio", { name: /换名后派发.*Codex CLI/ }));
+  await user.click(screen.getByRole("radio", { name: /换名后派发.*Claude Code/ }));
+  await user.type(screen.getByRole("textbox", { name: /新名称.*Codex CLI/ }), "pdf-v2");
+  await user.type(screen.getByRole("textbox", { name: /新名称.*Claude Code/ }), "pdf-v3");
+
+  expect(await screen.findAllByText(/多个目标必须使用相同的新名称/)).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "确认添加" })).toBeDisabled();
+  expect(facade.commit).not.toHaveBeenCalled();
+});
+
 it("shows an empty state after target discovery completes", async () => {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const facade: BatchDeploymentFacade = {

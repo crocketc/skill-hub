@@ -95,7 +95,7 @@ flowchart LR
 - 备份、恢复、迁移和应用内更新
 - Windows 11 与 macOS 的本地 CI 验证
 
-统一关系体系 T01—T22 已完成代码、全量自动化与发布检查；CJK（中日韩字符）审计仍有既有债务。Windows/macOS 真实桌面人工验收尚未执行，自动化结果不代表人工通过。当前实施进度见[开发状态](docs/development/开发状态-2026-10-14.md)、[自动化测试说明](docs/development/自动化测试说明-2026-10-14.md)、[人工验收清单](docs/development/人工验收清单-2026-10-14.md)和[验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-14.md)。
+统一关系体系 T01—T22 已完成代码、全量自动化与发布检查；CJK（中日韩字符）审计仍有既有债务。Windows/macOS 真实桌面人工验收尚未执行，自动化结果不代表人工通过。当前实施进度见[开发状态](docs/development/开发状态-2026-10-15.md)、[自动化测试说明](docs/development/自动化测试说明-2026-10-15.md)、[人工验收清单](docs/development/人工验收清单-2026-10-15.md)和[验收矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-15.md)。
 
 实验能力（仅供参考）：
 
@@ -245,7 +245,7 @@ docs/                          安装、发布和依赖说明
 - [安装说明](docs/install/)
 - [LLM 用户配置与隐私说明](docs/archive/llm/用户配置与隐私说明-2026-09-13.md)
 - [LLM 供应商兼容矩阵](docs/archive/llm/供应商兼容矩阵-2026-09-13.md)
-- [开发状态](docs/development/开发状态-2026-10-14.md) / [自动化测试说明](docs/development/自动化测试说明-2026-10-14.md) / [人工验收清单](docs/development/人工验收清单-2026-10-14.md) / [功能完成度与验收状态矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-14.md)
+- [开发状态](docs/development/开发状态-2026-10-15.md) / [自动化测试说明](docs/development/自动化测试说明-2026-10-15.md) / [人工验收清单](docs/development/人工验收清单-2026-10-15.md) / [功能完成度与验收状态矩阵](docs/development/功能完成度与验收状态矩阵-2026-10-15.md)
 - [LLM 技术架构决策](docs/archive/llm/架构决策-2026-09-10.md)
 
 ## 反馈与贡献

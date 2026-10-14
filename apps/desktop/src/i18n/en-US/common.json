@@ -2134,6 +2134,37 @@
       },
       "fallbackMode": "Fallback mode"
     },
+    "conflict": {
+      "heading": "Skill already at this target",
+      "chooseAction": "Choose how to handle it",
+      "newName": "New name",
+      "runtimeNameValue": "Target name: {{name}}",
+      "existingEntry": "Existing target content",
+      "unknownExistingSkill": "the existing Skill",
+      "actions": {
+        "skip": "Skip this target",
+        "replaceTarget": "Replace the managed Skill at the target",
+        "renameAndDeploy": "Rename and dispatch as a new Skill"
+      },
+      "sharedConsumers": {
+        "heading": "Items using this shared directory",
+        "kind": { "agent": "Agent", "project": "Project" },
+        "activeRelations_one": "{{count}} usage relationship",
+        "activeRelations_other": "{{count}} usage relationships",
+        "incomplete": "Not all consumers could be verified, so replacement or renamed dispatch is unavailable."
+      },
+      "confirmSharedTarget": "I reviewed the shared-directory consumers and understand they may be affected.",
+      "confirmFallback": "I confirm using full-copy dispatch as the fallback.",
+      "errors": {
+        "actionUnavailable": "This target does not support that choice. Generate a new preview.",
+        "runtimeNameInvalid": "Enter a valid new name without path separators or a colon.",
+        "runtimeNameUnchanged": "The new name must differ from the current name.",
+        "runtimeNameMismatch": "Use the same new name for every target of this Skill.",
+        "fallbackConfirmationRequired": "Confirm the full-copy fallback before continuing.",
+        "sharedImpactUnavailable": "The shared-directory consumers could not be fully verified, so this cannot continue.",
+        "sharedConfirmationRequired": "Review and confirm the shared-directory impact before continuing."
+      }
+    },
     "batch": {
       "preselectUnavailable": "The linked target is not selectable right now; choose a target below.",
       "heading": "Add {{count}} Skills",
@@ -2147,7 +2178,7 @@
       "nonAtomicNotice": "The batch commits per skill and per target and is not atomic: partial success does not roll back completed parts.",
       "committing": "Adding, please wait; the batch is not atomic, per-target results appear once finished.",
       "technicalDetails": "Technical details",
-      "finalSummary": "Links {{link}} · Full copies {{copy}} · No change {{noChange}} · Excluded {{excluded}} · Still blocked {{blocked}}"
+      "finalSummary": "Links {{link}} · Full copies {{copy}} · No change {{noChange}} · Replaced {{replace}} · Renamed {{rename}} · Conflict skipped {{skip}} · Excluded {{excluded}} · Still blocked {{blocked}}"
     },
     "mode": {
       "label": "Dispatch method",
@@ -2171,7 +2202,10 @@
         "failed": "Failed",
         "message": {
           "succeeded": "Add succeeded",
-          "failed": "Add failed"
+          "failed": "Add failed",
+          "renamed": "Dispatched successfully as the new name “{{name}}”.",
+          "replaced": "Replaced “{{name}}” at the target and dispatched successfully.",
+          "recoveryRequired": "The operation did not finish. Open operation history to recover it."
         },
         "skipped": "Skipped"
       },

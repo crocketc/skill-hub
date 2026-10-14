@@ -91,8 +91,8 @@ function toPair(pair: NativePairPreview): DeploymentPairPreview {
     destinationPath: pair.destination_path,
     logicalTargetIds: pair.logical_target_ids,
     preference: pair.preference as DeploymentPreference,
-    // The current UI has no conflict-choice controls yet; keep the pair in
-    // the blocked presentation group until Task 7 adds those controls.
+    // Conflicts remain in the blocked group, where the shared disposition
+    // controls render the server-approved actions for this pair.
     disposition: (pair.disposition === "conflict_decision_required"
       ? "blocked"
       : pair.disposition) as DeploymentPreviewDisposition,
@@ -114,6 +114,15 @@ function resultMessage(outcome: NativePairCommitResult["outcome"]): string {
   if (outcome === "excluded" || outcome === "skipped") return "deployment.results.status.message.skipped";
   if (outcome === "blocked") return "deployment.blockReason.committedBlocked";
   return "deployment.results.status.message.failed";
+}
+
+function conflictResultMessage(pair: NativePairCommitResult): string | undefined {
+  if (pair.result_skill_id) return "deployment.results.status.message.renamed";
+  if (pair.replaced) return "deployment.results.status.message.replaced";
+  if (pair.error?.actions.some((action) => action === "complete_operation" || action === "rollback_operation")) {
+    return "deployment.results.status.message.recoveryRequired";
+  }
+  return undefined;
 }
 
 export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
@@ -190,9 +199,18 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           preview_id: preview.previewId,
           pairs: selections.map((selection) => {
             const facts = preview.pairs.find((pair) => pair.pairId === selection.pairId);
+            const conflict = facts?.conflict;
+            const decision = selection.conflictDecision ?? (conflict ? { action: conflict.default_action } : undefined);
+            const disposition = selection.exclude
+              ? "exclude"
+              : conflict && decision
+                ? decision.action === "rename_and_deploy"
+                  ? { rename_and_deploy: { runtime_name: decision.runtimeName ?? "" } }
+                  : decision.action === "replace_target" ? "replace_target" : "skip"
+                : "deploy";
             return {
               pair_id: selection.pairId,
-              disposition: selection.exclude ? "exclude" : facts?.conflict ? "skip" : "deploy",
+              disposition,
               confirm_fallback: selection.confirmFallback,
               confirm_shared_target: selection.confirmSharedTarget ?? false,
             };
@@ -204,9 +222,14 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
       const results = payload.pairs.map((pair): BatchDeploymentResult => {
         const facts = pairById.get(pair.pair_id);
         const status = statusOf(pair.outcome);
-        const message = resultMessage(pair.outcome);
+        const message = conflictResultMessage(pair) ?? resultMessage(pair.outcome);
+        const conflictOutcome = pair.result_skill_id
+          ? "renamed"
+          : pair.replaced ? "replaced" : undefined;
+        const recoveryRequired = pair.error?.actions.some((action) =>
+          action === "complete_operation" || action === "rollback_operation") ?? false;
         return {
-          skillId: facts?.skillId ?? "",
+          skillId: pair.result_skill_id ?? facts?.skillId ?? "",
           displayName: facts?.skillDisplayName,
           targetId: facts?.logicalTargetIds[0] ?? "",
           label: facts?.targetLabel ?? pair.pair_id,
@@ -214,11 +237,14 @@ export function createNativeBatchDeploymentFacade(): BatchDeploymentFacade {
           message,
           error: pair.error ?? undefined,
           operationId: pair.operation_id ?? undefined,
+          conflictOutcome,
+          runtimeName: pair.runtime_name ?? pair.replaced?.runtime_name ?? undefined,
+          replacedSkillDisplayName: pair.replaced?.previous_skill_display_name ?? undefined,
+          recoveryRequired: recoveryRequired || undefined,
         };
       });
       // 一次 IPC 返回全部 pair 结果；进度按可执行 pair 总数一次性落定。
-      const executable = selections.filter((selection) =>
-        !selection.exclude && !preview.pairs.find((pair) => pair.pairId === selection.pairId)?.conflict).length;
+      const executable = selections.filter((selection) => !selection.exclude).length;
       onProgress?.(executable);
       return results;
     },

@@ -17,11 +17,14 @@ import {
   type BatchPreviewItem,
   type BatchProjectInfo,
   type DeploymentPairPreview,
+  type DeploymentConflictDecision,
+  type DeploymentConflictDecisionMap,
   type DeploymentPreference,
   type DeploymentPreviewBatch,
   type DeploymentTarget,
   buildDeploymentTargetCards,
   groupPairsByDisposition,
+  deploymentConflictDecisionErrors,
   isDeploymentTargetSelectable,
   isLinkMode,
 } from "./api";
@@ -61,6 +64,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const [preview, setPreview] = useState<DeploymentPreviewBatch>();
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [confirmedFallbackIds, setConfirmedFallbackIds] = useState<Set<string>>(new Set());
+  const [conflictDecisions, setConflictDecisions] = useState<DeploymentConflictDecisionMap>({});
+  const [confirmedSharedIds, setConfirmedSharedIds] = useState<Set<string>>(new Set());
   const [exclusionsDirty, setExclusionsDirty] = useState(false);
   const [confirmationsDirty, setConfirmationsDirty] = useState(false);
   const fingerprintsRef = useRef<Record<string, string>>({});
@@ -166,19 +172,26 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       .filter((pair) => pair.disposition === "recommend_copy" && !confirmedIds.has(pair.pairId))
       .map((pair) => pair.pairId)
     : [];
+  const conflictErrors = useMemo(() => preview
+    ? deploymentConflictDecisionErrors(preview.pairs, conflictDecisions, confirmedFallbackIds, confirmedSharedIds)
+    : {}, [preview, conflictDecisions, confirmedFallbackIds, confirmedSharedIds]);
   const included = (pair: DeploymentPairPreview) =>
     (pair.disposition === "selected_mode" || pair.disposition === "no_change")
     && !excludedIds.has(pair.pairId);
   const executableCount = preview
-    ? preview.pairs.filter((pair) => included(pair)).length + confirmedIds.size
+    ? preview.pairs.filter((pair) => pair.conflict || included(pair)
+      || (pair.disposition === "recommend_copy" && confirmedIds.has(pair.pairId))).length
     : 0;
-  // 最终汇总（14.8）：链接/复制/无需变更/已排除/仍受阻分别计数。
+  // 汇总包含冲突选择，避免用户已经选了跳过/替换/换名却仍显示“受阻”。
   const finalSummary = useMemo(() => {
     let link = 0;
     let copy = 0;
     let noChange = 0;
     let excluded = 0;
     let blocked = 0;
+    let replace = 0;
+    let rename = 0;
+    let skip = 0;
     for (const pair of preview?.pairs ?? []) {
       if (pair.disposition === "selected_mode") {
         if (!included(pair)) {
@@ -194,12 +207,17 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       } else if (pair.disposition === "recommend_copy") {
         if (confirmedIds.has(pair.pairId)) copy += 1;
         else blocked += 1;
+      } else if (pair.conflict) {
+        const action = conflictDecisions[pair.pairId]?.action ?? pair.conflict.default_action;
+        if (action === "replace_target") replace += 1;
+        else if (action === "rename_and_deploy") rename += 1;
+        else skip += 1;
       } else {
         blocked += 1;
       }
     }
-    return { link, copy, noChange, excluded, blocked };
-  }, [preview, excludedIds, confirmedIds]);
+    return { link, copy, noChange, excluded, blocked, replace, rename, skip };
+  }, [preview, excludedIds, confirmedIds, conflictDecisions]);
 
   const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
     setFlowError(undefined);
@@ -223,6 +241,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       setConfirmedIds(new Set(response.pairs
         .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
         .map((pair) => pair.pairId)));
+      setConfirmedFallbackIds(new Set());
+      setConflictDecisions({});
+      setConfirmedSharedIds(new Set());
       setExclusionsDirty(false);
       setConfirmationsDirty(false);
     } catch (reason) {
@@ -271,7 +292,11 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       // pair 数（14.9），结果通知深链 /operations/:id，异常 rethrow 不吞掉。
       const selections = preview.pairs.map((pair) => ({
         pairId: pair.pairId,
-        confirmFallback: confirmedIds.has(pair.pairId),
+        confirmFallback: confirmedIds.has(pair.pairId) || confirmedFallbackIds.has(pair.pairId),
+        confirmSharedTarget: confirmedSharedIds.has(pair.pairId),
+        conflictDecision: pair.conflict
+          ? conflictDecisions[pair.pairId] ?? { action: pair.conflict.default_action }
+          : undefined,
         // 可执行 pair 未纳入即排除；建议复制/阻断 pair 原样提交让结果面报告。
         exclude: excludedIds.has(pair.pairId)
           && (pair.disposition === "selected_mode" || pair.disposition === "no_change"),
@@ -398,6 +423,28 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       return update;
     });
   };
+  const updateConflictDecision = (pairId: string, decision: DeploymentConflictDecision) => {
+    if (conflictDecisions[pairId]?.action !== decision.action) {
+      setConfirmedSharedIds((current) => new Set([...current].filter((id) => id !== pairId)));
+    }
+    setConflictDecisions((current) => ({ ...current, [pairId]: decision }));
+  };
+  const updateFallbackConfirmation = (pairId: string, checked: boolean) => {
+    setConfirmedFallbackIds((current) => {
+      const updated = new Set(current);
+      if (checked) updated.add(pairId);
+      else updated.delete(pairId);
+      return updated;
+    });
+  };
+  const updateSharedConfirmation = (pairId: string, checked: boolean) => {
+    setConfirmedSharedIds((current) => {
+      const updated = new Set(current);
+      if (checked) updated.add(pairId);
+      else updated.delete(pairId);
+      return updated;
+    });
+  };
   const footer = phase === "targets" || phase === "plan" ? (
     <>
       <div className="sh-import-wizard__actions-group sh-deployment-flow__risk-group">
@@ -442,7 +489,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
               {t("actions.back")}
             </Button>
             <Button
-              disabled={committing || executableCount === 0}
+              disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0}
               onClick={() => void commit()}
               size="lg"
             >
@@ -559,6 +606,9 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
             noChange: finalSummary.noChange,
             excluded: finalSummary.excluded,
             blocked: finalSummary.blocked,
+            replace: finalSummary.replace,
+            rename: finalSummary.rename,
+            skip: finalSummary.skip,
           })}
         </p>
         <div className="sh-disposition-groups">
@@ -578,6 +628,14 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
               selection={selection}
               selected={selectedSet}
               targets={targets ?? []}
+              conflictDecisions={conflictDecisions}
+              conflictErrors={conflictErrors}
+              confirmedFallbackIds={new Set([...confirmedIds, ...confirmedFallbackIds])}
+              confirmedSharedIds={confirmedSharedIds}
+              onConflictDecisionChange={updateConflictDecision}
+              onFallbackConfirmationChange={updateFallbackConfirmation}
+              onSharedTargetConfirmationChange={updateSharedConfirmation}
+              disabled={committing}
             />;
           })}
         </div>

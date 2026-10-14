@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { executeCommand, queryApplication } from "../../api/bindings";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
-import type { BatchPreviewItem, DeploymentPreviewBatch } from "./api";
+import type { BatchPreviewItem, DeploymentPairPreview, DeploymentPreviewBatch } from "./api";
 
 vi.mock("../../api/bindings", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../api/bindings")>();
@@ -243,7 +243,7 @@ it("commits only the preview id and per-pair selections, then joins Skill facts 
   })]);
 });
 
-it("submits a conflict preview as an explicit skip until conflict controls ship", async () => {
+it("uses the server default skip for a conflict when no choice has changed", async () => {
   const conflictPreview: DeploymentPreviewBatch = {
     ...previewBatch,
     pairs: [{
@@ -281,6 +281,125 @@ it("submits a conflict preview as an explicit skip until conflict controls ship"
     },
   });
   expect(results[0].status).toBe("skipped");
+});
+
+it("projects rename, replacement, and recovery-required receipts without exposing internal ids", async () => {
+  const pairs = [
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:rename" },
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:replace", targetLabel: "Claude Code", logicalTargetIds: ["claude-global"] },
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:recover", targetLabel: "Cursor", logicalTargetIds: ["cursor-global"] },
+  ];
+  const preview = { ...previewBatch, pairs };
+  vi.mocked(executeCommand).mockResolvedValue({
+    type: "deployment_preview_commit_result",
+    payload: {
+      preview_id: "preview-1",
+      replayed: false,
+      pairs: [
+        {
+          pair_id: "skill-pdf:rename",
+          outcome: "deployed",
+          operation_id: "operation-rename",
+          result_skill_id: "derived-skill-id",
+          runtime_name: "pdf-reader-v2",
+          error: null,
+        },
+        {
+          pair_id: "skill-pdf:replace",
+          outcome: "deployed",
+          operation_id: "operation-replace",
+          replaced: {
+            previous_skill_id: "old-skill-id",
+            previous_skill_display_name: "旧版 PDF 技能",
+            runtime_name: "pdf",
+            target_label: "Claude Code",
+          },
+          error: null,
+        },
+        {
+          pair_id: "skill-pdf:recover",
+          outcome: "failed",
+          operation_id: "operation-recover",
+          error: {
+            code: "operation.conflict",
+            severity: "error",
+            params: {},
+            actions: ["rollback_operation"],
+          },
+        },
+      ],
+    },
+  });
+
+  const results = await createNativeBatchDeploymentFacade().commit(preview, pairs.map((pair) => ({
+    pairId: pair.pairId,
+    confirmFallback: false,
+    exclude: false,
+  })));
+
+  expect(results).toEqual([
+    expect.objectContaining({ skillId: "derived-skill-id", conflictOutcome: "renamed", runtimeName: "pdf-reader-v2" }),
+    expect.objectContaining({ conflictOutcome: "replaced", replacedSkillDisplayName: "旧版 PDF 技能" }),
+    expect.objectContaining({ recoveryRequired: true, message: "deployment.results.status.message.recoveryRequired" }),
+  ]);
+});
+
+it("serializes the selected replace, rename, and skip decisions for each conflict pair", async () => {
+  const conflictFacts: NonNullable<DeploymentPairPreview["conflict"]> = {
+    occupants: [],
+    shared_target: true,
+    shared_consumers_complete: true,
+    shared_consumers: [],
+    shared_consumer_fingerprint: "sha256:shared",
+    available_actions: ["replace_target", "rename_and_deploy", "skip"],
+    default_action: "skip",
+  };
+  const pairs = [
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:replace", conflict: conflictFacts },
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:rename", conflict: conflictFacts },
+    { ...previewBatch.pairs[0], pairId: "skill-pdf:skip", conflict: conflictFacts },
+  ];
+  const preview = { ...previewBatch, pairs };
+  vi.mocked(executeCommand).mockResolvedValue({
+    type: "deployment_preview_commit_result",
+    payload: { preview_id: "preview-1", replayed: false, pairs: [] },
+  });
+
+  await createNativeBatchDeploymentFacade().commit(preview, [
+    {
+      pairId: "skill-pdf:replace",
+      confirmFallback: false,
+      confirmSharedTarget: true,
+      exclude: false,
+      conflictDecision: { action: "replace_target" },
+    },
+    {
+      pairId: "skill-pdf:rename",
+      confirmFallback: false,
+      confirmSharedTarget: true,
+      exclude: false,
+      conflictDecision: { action: "rename_and_deploy", runtimeName: "pdf-reader-v2" },
+    },
+    {
+      pairId: "skill-pdf:skip",
+      confirmFallback: false,
+      confirmSharedTarget: false,
+      exclude: false,
+      conflictDecision: { action: "skip" },
+    },
+  ]);
+
+  expect(executeCommand).toHaveBeenCalledWith({
+    type: "commit_deployment_preview",
+    payload: {
+      preview_id: "preview-1",
+      pairs: [
+        { pair_id: "skill-pdf:replace", disposition: "replace_target", confirm_fallback: false, confirm_shared_target: true },
+        { pair_id: "skill-pdf:rename", disposition: { rename_and_deploy: { runtime_name: "pdf-reader-v2" } }, confirm_fallback: false, confirm_shared_target: true },
+        { pair_id: "skill-pdf:skip", disposition: "skip", confirm_fallback: false, confirm_shared_target: false },
+      ],
+    },
+  });
 });
 
 it("projects every pair outcome, including excluded and blocked, without hiding any", async () => {

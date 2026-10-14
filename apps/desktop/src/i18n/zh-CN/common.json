@@ -2134,6 +2134,37 @@
       },
       "fallbackMode": "回退方式"
     },
+    "conflict": {
+      "heading": "目标中的同名 Skill",
+      "chooseAction": "选择处理方式",
+      "newName": "新名称",
+      "unknownExistingSkill": "原有 Skill",
+      "runtimeNameValue": "目标名称：{{name}}",
+      "existingEntry": "目标中已有内容",
+      "actions": {
+        "skip": "跳过此目标",
+        "replaceTarget": "替换目标中的托管技能",
+        "renameAndDeploy": "换名后派发为新技能"
+      },
+      "sharedConsumers": {
+        "heading": "使用这个共享目录的对象",
+        "kind": { "agent": "Agent", "project": "项目" },
+        "activeRelations_one": "{{count}} 条使用关系",
+        "activeRelations_other": "{{count}} 条使用关系",
+        "incomplete": "无法完整确认所有使用对象，因此不能替换或换名派发。"
+      },
+      "confirmSharedTarget": "我已查看共享目录使用对象，并确认继续处理会影响这些对象。",
+      "confirmFallback": "我确认改用完整拷贝派发。",
+      "errors": {
+        "actionUnavailable": "当前目标不支持所选处理方式，请重新预览。",
+        "runtimeNameInvalid": "请输入有效的新名称。名称不能包含路径分隔符或冒号。",
+        "runtimeNameUnchanged": "新名称必须与当前名称不同。",
+        "runtimeNameMismatch": "同一 Skill 的多个目标必须使用相同的新名称。",
+        "fallbackConfirmationRequired": "请先确认完整拷贝回退方式。",
+        "sharedImpactUnavailable": "无法完整确认共享目录的使用对象，暂不能继续。",
+        "sharedConfirmationRequired": "请先查看并确认共享目录影响。"
+      }
+    },
     "batch": {
       "preselectUnavailable": "深链指向的目标当前不可选，请在下方手动选择目标。",
       "heading": "添加 {{count}} 个 Skill",
@@ -2147,7 +2178,7 @@
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
       "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
       "technicalDetails": "技术详情",
-      "finalSummary": "链接派发 {{link}} · 完整拷贝派发 {{copy}} · 无需变更 {{noChange}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
+      "finalSummary": "链接 {{link}} · 完整拷贝 {{copy}} · 无需变更 {{noChange}} · 替换 {{replace}} · 换名派发 {{rename}} · 跳过冲突 {{skip}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
     },
     "mode": {
       "label": "派发方式",
@@ -2171,7 +2202,10 @@
         "failed": "失败",
         "message": {
           "succeeded": "添加成功",
-          "failed": "添加失败"
+          "failed": "添加失败",
+          "renamed": "已使用新名称「{{name}}」完成派发。",
+          "replaced": "已替换目标中的「{{name}}」并完成派发。",
+          "recoveryRequired": "操作未完成，需要前往操作记录恢复。"
         },
         "skipped": "已跳过"
       },

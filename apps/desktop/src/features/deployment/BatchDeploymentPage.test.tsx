@@ -150,6 +150,56 @@ it("does not label a target without directory status as pending creation", async
   expect(screen.queryByRole("button", { name: "创建并加入派发" })).not.toBeInTheDocument();
 });
 
+it("uses the same per-pair rename and shared-consumer confirmation in batch mode", async () => {
+  const user = userEvent.setup();
+  const conflictPair = pair({
+    pairId: "skill-pdf:fs-codex",
+    skillId: "skill-pdf",
+    skillDisplayName: "PDF 抽取器",
+    logicalTargetIds: ["codex-cli"],
+    targetLabel: "Codex CLI",
+    disposition: "blocked",
+    blockReason: "target_occupied",
+    mode: null,
+    conflict: {
+      occupants: [],
+      shared_target: true,
+      shared_consumers_complete: true,
+      shared_consumers: [{
+        kind: "project",
+        consumer_id: "project:notes",
+        display_name: "笔记项目",
+        logical_target_ids: [],
+        active_deployment_ids: [],
+      }],
+      shared_consumer_fingerprint: "sha256:shared",
+      available_actions: ["rename_and_deploy", "skip"],
+      default_action: "skip",
+    },
+  });
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async () => []);
+  const facade = batchFacade(() => previewBatch([conflictPair]), { commit });
+  await renderBatchPage(facade, ["skill-pdf"]);
+
+  await user.click(await screen.findByLabelText("Codex CLI"));
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await user.click(await screen.findByRole("radio", { name: /换名后派发/ }));
+  await user.type(screen.getByRole("textbox", { name: /新名称/ }), "pdf-reader-v2");
+  await user.click(screen.getByRole("checkbox", { name: /已查看.*共享目录/ }));
+  expect(screen.getByText(/项目：笔记项目/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
+
+  expect(commit).toHaveBeenCalledWith(
+    expect.anything(),
+    [expect.objectContaining({
+      pairId: "skill-pdf:fs-codex",
+      confirmSharedTarget: true,
+      conflictDecision: expect.objectContaining({ action: "rename_and_deploy", runtimeName: "pdf-reader-v2" }),
+    })],
+    expect.any(Function),
+  );
+});
+
 it("creates a pending Skill directory only after explicit confirmation", async () => {
   const user = userEvent.setup();
   const pending = {
@@ -543,8 +593,8 @@ it("counts the final summary across link, copy, no-change, excluded and still-bl
   const plan = await screen.findByRole("region", { name: /添加计划/ });
   const summary = within(plan).getByRole("status");
   // 链接 1、复制 2（后端判定保留的确认计入复制）、无需变更 1；已排除 0；仍受阻 2。
-  expect(summary).toHaveTextContent("链接派发 1");
-  expect(summary).toHaveTextContent("完整拷贝派发 2");
+  expect(summary).toHaveTextContent("链接 1");
+  expect(summary).toHaveTextContent("完整拷贝 2");
   expect(summary).toHaveTextContent("无需变更 1");
   expect(summary).toHaveTextContent("已排除 0");
   expect(summary).toHaveTextContent("仍受阻 2");

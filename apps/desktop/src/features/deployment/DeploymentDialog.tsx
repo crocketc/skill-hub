@@ -17,12 +17,15 @@ import {
   isDeploymentTargetSelectable,
   type BatchDeploymentFacade,
   type BatchPreviewItem,
+  type DeploymentConflictDecision,
+  type DeploymentConflictDecisionMap,
   type DeploymentPairPreview,
   type DeploymentPreference,
   type DeploymentPreviewBatch,
   type DeploymentResult,
   type DeploymentTarget,
   groupPairsByDisposition,
+  deploymentConflictDecisionErrors,
 } from "./api";
 import { createNativeBatchDeploymentFacade } from "./nativeApi";
 import { DeploymentTargetPresentation } from "./DeploymentTargetPresentation";
@@ -72,6 +75,9 @@ export function DeploymentDialog({
   const [preview, setPreview] = useState<DeploymentPreviewBatch>();
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [confirmedFallbackIds, setConfirmedFallbackIds] = useState<Set<string>>(new Set());
+  const [conflictDecisions, setConflictDecisions] = useState<DeploymentConflictDecisionMap>({});
+  const [confirmedSharedIds, setConfirmedSharedIds] = useState<Set<string>>(new Set());
   const [exclusionsDirty, setExclusionsDirty] = useState(false);
   const [confirmationsDirty, setConfirmationsDirty] = useState(false);
   const fingerprintsRef = useRef<Record<string, string>>({});
@@ -107,12 +113,15 @@ export function DeploymentDialog({
       .filter((pair) => pair.disposition === "recommend_copy" && !confirmedIds.has(pair.pairId))
       .map((pair) => pair.pairId)
     : [];
+  const conflictErrors = useMemo(() => preview
+    ? deploymentConflictDecisionErrors(preview.pairs, conflictDecisions, confirmedFallbackIds, confirmedSharedIds)
+    : {}, [preview, conflictDecisions, confirmedFallbackIds, confirmedSharedIds]);
   const included = (pair: DeploymentPairPreview) =>
     (pair.disposition === "selected_mode" || pair.disposition === "no_change")
     && !excludedIds.has(pair.pairId);
-  const executableCount = preview
-    ? preview.pairs.filter((pair) => included(pair)).length + confirmedIds.size
-    : 0;
+  const executableCount = preview?.pairs.filter((pair) => pair.conflict
+    || included(pair)
+    || (pair.disposition === "recommend_copy" && confirmedIds.has(pair.pairId))).length ?? 0;
 
   const runPreview = async (context?: { confirmations?: Record<string, string>; exclusions?: string[] }) => {
     setFlowError(undefined);
@@ -132,6 +141,9 @@ export function DeploymentDialog({
       setPreview(response);
       setResults(undefined);
       setExcludedIds(new Set());
+      setConflictDecisions({});
+      setConfirmedSharedIds(new Set());
+      setConfirmedFallbackIds(new Set());
       const preserved = new Set(response.preservedConfirmationIds);
       setConfirmedIds(new Set(response.pairs
         .filter((pair) => pair.disposition === "recommend_copy" && preserved.has(pair.pairId))
@@ -173,7 +185,11 @@ export function DeploymentDialog({
       // /operations/:id，异常原样 rethrow 由页面告警承接，不吞掉。
       const selections = preview.pairs.map((pair) => ({
         pairId: pair.pairId,
-        confirmFallback: confirmedIds.has(pair.pairId),
+        confirmFallback: confirmedIds.has(pair.pairId) || confirmedFallbackIds.has(pair.pairId),
+        confirmSharedTarget: confirmedSharedIds.has(pair.pairId),
+        conflictDecision: pair.conflict
+          ? conflictDecisions[pair.pairId] ?? { action: pair.conflict.default_action }
+          : undefined,
         exclude: excludedIds.has(pair.pairId)
           && (pair.disposition === "selected_mode" || pair.disposition === "no_change"),
       }));
@@ -304,6 +320,28 @@ export function DeploymentDialog({
       return update;
     });
   };
+  const updateConflictDecision = (pairId: string, decision: DeploymentConflictDecision) => {
+    if (conflictDecisions[pairId]?.action !== decision.action) {
+      setConfirmedSharedIds((current) => new Set([...current].filter((id) => id !== pairId)));
+    }
+    setConflictDecisions((current) => ({ ...current, [pairId]: decision }));
+  };
+  const updateFallbackConfirmation = (pairId: string, checked: boolean) => {
+    setConfirmedFallbackIds((current) => {
+      const updated = new Set(current);
+      if (checked) updated.add(pairId);
+      else updated.delete(pairId);
+      return updated;
+    });
+  };
+  const updateSharedConfirmation = (pairId: string, checked: boolean) => {
+    setConfirmedSharedIds((current) => {
+      const updated = new Set(current);
+      if (checked) updated.add(pairId);
+      else updated.delete(pairId);
+      return updated;
+    });
+  };
   const regeneratePreview = async () => {
     const confirmations: Record<string, string> = {};
     for (const pairId of confirmedIds) {
@@ -346,7 +384,7 @@ export function DeploymentDialog({
             {t("deployment.regeneratePreview")}
           </Button>
         ) : (
-          <Button disabled={committing || executableCount === 0} onClick={() => void commit()} size="lg">
+          <Button disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0} onClick={() => void commit()} size="lg">
             {t("deployment.commit")}
           </Button>
         )}
@@ -480,6 +518,14 @@ export function DeploymentDialog({
                 selection={selection}
                 selected={selectedSet}
                 targets={targets ?? []}
+                conflictDecisions={conflictDecisions}
+                conflictErrors={conflictErrors}
+                confirmedFallbackIds={new Set([...confirmedIds, ...confirmedFallbackIds])}
+                confirmedSharedIds={confirmedSharedIds}
+                onConflictDecisionChange={updateConflictDecision}
+                onFallbackConfirmationChange={updateFallbackConfirmation}
+                onSharedTargetConfirmationChange={updateSharedConfirmation}
+                disabled={committing}
               />;
             })}
           </div>
