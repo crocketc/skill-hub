@@ -1543,6 +1543,7 @@
         "deploymentCount_other": "已添加到 {{count}} 个 Agent"
       },
       "sourceUpdates": {
+        "scope": "所选 {{scope}} 项：{{checkable}} 项有更新来源，{{noUpstream}} 项无更新来源。",
         "title": "来源更新检查结果",
         "upToDate": "已是最新（{{count}}）",
         "upgradable": "可升级（{{count}}）",

@@ -6,8 +6,10 @@ import type { SourceUpdateCheckReport } from "./api";
  * 一键批量升级，避免覆盖本地修改的静默风险。 */
 export function SourceUpdateCheckSummary({
   reports,
+  scopeCount = reports.length,
 }: {
   reports: SourceUpdateCheckReport[];
+  scopeCount?: number;
 }): JSX.Element {
   const { t } = useTranslation();
   const upToDate = reports.filter((item) => item.state === "up_to_date");
@@ -35,6 +37,13 @@ export function SourceUpdateCheckSummary({
   return (
     <section aria-live="polite" className="sh-source-updates" data-testid="source-update-checks">
       <h3>{t("skillLibrary.page.sourceUpdates.title")}</h3>
+      <p data-testid="source-update-scope">
+        {t("skillLibrary.page.sourceUpdates.scope", {
+          scope: scopeCount,
+          checkable: Math.max(0, scopeCount - noUpstream.length),
+          noUpstream: noUpstream.length,
+        })}
+      </p>
       {renderGroup(t("skillLibrary.page.sourceUpdates.upToDate", { count: upToDate.length }), upToDate)}
       {renderGroup(
         t("skillLibrary.page.sourceUpdates.upgradable", { count: upgradable.length }),

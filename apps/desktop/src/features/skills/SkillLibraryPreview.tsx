@@ -50,6 +50,12 @@ export function SkillLibraryPreview() {
         if (existing) existing.members = [...members];
       };
     }
+    if (search.has("batchUpdates")) {
+      previewFacade.checkSourceUpdates = async (skillIds) => skillIds.map((skillId) => ({
+        skillId,
+        state: skillId === "skill-pdf" ? "update_available" : "no_upstream",
+      }));
+    }
     // 抽屉深链上下文（?skill=…）：按真实契约补齐 W3-6 物化根路径与 W3-7
     // 组合清单，让快捷抽屉的主体位置/所属组合模块可交互；无参预览保持
     // 精简列表，不影响库页其他预览场景。

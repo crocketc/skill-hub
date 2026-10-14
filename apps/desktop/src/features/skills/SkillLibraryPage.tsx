@@ -1433,15 +1433,22 @@ export function SkillLibraryPage({
     void materializeSelectedSkills()
       .then(async (skills) => {
         const entries = await checkFacade(skills.map((skill) => skill.id));
-        if (request !== batchRequestRef.current) return;
-        const names = new Map(skills.map((skill) => [skill.id, skill.name]));
-        const reports = entries.map((entry) => ({
-          ...entry,
-          name: names.get(entry.skillId) ?? entry.skillId,
+        const entriesBySkill = new Map(entries.map((entry) => [entry.skillId, entry]));
+        const reports = skills.map((skill) => ({
+          skillId: skill.id,
+          name: skill.name,
+          state: entriesBySkill.get(skill.id)?.state ?? "source_unavailable" as const,
         }));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
+          ...skills.map((skill) => queryClient.invalidateQueries({
+            queryKey: skillDetailKeys.sourceUpdateStatus(skill.id),
+          })),
+        ]);
+        if (request !== batchRequestRef.current) return;
         // 来源更新检查结果随全局通知展示（详情面板随通知展开，历史保留）。
         notify({ source: "library",
-          detailNode: <SourceUpdateCheckSummary reports={reports} />,
+          detailNode: <SourceUpdateCheckSummary reports={reports} scopeCount={skills.length} />,
           kind: "batch",
           title: t("skillLibrary.page.sourceUpdates.title"),
           tone: "info",
@@ -1458,7 +1465,7 @@ export function SkillLibraryPage({
         });
       })
       .finally(() => {
-        if (request === batchRequestRef.current) setSourceUpdatesPending(false);
+        setSourceUpdatesPending(false);
       });
   };
 

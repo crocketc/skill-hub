@@ -1543,6 +1543,7 @@
         "deploymentCount_other": "Added to {{count}} agents"
       },
       "sourceUpdates": {
+        "scope": "{{scope}} selected; {{checkable}} have update sources, {{noUpstream}} have none.",
         "title": "Source update check results",
         "upToDate": "Up to date ({{count}})",
         "upgradable": "Upgradable ({{count}})",

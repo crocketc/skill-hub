@@ -55,3 +55,17 @@ test("batch basic and AI checks run independently and report the selected Skill"
   await expect(aiResult).toContainText("1 succeeded");
   await expect(aiResult).toContainText("PDF Reader");
 });
+
+test("batch source checks preserve the selected scope and report Skills without update sources", async ({ page }) => {
+  await page.goto("/__preview/skill-library?batchUpdates=1");
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+  await page.getByRole("checkbox", { name: "Select DOCX Writer" }).check();
+
+  const batchBar = page.getByRole("complementary", { name: "Batch actions" });
+  await batchBar.getByRole("button", { name: "Check source updates" }).click();
+
+  const result = page.getByTestId("source-update-checks");
+  await expect(result).toContainText("2 selected; 1 have update sources, 1 have none.");
+  await expect(result.getByRole("group", { name: "Upgradable (1)" })).toContainText("PDF Reader");
+  await expect(result.getByRole("group", { name: "No upstream source (1)" })).toContainText("DOCX Writer");
+});

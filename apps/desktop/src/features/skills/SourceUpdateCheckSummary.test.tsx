@@ -52,4 +52,15 @@ describe("SourceUpdateCheckSummary", () => {
     expect(within(unavailable).getByText("Lonely Skill")).toBeTruthy();
     expect(screen.getByText(/Skill 详情/)).toBeTruthy();
   });
+
+  it("reports the selected scope and separates Skills without update sources", async () => {
+    await renderSummary([
+      report("a", "PDF Reader", "update_available"),
+      report("b", "Local Helper", "no_upstream"),
+    ]);
+
+    expect(screen.getByTestId("source-update-scope")).toHaveTextContent(
+      "所选 2 项：1 项有更新来源，1 项无更新来源。",
+    );
+  });
 });

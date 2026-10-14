@@ -16,6 +16,7 @@ import { AppNotificationsProvider } from "../../ui/notifications";
 import { createPreviewSecurityFacade } from "../security/previewFacade";
 import type { SecurityFacade } from "../security/api";
 import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
+import { skillDetailKeys } from "../skill-detail/api";
 import type { LlmAdminFacade } from "../settings/llmApi";
 import {
   LibraryViewModeProvider,
@@ -29,6 +30,7 @@ import {
   type SkillDrawerPreferences,
   type SkillLibraryFacade,
   type SkillPage,
+  type SourceUpdateCheckEntry,
 } from "./api";
 import { SkillLibraryPage } from "./SkillLibraryPage";
 import skillsCssRaw from "./skills.css?raw";
@@ -2470,6 +2472,68 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(
       screen.queryByText("The batch workflow could not be started"),
     ).not.toBeInTheDocument();
+  });
+
+  it("refreshes library and source status after a batch source check", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const checkSourceUpdates = vi.fn().mockResolvedValue([
+      { skillId: "skill-pdf", state: "update_available" },
+    ] satisfies SourceUpdateCheckEntry[]);
+    facade.checkSourceUpdates = checkSourceUpdates;
+    const rendered = renderLibrary({ facade });
+    const sourceStatusKey = skillDetailKeys.sourceUpdateStatus("skill-pdf");
+    rendered.queryClient.setQueryData(sourceStatusKey, { state: "up_to_date" });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    const listCallsBeforeCheck = facade.calls.listSkills.length;
+    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+
+    expect(await screen.findByTestId("source-update-checks")).toBeVisible();
+    expect(checkSourceUpdates).toHaveBeenCalledWith(["skill-pdf"]);
+    await waitFor(() => expect(facade.calls.listSkills.length).toBeGreaterThan(listCallsBeforeCheck));
+    expect(rendered.queryClient.getQueryState(sourceStatusKey)?.isInvalidated).toBe(true);
+  });
+
+  it("re-enables source checks when the selection changes during an in-flight check", async () => {
+    const facade = createMockSkillLibraryFacade();
+    let resolveCheck!: (entries: SourceUpdateCheckEntry[]) => void;
+    const checkSourceUpdates = vi.fn(
+      () => new Promise<SourceUpdateCheckEntry[]>((resolve) => { resolveCheck = resolve; }),
+    );
+    facade.checkSourceUpdates = checkSourceUpdates;
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+    await waitFor(() => expect(checkSourceUpdates).toHaveBeenCalledWith(["skill-pdf"]));
+    expect(screen.getByRole("button", { name: "Checking source updates…" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    await act(async () => {
+      resolveCheck([{ skillId: "skill-pdf", state: "update_available" }]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Check source updates" })).toBeEnabled();
+    });
+    expect(screen.queryByTestId("source-update-checks")).not.toBeInTheDocument();
+  });
+
+  it("correlates source outcomes to selected Skill names and marks omitted outcomes unavailable", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.checkSourceUpdates = vi.fn().mockResolvedValue([
+      { skillId: "unexpected-skill-id", state: "update_available" },
+    ] satisfies SourceUpdateCheckEntry[]);
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+
+    const result = await screen.findByTestId("source-update-checks");
+    const unavailable = await within(result).findByRole("group", { name: "Source unavailable (1)" });
+    expect(unavailable).toHaveTextContent("PDF Reader");
+    expect(within(result).queryByText("unexpected-skill-id")).not.toBeInTheDocument();
+    expect(within(result).queryByText("skill-pdf")).not.toBeInTheDocument();
   });
 
   it("keeps valid table data when preference reads fail and lets the user retry", async () => {
