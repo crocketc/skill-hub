@@ -82,7 +82,50 @@ test("drawer review prototype stays isolated and fits a compact desktop viewport
   // 深链落位：点击“查看更新”是 SPA 客户端导航，浏览器不会触发原生锚点
   // 滚动；详情页必须在内容渲染后把 #review-versions 分区滚入视口。
   await updateLink.click();
+  await expect(page.locator("#review-versions")).toBeAttached();
   await expect(page.locator("#review-versions")).toBeInViewport();
+});
+
+test("drawer view update keeps version history visible when earlier sections finish loading", async ({ page }) => {
+  await page.setViewportSize({ width: 750, height: 719 });
+  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review");
+
+  // 模拟 Safari/WebKit 上异步内容扩高时不会自动锚定滚动位置的行为。
+  await page.addStyleTag({ content: ".sh-skill-detail-review__main { overflow-anchor: none !important; }" });
+  const drawer = page.getByTestId("drawer-panel");
+  await expect(drawer).toBeVisible();
+  await drawer.locator(".sh-skill-drawer__prototype-update a").click();
+  await expect(page).toHaveURL(/#review-versions$/);
+
+  const versionHeadingInDetailScrollport = () => page.evaluate(() => {
+    const scrollport = document.querySelector<HTMLElement>(".sh-skill-detail-review__main");
+    const heading = document.querySelector<HTMLElement>("#review-versions h2");
+    if (!scrollport || !heading) return false;
+    const scrollportRect = scrollport.getBoundingClientRect();
+    const headingRect = heading.getBoundingClientRect();
+    return headingRect.top >= scrollportRect.top && headingRect.bottom <= scrollportRect.bottom;
+  });
+
+  await expect.poll(versionHeadingInDetailScrollport).toBe(true);
+  await page.locator("#review-usage-body").evaluate((body) => {
+    const lateContent = document.createElement("div");
+    lateContent.dataset.testid = "late-usage-content";
+    lateContent.style.blockSize = "48rem";
+    body.append(lateContent);
+  });
+  await expect.poll(versionHeadingInDetailScrollport).toBe(true);
+
+  const scrollport = page.locator(".sh-skill-detail-review__main");
+  const anchoredScrollTop = await scrollport.evaluate((element) => element.scrollTop);
+  await scrollport.hover();
+  await page.mouse.wheel(0, -320);
+  await expect.poll(() => scrollport.evaluate((element) => element.scrollTop)).toBeLessThan(anchoredScrollTop);
+  await page.locator("#review-usage-body").evaluate((body) => {
+    const lateContent = document.createElement("div");
+    lateContent.style.blockSize = "48rem";
+    body.append(lateContent);
+  });
+  await expect.poll(versionHeadingInDetailScrollport).toBe(false);
 });
 
 test("drawer review prototype remains inside a narrow viewport", async ({ page }) => {

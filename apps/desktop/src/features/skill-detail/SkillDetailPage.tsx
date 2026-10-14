@@ -478,15 +478,51 @@ export function SkillDetailPage({
   const sectionHash = /^#review-[a-z-]+$/.exec(location.hash)?.[0].slice(1);
   useEffect(() => {
     if (!sectionHash || !summaryReady) return;
-    // 分区内容随查询数据异步渲染：有界重试直到分区出现或放弃（约 0.5s），
-    // 不做无限轮询，也不给不存在的锚点保留滚动位置。
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame: number | undefined;
+    let followingAnchor = true;
+    let resizeObserver: ResizeObserver | undefined;
+    let detailRoot: HTMLElement | null = null;
+    const stopFollowing = () => {
+      followingAnchor = false;
+      resizeObserver?.disconnect();
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+        frame = undefined;
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab") return;
+      stopFollowing();
+    };
+    const handleResize = () => stopFollowing();
     const attempt = (remaining: number) => {
       if (cancelled) return;
-      const target = document.getElementById(sectionHash);
+      const target = document.getElementById(sectionHash) as HTMLElement | null;
       if (target) {
         target.scrollIntoView({ block: "start" });
+        detailRoot = target.closest<HTMLElement>(".sh-skill-detail--review");
+        const sections = detailRoot
+          ? Array.from(detailRoot.querySelectorAll<HTMLElement>(".sh-skill-detail-review__section"))
+          : [];
+        const targetIndex = sections.indexOf(target);
+        const earlierSections = targetIndex < 0 ? [] : sections.slice(0, targetIndex);
+        if (earlierSections.length > 0 && typeof ResizeObserver !== "undefined") {
+          resizeObserver = new ResizeObserver(() => {
+            if (cancelled || !followingAnchor || frame !== undefined) return;
+            frame = requestAnimationFrame(() => {
+              frame = undefined;
+              if (followingAnchor && target.isConnected) target.scrollIntoView({ block: "start" });
+            });
+          });
+          earlierSections.forEach((section) => resizeObserver?.observe(section));
+        }
+        detailRoot?.addEventListener("pointerdown", stopFollowing);
+        detailRoot?.addEventListener("wheel", stopFollowing, { passive: true });
+        detailRoot?.addEventListener("touchstart", stopFollowing, { passive: true });
+        detailRoot?.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("resize", handleResize);
         return;
       }
       if (remaining > 0) {
@@ -497,6 +533,12 @@ export function SkillDetailPage({
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      stopFollowing();
+      detailRoot?.removeEventListener("pointerdown", stopFollowing);
+      detailRoot?.removeEventListener("wheel", stopFollowing);
+      detailRoot?.removeEventListener("touchstart", stopFollowing);
+      detailRoot?.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleResize);
     };
   }, [sectionHash, summaryReady]);
 
