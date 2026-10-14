@@ -45,6 +45,18 @@ describe("relationship workbench layout at a compact 800x600 window", () => {
     );
   });
 
+  it("gives graph overlays shared glass surfaces and pins details to their scroll origin", () => {
+    expect(graphCss).toMatch(
+      /\.sh-graph-canvas__controls,\s*\.sh-graph__legend\s*\{[^}]*background:\s*color-mix\([^;]+\)[^}]*backdrop-filter:\s*blur\(6px\)/,
+    );
+    expect(graphCss).toMatch(
+      /\.sh-graph-canvas__controls,\s*\.sh-graph__legend\s*\{[^}]*-webkit-backdrop-filter:\s*blur\(6px\)/,
+    );
+    expect(graphCss).toMatch(
+      /\.sh-graph-details\s*\{[^}]*align-content:\s*start[^}]*overflow-y:\s*auto/,
+    );
+  });
+
   it("passes the available page height through the relationship graph workbench", () => {
     expect(relationshipsCss).toMatch(
       /\.sh-relationships\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\)[\s\S]*?height:\s*100%[\s\S]*?min-height:\s*0/,

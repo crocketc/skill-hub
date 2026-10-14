@@ -281,11 +281,17 @@
   pointer-events: auto;
   position: absolute;
   right: var(--space-3);
-  border: 1px solid var(--ui-border-subtle);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--ui-surface) 94%, transparent);
-  box-shadow: 0 8px 20px rgb(0 0 0 / 0.14);
   z-index: 3;
+}
+
+.sh-graph-canvas__controls,
+.sh-graph__legend {
+  background: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ui-border-strong) 72%, transparent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.14);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .sh-graph__legend-header {
@@ -353,6 +359,7 @@
   inset: var(--space-3) var(--space-3) auto auto;
   display: flex;
   gap: var(--space-2);
+  padding: var(--space-2);
   position: absolute;
   z-index: 2;
 }
@@ -524,6 +531,7 @@
 }
 
 .sh-graph-details {
+  align-content: start;
   border: 1px solid var(--ui-border);
   border-radius: 8px;
   display: grid;
