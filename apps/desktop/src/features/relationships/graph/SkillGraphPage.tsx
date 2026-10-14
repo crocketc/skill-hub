@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { DataState } from "../../../ui/DataState";
 import type {
   RelationshipGraphParams,
@@ -24,6 +24,7 @@ import {
 } from "./forceLayout";
 import { nativeRelationshipsFacade } from "../nativeApi";
 import { useRelationshipsReturnState } from "../returnState";
+import { readGraphReturnTarget } from "./graphReturnContext";
 import {
   ALL_DISPLAY_ON,
   CANVAS_SIZE,
@@ -264,9 +265,14 @@ export function SkillGraphPage({
   random = Math.random,
 }: SkillGraphPageProps) {
   const { t } = useTranslation();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlState = useMemo(() => parseGraphSearchParams(searchParams), [searchParams]);
   const { skillId } = urlState;
+  const graphReturnTarget = useMemo(
+    () => readGraphReturnTarget(location.state),
+    [location.state],
+  );
   const queryClient = useQueryClient();
   const returnState = useRelationshipsReturnState("graph", skillId);
 
@@ -342,8 +348,9 @@ export function SkillGraphPage({
     mergeRevisions([picked]);
     setSearchParams(buildGraphSearchParams({ ...urlState, skillId: picked.skill_id }), {
       replace: true,
+      state: location.state,
     });
-  }, [skillId, candidatesQuery.isSuccess, candidatesQuery.data, random, setSearchParams, urlState, mergeRevisions]);
+  }, [skillId, candidatesQuery.isSuccess, candidatesQuery.data, location.state, random, setSearchParams, urlState, mergeRevisions]);
 
   // 修订号进入 query key：候选里能拿到修订就先于首次图谱查询注入；
   // 中心不在候选里或候选查询失败时才允许无修订查询，再由下方效果收敛一次。
@@ -490,9 +497,10 @@ export function SkillGraphPage({
       setPickAnotherNotice(false);
       setSearchParams(buildGraphSearchParams({ ...urlState, skillId: nextSkillId }), {
         replace: false,
+        state: location.state,
       });
     },
-    [skillId, setSearchParams, urlState],
+    [location.state, skillId, setSearchParams, urlState],
   );
 
   const fetchCandidates = useCallback(
@@ -531,9 +539,10 @@ export function SkillGraphPage({
       setSelectedEdgeId(null);
       setSearchParams(buildGraphSearchParams({ ...urlState, ...next, skillId }), {
         replace: true,
+        state: location.state,
       });
     },
-    [skillId, setSearchParams, urlState],
+    [location.state, skillId, setSearchParams, urlState],
   );
 
   if (!skillId) {
@@ -670,6 +679,15 @@ export function SkillGraphPage({
         role="toolbar"
       >
         <div className="sh-graph__toolbar-primary">
+          {graphReturnTarget ? (
+            <Link
+              className="sh-button sh-button--secondary sh-button--sm"
+              state={graphReturnTarget.state}
+              to={graphReturnTarget.to}
+            >
+              {t("relationships.graph.returnToSource")}
+            </Link>
+          ) : null}
           <GraphSearch onPick={navigateToSkill} search={fetchCandidates} />
           <div className="sh-graph__tags">
             <label className="sh-graph__tags-label" htmlFor="sh-graph-tags-input">

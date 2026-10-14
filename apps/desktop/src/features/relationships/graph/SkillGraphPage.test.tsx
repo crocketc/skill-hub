@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { I18nextProvider } from "react-i18next";
-import { MemoryRouter, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useNavigationType, type InitialEntry } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../../i18n";
 import type {
@@ -14,6 +14,7 @@ import type {
   SkillRelationshipGraphResult,
 } from "../api";
 import { parseGraphSearchParams, pickNextCenter, SkillGraphPage } from "./SkillGraphPage";
+import { createDrawerGraphReturnContext } from "./graphReturnContext";
 
 const CANDIDATES: SkillRelationshipCandidate[] = [
   {
@@ -210,7 +211,7 @@ function createFacade(options: PageOptions = {}): { facade: RelationshipsFacade;
   return { facade, calls };
 }
 
-function LocationProbe({ locations }: { locations: Array<{ search: string; type: string }> }) {
+function LocationProbe({ locations }: { locations: Array<{ pathname: string; search: string; state: unknown; type: string }> }) {
   const location = useLocation();
   const navigationType = useNavigationType();
   const navigate = useNavigate();
@@ -219,7 +220,7 @@ function LocationProbe({ locations }: { locations: Array<{ search: string; type:
     if (!mounted.current && navigationType === "POP" && locations.length === 0) {
       mounted.current = true;
     }
-    locations.push({ search: location.search, type: navigationType });
+    locations.push({ pathname: location.pathname, search: location.search, state: location.state, type: navigationType });
   }, [location, navigationType, locations]);
   return (
     <button onClick={() => navigate(-1)} type="button">
@@ -228,17 +229,21 @@ function LocationProbe({ locations }: { locations: Array<{ search: string; type:
   );
 }
 
-async function renderPage(url: string, options: PageOptions = {}) {
+async function renderPage(url: InitialEntry, options: PageOptions = {}) {
   const { facade, calls } = createFacade(options);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const i18n = await createSkillHubI18n(["en-US"]);
-  const locations: Array<{ search: string; type: string }> = [];
+  const locations: Array<{ pathname: string; search: string; state: unknown; type: string }> = [];
   const tree = (
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[url]}>
           <LocationProbe locations={locations} />
-          <SkillGraphPage facade={facade} random={options.random} />
+          <Routes>
+            <Route element={<SkillGraphPage facade={facade} random={options.random} />} path="/relationships" />
+            <Route element={<div data-testid="library-return-probe" />} path="/library" />
+            <Route element={<div data-testid="detail-return-probe" />} path="/library/:skillId" />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>
     </I18nextProvider>
@@ -349,6 +354,76 @@ describe("first-load center selection", () => {
       expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
     });
     expect(locations.at(-1)?.search).toBe("?skillId=pdf-reader");
+  });
+});
+
+describe("graph return entry", () => {
+  it("returns to a validated drawer route with its filters and reopened Skill", async () => {
+    const libraryReturn = { focusSkillId: "pdf-reader", scrollLeft: 12, scrollTop: 416 };
+    const graphSource = createDrawerGraphReturnContext({
+      libraryReturn,
+      pathname: "/library",
+      search: "?q=pdf&tag=documents&skill=pdf-reader",
+      skillId: "pdf-reader",
+    });
+    const { locations } = await renderPage({
+      pathname: "/relationships",
+      search: "?skillId=pdf-reader",
+      state: { graphSource },
+    });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible());
+    await userEvent.click(screen.getByRole("link", { name: "Return to source" }));
+
+    await waitFor(() => expect(locations.at(-1)?.pathname).toBe("/library"));
+    expect(locations.at(-1)?.search).toBe("?tag=documents&q=pdf&skill=pdf-reader");
+    expect(locations.at(-1)?.state).toMatchObject({ libraryReturn });
+  });
+
+  it("keeps the validated source when graph filters replace the URL", async () => {
+    const graphSource = createDrawerGraphReturnContext({
+      pathname: "/library",
+      search: "?q=pdf&skill=pdf-reader",
+      skillId: "pdf-reader",
+    });
+    const { locations } = await renderPage({
+      pathname: "/relationships",
+      search: "?skillId=pdf-reader",
+      state: { graphSource },
+    });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible());
+    await userEvent.clear(screen.getByRole("textbox", { name: "Center candidate tags" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Center candidate tags" }), "documents");
+    await userEvent.click(screen.getByRole("button", { name: "Apply tags" }));
+
+    expect(await screen.findByRole("link", { name: "Return to source" })).toBeVisible();
+    await userEvent.click(screen.getByRole("link", { name: "Return to source" }));
+    await waitFor(() => expect(locations.at(-1)?.pathname).toBe("/library"));
+    expect(locations.at(-1)?.search).toBe("?q=pdf&skill=pdf-reader");
+  });
+
+  it("keeps direct graph entry on the main navigation without a source return link", async () => {
+    await renderPage("/relationships?skillId=pdf-reader");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible());
+    expect(screen.queryByRole("link", { name: "Return to source" })).not.toBeInTheDocument();
+  });
+
+  it("does not render a return link for a forged external source", async () => {
+    const graphSource = createDrawerGraphReturnContext({
+      pathname: "/library",
+      search: "?skill=pdf-reader",
+      skillId: "pdf-reader",
+    });
+    await renderPage({
+      pathname: "/relationships",
+      search: "?skillId=pdf-reader",
+      state: { graphSource: { ...graphSource, returnTo: "https://example.com/" } },
+    });
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "PDF Reader" })).toBeVisible());
+    expect(screen.queryByRole("link", { name: "Return to source" })).not.toBeInTheDocument();
   });
 });
 

@@ -726,7 +726,13 @@ it("keeps preview full-detail links inside the development preview routes", asyn
 it("offers a graph entry next to full details carrying the current skill", async () => {
   const facade = createMockSkillLibraryFacade();
   const locations: ReturnType<typeof useLocation>[] = [];
-  await renderDrawer({ facade, onLocationChange: (location) => locations.push(location) });
+  const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
+  await renderDrawer({
+    facade,
+    initialEntry: "/library?tag=documents&q=pdf&skill=skill-pdf",
+    libraryReturn,
+    onLocationChange: (location) => locations.push(location),
+  });
 
   const graphLink = await screen.findByRole("link", { name: "View graph" });
   expect(graphLink).toHaveAttribute("href", "/relationships?skillId=skill-pdf");
@@ -738,6 +744,15 @@ it("offers a graph entry next to full details carrying the current skill", async
   const last = locations[locations.length - 1];
   expect(last.pathname).toBe("/relationships");
   expect(last.search).toBe("?skillId=skill-pdf");
+  expect(last.state).toMatchObject({
+    graphSource: {
+      kind: "drawer",
+      skillId: "skill-pdf",
+      returnTo: "/library?tag=documents&q=pdf&skill=skill-pdf",
+      libraryReturn,
+      version: 1,
+    },
+  });
 });
 
 it("inherits reduced motion while action entries stay display-only", async () => {

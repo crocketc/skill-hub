@@ -24,6 +24,7 @@ import { VersionTimeline } from "./VersionTimeline";
 import { projectDisplayName, type UsageDestinationCard, type UsageDestinationsState } from "./usageDestinations";
 import { ReviewHeaderActions, ReviewOverviewStatus, ReviewSubjectLocation } from "./SkillDetailReviewScenarios";
 import type { SkillLibraryReturnState } from "./detailContext";
+import type { GraphSourceContext } from "../relationships/graph/graphReturnContext";
 import type {
   AdjacentSkillContext,
   SkillDetailFacade,
@@ -50,6 +51,8 @@ interface SkillDetailReviewExperienceProps {
   adjacent?: AdjacentSkillContext;
   backSearch: string;
   detailPathname: string;
+  graphHref: string;
+  graphSource?: GraphSourceContext;
   /** W3-6：主体位置「打开位置」走受控 open_local_directory；测试注入替身。 */
   directoryOpener?: DirectoryOpener;
   libraryReturn?: SkillLibraryReturnState;
@@ -96,6 +99,8 @@ export function SkillDetailReviewExperience({
   adjacent,
   backSearch,
   detailPathname,
+  graphHref,
+  graphSource,
   directoryOpener,
   libraryReturn,
   returnToLibrary,
@@ -275,7 +280,7 @@ export function SkillDetailReviewExperience({
               <h2>
                 <ReviewSectionToggle label="使用去向" onToggle={() => toggleSection("review-usage")} open={openSections["review-usage"]} sectionId="review-usage" />
               </h2>
-              <ReviewGraphEntry skillId={skillId} />
+              <ReviewGraphEntry graphHref={graphHref} graphSource={graphSource} />
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
               <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
@@ -421,11 +426,12 @@ function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname, libraryRet
 
 /** 图谱查阅入口（§16 查阅与定位；FB-②）：携当前 Skill 身份真实跳转图谱页，
  * 图谱仍是使用关系与复用修改的权威展示，详情页不复制图谱画布。 */
-function ReviewGraphEntry({ skillId }: { skillId: string }) {
+function ReviewGraphEntry({ graphHref, graphSource }: { graphHref: string; graphSource?: GraphSourceContext }) {
   return (
     <Link
       className="sh-button sh-button--ghost sh-button--sm sh-skill-detail-review__accent-action"
-      to={`/relationships?skillId=${encodeURIComponent(skillId)}`}
+      state={graphSource ? { graphSource } : undefined}
+      to={graphHref}
     >
       <Icon aria-hidden="true" name="relationships" size={16} />
       在图谱中查看

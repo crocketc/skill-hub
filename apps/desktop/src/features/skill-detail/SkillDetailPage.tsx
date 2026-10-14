@@ -47,6 +47,7 @@ import { relationshipsKeys } from "../relationships/api";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
 import { relationIdOf, rowIsBatchExecutable } from "../relationships/governance/api";
 import { buildGovernanceLibraryReturnTo } from "../relationships/governance/libraryReturnContext";
+import { createDetailGraphReturnContext } from "../relationships/graph/graphReturnContext";
 import { nativeGovernanceFacade } from "../relationships/governance/nativeApi";
 import { UsageManageDialog } from "../relationships/governance/UsageManageDialog";
 import { usageDestinationCards, type UsageDestinationsState } from "./usageDestinations";
@@ -101,6 +102,16 @@ export function SkillDetailPage({
   const backPathname = isPreviewRoute ? "/__preview/skill-library" : "/library";
   const detailPathname = isPreviewRoute ? "/__preview/skill-detail" : "/library";
   const libraryReturn = readLibraryReturnState(location.state);
+  const graphSource = useMemo(
+    () => createDetailGraphReturnContext({
+      hash: location.hash,
+      pathname: location.pathname,
+      search: location.search,
+      skillId,
+      state: location.state,
+    }),
+    [location.hash, location.key, location.pathname, location.search, location.state, skillId],
+  );
   const backSearch = detailSearchFromLibrary(location.search);
   const libraryQuery = parseSkillLibrarySearchParams(backSearch).query;
   const hasLibraryContext = Boolean(location.search || libraryReturn);
@@ -523,6 +534,8 @@ export function SkillDetailPage({
         detailPathname={detailPathname}
         directoryOpener={directoryOpener}
         facade={facade}
+        graphHref={`${isPreviewRoute ? "/__preview/relationships" : "/relationships"}?skillId=${encodeURIComponent(skillId)}`}
+        graphSource={graphSource}
         insights={insightsQuery.data}
         markdownFacade={markdownFacade}
         metadata={metadataQuery.data}

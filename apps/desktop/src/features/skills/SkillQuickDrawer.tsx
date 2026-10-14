@@ -19,6 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { buildGovernanceDrawerReturnTo } from "../relationships/governance/libraryReturnContext";
+import { createDrawerGraphReturnContext } from "../relationships/graph/graphReturnContext";
 import { Button } from "../../ui/Button";
 import { Drawer } from "../../ui/Drawer";
 import { Icon } from "../../ui/Icon";
@@ -581,6 +582,14 @@ export function SkillQuickDrawer({
     if (!view) return;
     saveTags(view.tags.filter((current) => current !== tag));
   };
+  const graphReturnContext = view && skillId
+    ? createDrawerGraphReturnContext({
+        libraryReturn,
+        pathname: location.pathname,
+        search: location.search,
+        skillId,
+      })
+    : undefined;
 
   return (
     <Drawer
@@ -618,7 +627,8 @@ export function SkillQuickDrawer({
                     与「查看完整详情」同槽位相邻，不先进详情页即可看图谱。 */}
                 <Link
                   className="sh-button sh-button--secondary sh-button--sm"
-                  to={`/relationships?skillId=${encodeURIComponent(skillId)}`}
+                  state={graphReturnContext ? { graphSource: graphReturnContext } : undefined}
+                  to={`${location.pathname.startsWith("/__preview") ? "/__preview/relationships" : "/relationships"}?skillId=${encodeURIComponent(skillId)}`}
                 >
                   <Icon aria-hidden="true" name="relationships" size={16} />
                   {t("skillLibrary.drawer.prototype.viewGraph")}

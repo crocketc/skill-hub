@@ -410,6 +410,15 @@ export const appRouter = createBrowserRouter([
             { path: "operation-progress", element: <OperationProgressPreview /> },
             { path: "recovery", element: <RecoveryPreview /> },
             { path: "relationship-governance", element: <GovernancePreview /> },
+            {
+              path: "relationships",
+              lazy: async () => {
+                const { GraphPreview } = await import("../features/relationships/graph/GraphPreview");
+                return {
+                  Component: () => <RouteSuspense><GraphPreview /></RouteSuspense>,
+                };
+              },
+            },
           ],
         },
         {

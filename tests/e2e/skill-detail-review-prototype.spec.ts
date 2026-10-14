@@ -25,6 +25,35 @@ test("the drawer and full detail return to the same selected Skill", async ({ pa
   await expect(page.getByTestId("skill-quick-drawer")).toHaveAttribute("data-drawer-prototype", "review");
 });
 
+test("the drawer graph entry returns to the filtered library with its drawer reopened", async ({ page }) => {
+  await page.goto("/__preview/skill-library?q=pdf&skill=skill-pdf");
+  await expect(page.getByTestId("drawer-panel")).toBeVisible();
+
+  await page.getByRole("link", { name: "查看图谱" }).click();
+  await expect(page).toHaveURL(/__preview\/relationships\?skillId=skill-pdf/);
+  await expect(page.getByRole("link", { name: "返回来源" })).toBeVisible();
+  await page.getByRole("link", { name: "返回来源" }).click();
+
+  await expect(page).toHaveURL(/__preview\/skill-library\?q=pdf&skill=skill-pdf/);
+  await expect(page.getByTestId("drawer-panel")).toBeVisible();
+  await expect(page.getByTestId("skill-quick-drawer")).toBeVisible();
+});
+
+test("the detail graph entry returns to the same detail and keeps its library context", async ({ page }) => {
+  await page.goto("/__preview/skill-library?q=pdf&skill=skill-pdf");
+  await page.getByTestId("drawer-panel").getByRole("link", { name: /查看完整详情/ }).click();
+  await expect(page).toHaveURL(/__preview\/skill-detail\/skill-pdf\?q=pdf/);
+
+  await page.getByRole("link", { name: "在图谱中查看" }).click();
+  await expect(page).toHaveURL(/__preview\/relationships\?skillId=skill-pdf/);
+  await page.getByRole("link", { name: "返回来源" }).click();
+
+  await expect(page).toHaveURL(/__preview\/skill-detail\/skill-pdf\?q=pdf/);
+  await expect(page.getByTestId("skill-detail-review")).toBeVisible();
+  await page.getByRole("link", { name: "返回技能库" }).click();
+  await expect(page).toHaveURL(/__preview\/skill-library\?q=pdf/);
+});
+
 test("a DEV detail route without prototype parameters renders the promoted review experience", async ({ page }) => {
   // 原型转正裁决（界面呈现与操作入口 §9）：评审布局即生产默认形态，
   // 不存在“无旗标回落旧布局”的分支可断言。

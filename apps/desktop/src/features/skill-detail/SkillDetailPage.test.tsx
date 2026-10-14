@@ -688,13 +688,31 @@ describe("SkillDetailPage shell", () => {
   });
 
   it("opens the relationship graph focused on the current Skill", async () => {
-    await renderDetail({ entry: "/library/skill-pdf" });
+    const libraryReturn = { focusSkillId: "skill-pdf", scrollLeft: 12, scrollTop: 416 };
+    await renderDetail({
+      entry: {
+        pathname: "/library/skill-pdf",
+        search: "?q=pdf&tag=documents",
+        state: { libraryReturn },
+      },
+    });
 
     fireEvent.click(await screen.findByRole("link", { name: /在图谱中查看/ }));
 
     expect(await screen.findByTestId("route-location")).toHaveTextContent(
       "/relationships?skillId=skill-pdf",
     );
+    const locationText = screen.getByTestId("route-location").textContent ?? "";
+    const graphState = JSON.parse(locationText.slice(locationText.indexOf("|") + 1)) as {
+      graphSource?: Record<string, unknown>;
+    };
+    expect(graphState.graphSource).toMatchObject({
+      kind: "detail",
+      libraryReturn,
+      returnTo: "/library/skill-pdf?q=pdf&tag=documents",
+      skillId: "skill-pdf",
+      version: 1,
+    });
   });
 
   it("routes the header dispatch action to the real deployment dialog instead of the demo flow", async () => {
