@@ -2848,12 +2848,16 @@ it("queries unified active usage facts separately from the legacy action ledger"
   expect(facade.listGovernance).toHaveBeenCalled();
   expect(screen.getByTestId("relationships-nav-count-governance")).toHaveTextContent("5");
   expect(getRelationshipOverview).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("查看已存在的技能关系，并按是否需要处理分组；变更先预览、再确认。"))
+    .toBeVisible();
   expect(screen.getAllByTestId("governance-row")).toHaveLength(1);
   expect(screen.getByRole("button", { name: "无需处理（1）" })).toBeVisible();
   expect(screen.getByRole("link", { name: "查看治理历史" })).toHaveAttribute(
     "href",
     "/relationships/governance/history",
   );
+  expect(screen.getByText("新增 Skill 请走普通添加流程：")).toBeVisible();
+  expect(screen.getByRole("link", { name: "添加到 Agent/项目" })).toHaveAttribute("href", "/deploy");
   expect(screen.queryByRole("button", { name: "保留为独立拷贝" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "撤销保留决定" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "解除关系" })).not.toBeInTheDocument();

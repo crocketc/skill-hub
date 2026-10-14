@@ -104,6 +104,8 @@ describe("GovernanceHistoryPage（任务 12A）", () => {
 
     await screen.findByTestId("governance-history-row-src-new");
     const pageEl = screen.getByTestId("governance-history-page");
+    expect(pageEl).toHaveClass("sh-governance__history-page");
+    expect(pageEl.querySelector(".sh-governance__history-scroll")).toBeInTheDocument();
     const rows = [...pageEl.querySelectorAll<HTMLElement>("tbody tr")];
     expect(rows).toHaveLength(2);
     // 时间倒序：新条目（validate/archived）在上。

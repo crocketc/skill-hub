@@ -900,7 +900,7 @@ export function RelationshipGovernancePage({
           </Link>
         </div>
         <p className="sh-governance__hint" data-testid="governance-deploy-entry">
-          {t("relationships.governance.deployEntry.hint")}
+          <span>{t("relationships.governance.deployEntry.hint")}</span>
           <Link className="sh-governance__hint-link" to="/deploy">
             {t("relationships.governance.deployEntry.action")}
           </Link>

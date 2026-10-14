@@ -15,6 +15,7 @@ import type { GovernanceHistoryEntry } from "../../../api/bindings";
 import type { RelationGovernanceFacade } from "./api";
 import { nativeGovernanceFacade } from "./nativeApi";
 import { GovernanceHistoryTable } from "./GovernanceHistoryTable";
+import "./governance.css";
 
 const PAGE_SIZE = 20;
 
@@ -82,7 +83,7 @@ export function GovernanceHistoryPage({
 
   return (
     <RelationshipsLayout scope="governance">
-      <div data-testid="governance-history-page">
+      <div className="sh-governance__history-page" data-testid="governance-history-page">
         <div className="sh-governance__history-topbar">
           <h1>{t("relationships.governance.history.title")}</h1>
           <div className="sh-governance__history-links">

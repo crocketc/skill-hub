@@ -3210,7 +3210,7 @@
     "governance": {
       "title": "Relationship governance",
       "placeholder": "The relationship governance workbench is not available yet; the governance panel on Skill details remains available.",
-      "description": "Manage import sources and dispatch relationships; preview changes before confirming. See the full topology in the skill graph.",
+      "description": "Review existing Skill relationships by whether they need attention; preview each change before confirming it.",
       "unnamedSkill": "Unnamed skill",
       "selectionAvailability": "{{executable}} ready for batch processing; {{blocked}} blocked; {{noAction}} need no action.",
       "previewFixtureNotice": "Preview data: these fictional relationships do not read or change local Skill or Agent folders.",
@@ -3316,7 +3316,7 @@
       },
       "deployEntry": {
         "action": "Add to Agent/Project",
-        "hint": "This view manages existing relationships; use regular dispatch to add Skills."
+        "hint": "To add a Skill, use the regular flow:"
       },
       "filters": {
         "label": "Quick filters",

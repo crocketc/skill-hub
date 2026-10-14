@@ -4,6 +4,41 @@ import path from "node:path";
 
 test.use({ locale: "zh-CN" });
 
+test("governance scope, secondary actions, and relationship tabs stay clear at narrow widths", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/__preview/relationship-governance");
+
+  await expect(page.getByText("查看已存在的技能关系，并按是否需要处理分组；变更先预览、再确认。"))
+    .toBeVisible();
+  await expect(page.getByText("新增 Skill 请走普通添加流程：")).toBeVisible();
+  await expect(page.getByRole("link", { name: "添加到 Agent/项目" })).toHaveAttribute("href", "/deploy");
+  await expect(page.getByRole("link", { name: "查看治理历史" })).toHaveAttribute(
+    "href",
+    "/relationships/governance/history",
+  );
+  await expect(page.getByText(/完整拓扑请看技能图谱|这里只处理已有关系/)).toHaveCount(0);
+
+  const nav = page.getByRole("navigation", { name: "技能关系分区" });
+  const navTabs = nav.getByRole("link");
+  await expect(navTabs).toHaveCount(3);
+  const tabMetrics = await navTabs.first().evaluate((node) => ({
+    fontSize: getComputedStyle(node).fontSize,
+    height: node.getBoundingClientRect().height,
+  }));
+  expect(tabMetrics.fontSize).toBe("14px");
+  expect(tabMetrics.height).toBeLessThanOrEqual(36);
+  await expect(page.getByTestId("governance-row-list")).toBeVisible();
+
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(nav).toHaveCSS("overflow-x", "auto");
+  const lastTab = navTabs.nth(2);
+  await lastTab.focus();
+  await expect(lastTab).toBeFocused();
+  expect(await lastTab.evaluate((node) => getComputedStyle(node).outlineWidth)).toBe("2px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth))
+    .toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));
+});
+
 test("governance board stays compact, switches views with selection, and opens the management choices", async ({
   page,
 }) => {

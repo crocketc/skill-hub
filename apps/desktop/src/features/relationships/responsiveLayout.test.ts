@@ -5,6 +5,30 @@ import governanceCss from "./governance/governance.css?raw";
 import relationshipsCss from "./relationships.css?raw";
 
 describe("relationship workbench layout at a compact 800x600 window", () => {
+  it("keeps relationship section tabs secondary and compact while preserving a usable hit area", () => {
+    expect(relationshipsCss).toMatch(
+      /\.sh-relationships\s*\{[^}]*gap:\s*var\(--space-3\)/,
+    );
+    expect(relationshipsCss).toMatch(
+      /\.sh-relationships__nav-link\s*\{[^}]*font-size:\s*var\(--font-size-sm\)[^}]*min-height:\s*2\.25rem/,
+    );
+    expect(relationshipsCss).toMatch(
+      /\.sh-relationships__nav\s*\{[^}]*overflow-x:\s*auto/,
+    );
+  });
+
+  it("bounds governance history content and wraps its heading on narrow viewports", () => {
+    expect(governanceCss).toMatch(
+      /\.sh-governance__history-page\s*\{[^}]*height:\s*100%[^}]*min-width:\s*0/,
+    );
+    expect(governanceCss).toMatch(
+      /\.sh-governance__history-topbar\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*wrap/,
+    );
+    expect(governanceCss).toMatch(
+      /\.sh-governance__history-scroll\s*\{[^}]*max-width:\s*100%[^}]*overflow:\s*auto/,
+    );
+  });
+
   it("keeps graph controls on one line and defines an explicit compact overflow", () => {
     expect(graphCss).toMatch(
       /\.sh-graph__toolbar\s*\{[\s\S]*?display:\s*flex[\s\S]*?flex-wrap:\s*nowrap[\s\S]*?min-width:\s*0/,
