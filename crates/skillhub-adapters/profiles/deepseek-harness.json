@@ -118,6 +118,61 @@
         ]
       },
       "call_policy": "unknown"
+    },
+    {
+      "id": "deepseek-harness.desktop",
+      "kind": "desktop",
+      "display_name": "DeepSeek Harness Desktop",
+      "supported_os": [
+        "windows",
+        "macos"
+      ],
+      "path_candidates": [
+        {
+          "path": "{project_root}/.dsh/skills",
+          "agent_root": "{project_root}/.dsh",
+          "scope": "project",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{project_root}/.agents/skills",
+          "agent_root": "{project_root}/.dsh",
+          "scope": "project",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md",
+          "shared_reference": true
+        },
+        {
+          "path": "{user_home}/.dsh/skills",
+          "agent_root": "{user_home}/.dsh",
+          "scope": "global",
+          "precedence": "preferred",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "agent_root": "{user_home}/.dsh",
+          "scope": "global",
+          "precedence": "lower_priority_copy",
+          "marker": "SKILL.md",
+          "shared_reference": true
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "flat_markdown_not_scanned",
+          "project_ancestor_search_not_scanned",
+          "runtime_loading_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed"
+        ]
+      },
+      "call_policy": "unknown"
     }
   ]
 }

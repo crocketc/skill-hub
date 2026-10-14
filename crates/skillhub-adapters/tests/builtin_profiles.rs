@@ -418,6 +418,7 @@ fn skills_cli_unsupported_boundaries_remain_copy_only() {
         "codebuddy.workbuddy",
         "deepseek-harness.tui",
         "deepseek-harness.web",
+        "deepseek-harness.desktop",
         "comate.ide",
         "google.antigravity.ide",
         "google.antigravity.sdk",
@@ -646,6 +647,7 @@ fn researched_client_boundaries_are_kept_as_separate_profiles() {
         "pi.coding-agent",
         "deepseek-harness.tui",
         "deepseek-harness.web",
+        "deepseek-harness.desktop",
     ] {
         assert!(ids.contains(expected), "missing client {expected}");
     }
@@ -722,4 +724,36 @@ fn pi_and_deepseek_harness_keep_their_native_and_shared_skill_roots() {
             client.id
         );
     }
+
+    let desktop = harness
+        .clients
+        .iter()
+        .find(|client| client.id == "deepseek-harness.desktop")
+        .expect("DeepSeek Harness Desktop profile");
+    assert_eq!(desktop.kind, skillhub_core::agent::ClientKind::Desktop);
+    assert_eq!(
+        desktop.supported_os,
+        vec![
+            skillhub_core::agent::OperatingSystem::Windows,
+            skillhub_core::agent::OperatingSystem::Macos,
+        ]
+    );
+    assert_eq!(desktop.display_name, "DeepSeek Harness Desktop");
+    assert_eq!(
+        desktop.path_candidates[1].precedence,
+        skillhub_core::agent::DirectoryPrecedence::LowerPriorityCopy
+    );
+    assert!(desktop.path_candidates[1].shared_reference);
+    assert_eq!(
+        desktop.path_candidates[3].precedence,
+        skillhub_core::agent::DirectoryPrecedence::LowerPriorityCopy
+    );
+    assert!(desktop.path_candidates[3].shared_reference);
+    assert!(desktop
+        .path_candidates
+        .iter()
+        .all(|candidate| !candidate.builtin));
+    assert!(desktop.deployment.copy);
+    assert!(!desktop.deployment.symlink);
+    assert!(!desktop.deployment.junction);
 }

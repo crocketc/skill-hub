@@ -16,8 +16,8 @@
 
 - 2026-09-29 规则补充：SkillHub 以 profile 声明的 Agent 根目录作为“已识别 Agent 目录”证据，不检测软件安装包、进程或注册表。根目录存在但 Skill 目录缺失时保留品牌卡并显示“待创建”；共享目录卡只展示已声明支持且本机根目录已识别的品牌。详细卡片归并与派发规则见 `docs/archive/decisions/specs/2026-09-28-agent-discovery-card-and-dispatch-design.md`。
 
-- 后端已内置 `pi.coding-agent`、`deepseek-harness.tui` 和 `deepseek-harness.web` 三个客户端目标，接入统一的发现、扫描、部署、解除部署和所有权保护流程；DeepSeek Harness 的 TUI/Web 仅作为两个客户端 profile，共享其本地 Skill 目录规则。
-- 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
+- 后端已内置 `pi.coding-agent`、`deepseek-harness.tui`、`deepseek-harness.web` 和 `deepseek-harness.desktop` 客户端目标，接入统一的发现、扫描、部署、解除部署和所有权保护流程；DeepSeek Harness 的 TUI/Web/Desktop 共用已确认的默认 Skill 目录规则。
+- 前端已补充 Pi 与 DeepSeek Harness 的品牌展示、部署图标与颜色映射；Desktop 复用通用平台类型徽标。本次没有新增 IPC 字段或生成绑定，继续复用现有 profile 快照契约。
 - 0.2.0 当前实现边界是目录型 `SKILL.md`。Pi 原生根级 `.md`、DeepSeek Harness 扁平 `<name>.md`、项目祖先目录搜索、运行时加载/调用、链接行为和 project trust 均保留为明确限制，不能据此宣称 Agent 已加载或执行 Skill。
 - 后端 profile 契约、实际发现路径和前端品牌映射均已有自动化测试；Windows 当前只完成本机命令与目录观察，完整文件接入验收仍按第 7 节执行，macOS 尚未验证。
 - 豆包工作已完成 Windows 真机调研与证据补录，并于 2026-09-25 以 `doubao-work` profile 进入 0.2.0 预置适配（仅声明共享目录 `{user_home}/.agents/skills`，shared_reference）；当前已确认豆包可识别并正常调用 `.agents/skills` 中的目录型 Skill，可据此设计后续 profile，但不把内部 `.user_skills/<name>/` 目录当作稳定公开契约。
@@ -508,8 +508,8 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 ### 2026-10-15 复核与 ADP-DISC 适配边界
 
 - 官方 Releases 页面截至 2026-10-15 列出的最新 Harness 预发布 tag 为 `v0.2.1-alpha.3`（2026-10-14）；Desktop README 说明 Electron shell 与 `@deepseek-ai/dsh` 使用同一精确版本。当前 macOS 工作站的 `dsh --version` 输出 `0.1.5-rc.1`，这是可选 CLI 的本机版本，不代表已安装 Desktop 版本；本机未发现 DeepSeek Harness Desktop 应用，不能据此记录 Desktop 真机路径/版本通过。
-- 官方 Skills provider 的六层顺序为 project-dsh、project-agents、custom、user-dsh、user-agents、bundled（rank 100—600）。桌面官方说明支持 `$DSH_HOME`，但 SkillHub 现有 TUI/Web profile 只列出固定的项目/用户 `.dsh/skills` 与共享 `.agents/skills`；`customSkillDirs` 和 `bundledSkillDir` 必须来自实际活动配置，不能猜路径。`bundled` 是打包来源，只读；`<dshHome>/skills/.system` 不进入普通用户 Skill 扫描。目录被发现不证明加载或调用。
-- 隔离夹具核对现有发现测试已覆盖“用户 `.dsh` 根可识别但 Skill 子目录缺失”以及“只有共享 `.agents/skills` 时不冒认 DeepSeek 品牌”。ADP-DEEP 还须以临时 `DSH_HOME`/workspace 验证动态根、custom/bundled 条件、只读归属、拒绝权限、重复物理路径及 Windows/macOS 分隔符；不使用真实用户 Skill 内容。
+- 官方 Skills provider 的六层顺序为 project-dsh、project-agents、custom、user-dsh、user-agents、bundled（rank 100—600）。Desktop 官方说明支持 `$DSH_HOME`；当前 profile 声明四类默认工作区/用户 `.dsh/skills` 与共享 `.agents/skills`，共享路径仍由通用 Agent Skills profile 唯一持有。SkillHub 未读取 DeepSeek Desktop 活动配置，因此不展开 `$DSH_HOME` 覆盖、`customSkillDirs` 或 `bundledSkillDir`；`bundled` 是打包来源，只读，不能当成派发目标。扫描用户 `.dsh/skills` 时会跳过 `.system` 子目录。目录被发现不证明加载或调用。
+- ADP-DEEP 自动化验证 Desktop profile、工作区/默认用户四类根、共享归属、缺失目录与拒绝权限边界复用；用户 `.dsh/skills/.system` 的隐藏子目录排除由扫描器既有测试覆盖。不读取真实用户 Skill 内容；自定义/打包根及 `$DSH_HOME` 覆盖仍需实际活动配置后才能安全解析。
 - 官方 Desktop README 还明确区分 Desktop 拥有的 `$DSH_HOME/profiles/desktop` 与 CLI 可执行包、插件激活/锁文件；SkillHub 只处理已证实的 Skill 根，不接管 Harness profile 可执行状态或 app 包。
 
 
@@ -534,7 +534,7 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 - 已确认（DeepSeek 官方产品页及仓库桌面端说明，2026-10-12）：DeepSeek Harness 已提供 Apple Silicon macOS 13+ 与 Windows 64-bit 下载。桌面端是官方 Electron shell，使用共享 Harness Web 应用及 profile runner；可以选择工作区、管理插件，并可选注册随应用提供的 `dsh` 命令。桌面端与 CLI 共享会话、设置、凭据、工作区和存储，桌面 profile 使用独立的 profile 选择器/路径。桌面端默认还注册 `office-docx`、`office-pptx`、`office-xlsx` 三个内置 Skill；这些随应用发布的资源不属于 SkillHub 可写的用户文件。
 - 桌面版对现有兼容性规则的影响：Desktop 与 Web 共用本节六类本地 provider 根和 rank，不因 Electron shell 增加另一套通用用户目录；`cordis` preset 可在 custom rank 注入应用内 preset Skills，bundled 根仍按各 host 配置处理。桌面内置 Skill 与 bundled/package 只读来源保持只读边界。
 - 调用证据：官方 runtime 有 `ctx.skills.list()`、`ctx.skills.get()`、模型侧 `skill` tool 和用户侧 Skill catalog，但没有稳定的按 Skill 使用次数接口；SkillHub 不把 session log 中的事件直接等价为完整调用统计。
-- 结论：DeepSeek Harness CLI/TUI/Web/Desktop 均为完整适配候选。预置 profile 覆盖六类根，并按 rank 100→600 保留同名覆盖关系；`~/.dsh/skills/.system` 排除在普通用户 Skill 扫描之外，Web bundled 根默认未设置，`customSkillDirs` 默认为空但可由 `cordis` preset 注入应用内目录。仍需按适用 host 验证 custom、bundled、刷新和链接边界；当前软件实现尚不等于已通过每个桌面/Web/TUI 的真实部署验收。
+- 结论：DeepSeek Harness CLI/TUI/Web/Desktop 均为完整适配候选。当前预置 profile 只声明四类有固定默认路径的工作区/用户根，并保持项目/用户 DSH 根优先于共享 `.agents/skills` 的顺序；官方六层 rank 中的 `custom` 与 `bundled` 仍须在可安全读取活动配置后解析，不能按应用包路径猜测。`~/.dsh/skills/.system` 排除在普通用户扫描之外。仍需按适用 host 验证同名优先、custom/bundled、刷新和链接边界；代码 profile 不等于 Desktop/Web/TUI 的真实部署验收通过。
 
 主要来源：[DeepSeek Harness 官方介绍](https://www.deepseek.com/en/harness/)、[DeepSeek 官方下载页](https://www.deepseek.com/en/download/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Desktop 官方说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)、[官方 Releases](https://github.com/deepseek-ai/deepseek-harness/releases)。资料复核日期：2026-10-15。
 
@@ -851,6 +851,6 @@ Windows 必须分别验证：
 - 没有平台能够仅凭官方资料提供可靠的按 Skill 调用次数统计。
 - Roo Code 已移出候选范围，不再占用后续调研和开发资源。
 
-下一步进入功能优先级、产品与技术设计，并按本文实现平台 profile。Pi 与 DeepSeek Harness CLI/TUI/Web/Desktop 的目录型 Skill 根规则已收口；SkillHub 0.2.0 当前实现仍需完成 Desktop profile 与各 host 的真实链路验证。MiniMax Code 尚未纳入软件实现，本次仅更新调研文档。真机测试仍用于修正目录和部署规则，所有未覆盖平台继续使用用户自选 Skill 目录兜底。
+下一步继续推进功能优先级、产品与技术设计及剩余平台 profile。Pi 与 DeepSeek Harness CLI/TUI/Web/Desktop 的目录型 Skill 根规则已收口；SkillHub 0.2.0 已实现 DeepSeek Desktop 的四类固定默认根 profile，活动配置中的自定义/打包根仍受证据边界限制，各 host 的真实链路也仍需验收。MiniMax Code 已实现有 Windows 证据的 Desktop profile；macOS 路径仍未确认。真机测试继续用于修正目录和部署规则，所有未覆盖平台继续使用用户自选 Skill 目录兜底。
 
 Task11 的当前证据除 profile 文件事实和跨平台占位验收记录外，新增 2026-09-05 的 Windows 真机确认记录，见各章节标注为“真机确认”的条目及 2.1 的证据口径说明。Windows 侧的目录存在性证据已经采集，但同名优先级、刷新行为、链接支持、部署与解除部署结果以及全部 macOS 结论仍未覆盖，不得据此宣称任何 Agent 的文件管理接入已通过验证。Universal DMG 和 Draft Release 产物仍须在后续设备或 CI 环境中补采证据。

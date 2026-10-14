@@ -112,8 +112,10 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
     let project = workspace.path().join("project");
     std::fs::create_dir_all(home.join(".pi/agent/skills")).unwrap();
     std::fs::create_dir_all(home.join(".dsh/skills")).unwrap();
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
     std::fs::create_dir_all(project.join(".pi/skills")).unwrap();
     std::fs::create_dir_all(project.join(".dsh/skills")).unwrap();
+    std::fs::create_dir_all(project.join(".agents/skills")).unwrap();
 
     let snapshot = DiscoverAgents::builtin()
         .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home).with_project_root(&project))
@@ -125,7 +127,9 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
             "pi.coding-agent",
             vec![
                 home.join(".pi").join("agent").join("skills"),
+                home.join(".agents").join("skills"),
                 project.join(".pi").join("skills"),
+                project.join(".agents").join("skills"),
             ],
         ),
         (
@@ -133,7 +137,9 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
             "deepseek-harness.tui",
             vec![
                 project.join(".dsh").join("skills"),
+                project.join(".agents").join("skills"),
                 home.join(".dsh").join("skills"),
+                home.join(".agents").join("skills"),
             ],
         ),
         (
@@ -141,7 +147,19 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
             "deepseek-harness.web",
             vec![
                 project.join(".dsh").join("skills"),
+                project.join(".agents").join("skills"),
                 home.join(".dsh").join("skills"),
+                home.join(".agents").join("skills"),
+            ],
+        ),
+        (
+            "deepseek-harness",
+            "deepseek-harness.desktop",
+            vec![
+                project.join(".dsh").join("skills"),
+                project.join(".agents").join("skills"),
+                home.join(".dsh").join("skills"),
+                home.join(".agents").join("skills"),
             ],
         ),
     ] {
@@ -162,6 +180,65 @@ fn discovery_exposes_pi_and_deepseek_harness_native_targets() {
         assert_eq!(actual_paths, expected_paths, "paths for {client_id}");
         assert!(targets.iter().all(|target| target.marker == "SKILL.md"));
     }
+}
+
+#[test]
+fn deepseek_harness_desktop_discovers_workspace_and_default_user_roots() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    let project = workspace.path().join("project");
+    for path in [
+        home.join(".dsh/skills"),
+        home.join(".agents/skills"),
+        project.join(".dsh/skills"),
+        project.join(".agents/skills"),
+    ] {
+        std::fs::create_dir_all(path).unwrap();
+    }
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home).with_project_root(&project))
+        .unwrap();
+    let targets = snapshot
+        .logical_targets
+        .iter()
+        .filter(|target| {
+            target.profile_id == "deepseek-harness"
+                && target.client_id == "deepseek-harness.desktop"
+                && target.exists
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.path.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            project.join(".dsh/skills").to_string_lossy().into_owned(),
+            project
+                .join(".agents/skills")
+                .to_string_lossy()
+                .into_owned(),
+            home.join(".dsh/skills").to_string_lossy().into_owned(),
+            home.join(".agents/skills").to_string_lossy().into_owned(),
+        ]
+    );
+    assert!(targets[1].shared_reference);
+    assert!(targets[3].shared_reference);
+    assert!(targets.iter().all(|target| !target.builtin));
+    assert_eq!(
+        snapshot
+            .logical_targets
+            .iter()
+            .filter(|target| {
+                target.profile_id == "deepseek-harness"
+                    && target.client_id == "deepseek-harness.desktop"
+                    && target.builtin
+            })
+            .count(),
+        0,
+        "no bundled path may be guessed without an active Desktop configuration"
+    );
 }
 
 #[test]
