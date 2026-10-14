@@ -455,7 +455,12 @@ async function installNativePreview(page: Page, options: { projectDeployment?: b
           case "get_pending_workspace": return ok("pending_workspace", { items: pendingWorkspace.filter((item) => !conflictResolved || item.kind !== "conflict"), unavailable_sources: [] });
           case "list_pending_confirmations": return ok("pending_confirmations", []);
           case "list_ignore_rules": return ok("ignore_rules", ignoreRules);
-          case "get_ui_preference": return ok("ui_preference", { key: query.payload?.key, value_json: JSON.stringify({ kind: "all" }) });
+          case "get_ui_preference": return ok("ui_preference", {
+            key: query.payload?.key,
+            // 抽屉偏好缺省时应用会回退到有完整 moduleOrder/visibleModules 的默认值；
+            // `{ kind: "all" }` 是其他偏好的形状，不能冒充抽屉偏好。
+            value_json: query.payload?.key === "drawer_preferences" ? "" : JSON.stringify({ kind: "all" }),
+          });
           case "list_custom_agents": return ok("custom_agents", []);
           case "list_projects": return ok("projects", [project]);
           case "get_project_assembly_plan": return ok("assembly_plan", { id: "assembly-1", operation_id: "op-assembly", project_id: project.id, committed: false, items: [
@@ -918,6 +923,23 @@ test("data protection exposes export, restore, retention, and uninstall previews
   await page.getByLabel("Select this usage relationship").check();
   await page.getByRole("button", { name: "Preview impact" }).click();
   await expect(page.getByText(/Affects \d+ usage relationships/)).toBeVisible();
+});
+
+test("batch export carries its selected Skill into the real wizard flow and reports the result", async ({ page }) => {
+  await installNativePreview(page);
+  await page.goto("/library");
+
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
+  await page.getByRole("button", { name: "Start export" }).click();
+  await expect(page).toHaveURL(/\/settings\/data-protection$/);
+  await expect(page.getByRole("textbox", { name: "Skill IDs" })).toHaveValue("pdf-reader");
+
+  await page.getByRole("button", { name: "Review export" }).click();
+  await expect(page.getByText(/1 skills are ready to export/i)).toBeVisible();
+  await page.getByRole("combobox", { name: "Export decision for PDF Reader" }).selectOption("include_and_mark");
+  await page.getByRole("button", { name: "Create export" }).click();
+
+  await expect(page.getByRole("status").filter({ hasText: "Export created at C:/Preview/skillhub-export.zip (1 Skill exported)" })).toBeVisible();
 });
 
 test("settings exposes ordered sections and application update boundary", async ({ page }) => {

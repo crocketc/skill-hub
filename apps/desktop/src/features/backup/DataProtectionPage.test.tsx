@@ -128,7 +128,8 @@ describe("DataProtectionPage", () => {
 
   it("preflights and creates a selected-skill export after sensitive-content decisions", async () => {
     const facade = createFacade();
-    renderPage(facade);
+    const tracker = createOperationTracker();
+    renderPage(facade, {}, tracker);
     fireEvent.change(screen.getByLabelText("Skill IDs"), { target: { value: "skill-1, skill-2" } });
     fireEvent.click(screen.getByRole("button", { name: "Review export" }));
     expect(await screen.findByLabelText("Export decision for DOCX Writer")).toBeVisible();
@@ -138,7 +139,14 @@ describe("DataProtectionPage", () => {
     fireEvent.click(create);
     // K3：create 只携带预览 id 与敏感决定，实际输入由后端从预览快照取。
     await waitFor(() => expect(facade.createExport).toHaveBeenCalledWith("op-export-preview-1", [{ skill_id: "skill-2", decision: "include_and_mark" }]));
-    expect(await screen.findByText(/C:\/export.skillhub/)).toBeVisible();
+    expect(await screen.findByRole("status")).toHaveTextContent("Export created at C:/export.skillhub (2 Skills exported)");
+    const [operation] = tracker.getSnapshot();
+    expect(operation).toMatchObject({
+      kind: "standard_export",
+      operationId: "op-export-preview-1",
+      status: "success",
+      resultSummary: { succeeded: 1, failed: 0, skipped: 0 },
+    });
   });
 
   // K3-B 预览冻结（契约 §K3-1）：preview_id 三件套绑定主体/版本/格式/目录，

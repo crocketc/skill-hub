@@ -4232,7 +4232,8 @@
       "exclude": "Exclude this Skill",
       "include": "Include and mark",
       "commit": "Create export",
-      "result": "Export created at {{path}}",
+      "resultOne": "Export created at {{path}} ({{count}} Skill exported)",
+      "resultMany": "Export created at {{path}} ({{count}} Skills exported)",
       "scanHeading": "Sensitive files found by the scan",
       "previewInvalidatedNotice": "Your choices changed, so the previous export preview is no longer valid. Review the export again.",
       "reasons": {
@@ -4249,7 +4250,8 @@
     },
     "working": "Working, please wait…",
     "tracker": {
-      "restoreLabel": "Restore backup"
+      "restoreLabel": "Restore backup",
+      "exportLabel": "Export Skills"
     }
   },
   "navigation": {

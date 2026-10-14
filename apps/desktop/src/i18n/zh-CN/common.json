@@ -4232,7 +4232,8 @@
       "exclude": "排除该 Skill",
       "include": "包含并标记",
       "commit": "创建导出",
-      "result": "导出已创建：{{path}}",
+      "resultOne": "导出已创建：{{path}}（共 {{count}} 个 Skill）",
+      "resultMany": "导出已创建：{{path}}（共 {{count}} 个 Skill）",
       "scanHeading": "扫描发现的敏感文件",
       "previewInvalidatedNotice": "选择已更改：之前的导出预览已失效，请重新检查导出内容。",
       "reasons": {
@@ -4249,7 +4250,8 @@
     },
     "working": "正在执行，请稍候…",
     "tracker": {
-      "restoreLabel": "恢复备份"
+      "restoreLabel": "恢复备份",
+      "exportLabel": "导出 Skill"
     }
   },
   "navigation": {

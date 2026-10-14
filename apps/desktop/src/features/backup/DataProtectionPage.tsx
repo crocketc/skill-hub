@@ -6,6 +6,7 @@ import type {
   ExportDecision,
   ExportInput,
   ExportPreview,
+  ExportResult,
   ExportSensitiveItem,
   OperationSummary,
   RestoreConflict,
@@ -137,7 +138,7 @@ export function DataProtectionPage({
   // K3 预览冻结：预览成功时快照四项绑定输入；快照与当前输入不一致即视为
   // 旧预览失效（派生值，不在 effect 里回写状态）。
   const [exportPreviewInputs, setExportPreviewInputs] = useState<string>();
-  const [exportPath, setExportPath] = useState<string>();
+  const [exportResult, setExportResult] = useState<ExportResult>();
   const [carriedSkillIds, setCarriedSkillIds] = useState<string[]>([]);
   const [versionReadiness, setVersionReadiness] = useState<Record<string, ExportReadiness>>({});
   const [deployments, setDeployments] = useState<DeploymentRecord[]>();
@@ -250,7 +251,7 @@ export function DataProtectionPage({
   };
   const reviewExport = () => run(async () => {
     if (!exportSkillIds.trim()) return;
-    setExportPath(undefined);
+    setExportResult(undefined);
     setExportDecisions({});
     const skillIds = exportSkillIds.split(",").map((id) => id.trim()).filter(Boolean);
     const input: ExportInput = { selection: { skills: skillIds }, versions: await buildVersions(skillIds), skills: [], format: exportFormat, output_dir: outputDir ?? null };
@@ -275,8 +276,20 @@ export function DataProtectionPage({
     const decisions: ExportDecision[] = exportPreview.sensitive_items.map((item) => ({ skill_id: item.skill_id, decision: exportDecisions[item.skill_id] })) as ExportDecision[];
     // K3：create 只带 preview_id + 决定；决定缺失被拒时预览未被消耗，
     // 用户补齐决定后可用同一 preview_id 直接重试。
-    const result = await facade.createExport(exportPreview.preview_id, decisions);
-    setExportPath(result.path);
+    const result = await runTrackedOperation({
+      tracker,
+      notifications,
+      kind: "standard_export",
+      label: t("dataProtection.tracker.exportLabel"),
+      total: 1,
+      operationId: exportPreview.preview_id,
+      translate: (key, options) => String(t(key as never, options as never)),
+      successNotice: () => ({ tone: "success", title: t("dataProtection.tracker.exportLabel") }),
+      errorNotice: (_reason, message) => ({ tone: "danger", title: t("dataProtection.tracker.exportLabel"), detail: message }),
+      summarize: () => ({ succeeded: 1, failed: 0, skipped: 0 }),
+      run: () => facade.createExport(exportPreview.preview_id, decisions),
+    });
+    setExportResult(result);
   });
   const pickOutputDirectory = () => run(async () => {
     setPickerError(undefined);
@@ -405,7 +418,7 @@ export function DataProtectionPage({
         ) : null}
         {exportPreviewValid ? <ExportReview plan={exportPreview!} decisions={exportDecisions} onDecision={(skillId, decision) => setExportDecisions((current) => ({ ...current, [skillId]: decision }))} /> : null}
         {exportPreviewValid ? <Button disabled={busy || !hasExportDecisions} onClick={() => void commitExport()}>{t("dataProtection.export.commit")}</Button> : null}
-        {exportPath ? <p role="status">{t("dataProtection.export.result", { path: exportPath })}</p> : null}
+        {exportResult ? <p role="status">{t(exportResult.skills_exported === 1 ? "dataProtection.export.resultOne" : "dataProtection.export.resultMany", { count: exportResult.skills_exported, path: exportResult.path })}</p> : null}
       </section>
       <section className="sh-workflow-card">
         <h2>{t("backup.retention.heading")}</h2>
