@@ -123,6 +123,28 @@ it("rechecks only a recent single-Skill request and does not reuse its previous 
   expect(await screen.findByRole("heading", { name: "添加计划" })).toBeVisible();
 });
 
+it("returns from the single-Skill preview without committing and keeps the selected target", async () => {
+  const user = userEvent.setup();
+  const commit = vi.fn<BatchDeploymentFacade["commit"]>(async () => []);
+  const facade = facadeFixture([pair()], { commit });
+  await renderDialog(facade);
+
+  const codex = await screen.findByLabelText("Codex CLI");
+  await user.click(codex);
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  await screen.findByRole("heading", { name: "添加计划" });
+  expect(screen.queryByRole("region", { name: "Agent 目标" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "上一步" }));
+
+  expect(await screen.findByLabelText("Codex CLI")).toBeChecked();
+  expect(screen.getByRole("region", { name: "Agent 目标" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "添加计划" })).not.toBeInTheDocument();
+  expect(commit).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "预览" }));
+  expect(await screen.findByRole("heading", { name: "添加计划" })).toBeVisible();
+  expect(commit).not.toHaveBeenCalled();
+});
+
 it("supports one or many Agent targets and reports each pair result", async () => {
   const user = userEvent.setup();
   const pairs = [
@@ -283,8 +305,9 @@ it("resets conflict choices when a new preview replaces the old one", async () =
   await user.click(await screen.findByLabelText("Codex CLI"));
   await user.click(screen.getByRole("button", { name: "预览" }));
   await user.click(await screen.findByRole("radio", { name: /替换目标/ }));
-  // 目标选择始终保留在页面；切换并恢复另一个目标会生成新预览，
-  // 验证新预览不会继承之前针对旧事实作出的冲突选择。
+  // 返回目标步骤后切换并恢复另一个目标会生成新预览，验证新预览不会
+  // 继承之前针对旧事实作出的冲突选择。
+  await user.click(screen.getByRole("button", { name: "上一步" }));
   await user.click(screen.getByLabelText("Claude Code"));
   await user.click(screen.getByLabelText("Claude Code"));
   await user.click(screen.getByRole("button", { name: "预览" }));

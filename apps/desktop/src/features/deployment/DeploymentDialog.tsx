@@ -381,6 +381,11 @@ export function DeploymentDialog({
     }
     await runPreview({ confirmations, exclusions: [...excludedIds] });
   };
+  const backToTargets = () => {
+    setPreview(undefined);
+    setPreviewStale(false);
+    setFlowError(undefined);
+  };
 
   // 选择/计划阶段共用偏好选择；纯进度与结果阶段不重复提供流程动作。
   const showPreferenceSelect = phase === "targets" || phase === "plan";
@@ -410,14 +415,21 @@ export function DeploymentDialog({
       <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
         {phase === "targets" ? (
           <Button disabled={selected.length === 0} onClick={() => void runPreview()} size="lg">{t("deployment.preview")}</Button>
-        ) : regenerateNeeded ? (
-          <Button disabled={committing} onClick={() => void regeneratePreview()} size="lg">
-            {t("deployment.regeneratePreview")}
-          </Button>
         ) : (
-          <Button disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0} onClick={() => void commit()} size="lg">
-            {t("deployment.commit")}
-          </Button>
+          <>
+            <Button disabled={committing} onClick={backToTargets} variant="secondary">
+              {t("actions.back")}
+            </Button>
+            {regenerateNeeded ? (
+              <Button disabled={committing} onClick={() => void regeneratePreview()} size="lg">
+                {t("deployment.regeneratePreview")}
+              </Button>
+            ) : (
+              <Button disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0} onClick={() => void commit()} size="lg">
+                {t("deployment.commit")}
+              </Button>
+            )}
+          </>
         )}
       </div>
     </>
@@ -469,7 +481,7 @@ export function DeploymentDialog({
           state={recentRequests.state}
         />
       ) : null}
-      {targets && targets.length > 0 ? (
+      {targets && targets.length > 0 && phase === "targets" ? (
         <section aria-labelledby="deployment-targets-heading" className="sh-deployment-flow__section">
           <div className="sh-section-heading">
             <div>

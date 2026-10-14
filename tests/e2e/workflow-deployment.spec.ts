@@ -50,6 +50,8 @@ test.describe("deployment flow shell", () => {
     await page.keyboard.press("Enter");
 
     await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByTestId("deployment-target-grid")).toHaveCount(0);
+    await page.getByRole("button", { name: "Back" }).click();
     await expect(page.getByTestId("deployment-target-grid").getByLabel("Preview Agent 1")).toBeChecked();
     await expectNoRootHorizontalOverflow(page);
   });
@@ -64,6 +66,40 @@ test.describe("deployment flow shell", () => {
 
     await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Add 2 Skills" })).toBeVisible();
+  });
+
+  test("returns from a single preview without committing and retains the target choice", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=conflict-single");
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByTestId("deployment-target-grid")).toHaveCount(0);
+    await page.getByRole("button", { name: "Back" }).click();
+
+    await expect(page.getByLabel("Preview Agent 1")).toBeChecked();
+    await expect(page.getByTestId("deployment-result")).toHaveCount(0);
+    await page.getByRole("button", { name: "Preview" }).click();
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeVisible();
+  });
+
+  test("returns from a batch preview without committing and retains the target choice", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=conflict-batch");
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByTestId("deployment-target-grid")).toHaveCount(0);
+    await page.getByRole("button", { name: "Back" }).click();
+
+    await expect(page.getByLabel("Preview Agent 1")).toBeChecked();
+    await expect(page.getByTestId("batch-summary")).toHaveCount(0);
+    await page.getByRole("button", { name: "Preview" }).click();
+    await expect(page.getByRole("heading", { name: "Planned additions" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm and add" })).toBeVisible();
   });
 
   test("creates a missing directory and continues the single dispatch flow", async ({ page }) => {

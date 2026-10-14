@@ -313,6 +313,11 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
     }
     await runPreview({ confirmations, exclusions: [...excludedIds] });
   };
+  const backToTargets = () => {
+    setPreview(undefined);
+    setPreviewStale(false);
+    setFlowError(undefined);
+  };
 
   const commit = async () => {
     if (!preview || committing) return;
@@ -501,32 +506,32 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       <div className="sh-import-wizard__actions-group sh-import-wizard__actions-group--primary">
         {phase === "targets" ? (
           <Button disabled={selected.length === 0} onClick={() => void previewBatch()} size="lg">{t("deployment.preview")}</Button>
-        ) : regenerateNeeded ? (
-          <Button
-            disabled={committing}
-            onClick={() => void regeneratePreview()}
-            size="lg"
-          >
-            {t("deployment.regeneratePreview")}
-          </Button>
         ) : (
           <>
             <Button
               disabled={committing}
-              onClick={() => {
-                setPreview(undefined);
-              }}
+              onClick={backToTargets}
               variant="secondary"
             >
               {t("actions.back")}
             </Button>
-            <Button
-              disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0}
-              onClick={() => void commit()}
-              size="lg"
-            >
-              {t("deployment.commit")}
-            </Button>
+            {regenerateNeeded ? (
+              <Button
+                disabled={committing}
+                onClick={() => void regeneratePreview()}
+                size="lg"
+              >
+                {t("deployment.regeneratePreview")}
+              </Button>
+            ) : (
+              <Button
+                disabled={committing || executableCount === 0 || Object.keys(conflictErrors).length > 0}
+                onClick={() => void commit()}
+                size="lg"
+              >
+                {t("deployment.commit")}
+              </Button>
+            )}
           </>
         )}
       </div>
