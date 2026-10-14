@@ -1,10 +1,10 @@
 # SkillHub Agent 平台文件管理接入调研
 
-> 文档状态：官方资料调研持续更新；2026-10-12 新增 MiniMax Code（桌面端、CLI/ACP）资料，并补充 DeepSeek Harness Desktop/Web 共用的六类 Skill 根与优先级；2026-09-29 已同步 Agent 根目录识别、共享目录品牌交集和待建 Skill 目录规则；2026-09-27 豆包工作进入 0.2.0 预置适配（doubao profile，共享 `.agents/skills` 目录）并补录第二轮真机核实；2026-09-12 已补充 Pi coding agent 与 DeepSeek Harness profile，并完成本机目录观察；0.2.0 已实现目录型前后端适配，完整产品链路真机验证仍待后续测试阶段。
+> 文档状态：官方资料调研持续更新；2026-10-15 复核 DeepSeek Harness Desktop/Skills 官方仓库、发布版本与配置根所有权，并区分 MiniMax Code CLI 官方数据根和 Desktop 现场路径证据。MiniMax Desktop 的本地根仅有 2026-10-12 Windows 版本现场证据，不延伸到 macOS；完整产品链路真机验证仍待后续测试阶段。
 >
 > 例外：2026-09-05 已对部分平台执行 Windows 真机确认；2026-09-12 对 Pi 与 DeepSeek Harness 执行本机安装和目录观察。逐平台章节中标注为“真机确认”或“本机目录观察”的条目基于实机证据，不受上句延后安排约束；未标注的条目仍基于官方资料。实机证据仅覆盖 Windows 11，macOS 全部维持待测试，不得以 Windows 结果推断 macOS
 >
-> 调研基准日：2026-10-12（MiniMax Code、DeepSeek Harness Desktop 官方资料）；豆包工作真机补充复核日：2026-09-25（profile 落地核实）；此前复核日 2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 补充复核日：2026-09-12；真机确认日：2026-09-05；本机目录观察日：2026-09-12
+> 调研基准日：2026-10-15（DeepSeek Harness Desktop/Skills、MiniMax Code CLI/桌面边界复核）；MiniMax Code Windows 桌面根观察：2026-10-12；豆包工作真机补充复核日：2026-09-25；此前复核日 2026-09-16；豆包工作初步复核日：2026-09-15；Pi / DeepSeek Harness 本机目录观察日：2026-09-12；真机确认日：2026-09-05
 >
 > 适用项目：SkillHub
 >
@@ -183,7 +183,7 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 - profile schema 同步新增 `display_name`（必填，官方产品名）与 `shared_reference`（可选布尔）字段；`ClientKind` 新增 `shared_directory`。
 - 旧库快照缺省字段时按 `shared_reference: false` 反序列化，行为与迁移前一致，重新扫描后收敛到新归属。
 
-产品形态与目录核验结论（基础核验日期 2026-09-15；MiniMax Code 与 DeepSeek Harness Desktop 于 2026-10-12 补充，仅采官方文档/官方仓库/已记录真机证据）：
+产品形态与目录核验结论（基础核验日期 2026-09-15；MiniMax Code 与 DeepSeek Harness Desktop 于 2026-10-12 补充、2026-10-15 复核，仅采官方文档/官方仓库/已记录真机证据）：
 
 | 产品（官方形态名） | 形态 | 本地 Skill 目录 | `~/.agents/skills` 官方支持 | 证据等级 | 主要来源 |
 |---|---|---|---|---|---|
@@ -195,8 +195,8 @@ SkillHub 在 UI 中统一显示以下四个枚举值：
 | TraeWork（trae.work） | 桌面/Web/移动办公 Agent | 未公开 | 待测试确认 | 官方未公开（有限接入候选，维持） | [TraeWork](https://www.trae.ai/work) |
 | Claude Code | 终端 CLI（官方另提供 IDE/桌面应用/网页入口） | `~/.claude/skills/`；`.claude/skills/`；企业托管目录；插件 `skills/`；`~/.claude/skills/synced/` | 官方文档未提及 | 官方明确 | [Claude Code Skills](https://code.claude.com/docs/en/skills) |
 | Claude Desktop | 桌面聊天应用 | 无公开稳定本地目录（Customize > Skills 上传 ZIP，账号/组织管理） | 官方文档未提及 | 官方明确（无本地目录） | [Claude Desktop](https://support.claude.com/en/articles/10065433-install-claude-desktop)、[Use skills in Claude](https://support.claude.com/en/articles/12512180-use-skills-in-claude) |
-| DeepSeek Harness Desktop / Web | 桌面端 Electron shell 与 Web 客户端 | 两端共用六类 Skill 根：项目 `.dsh/skills`、项目 `.agents/skills`、`customSkillDirs`、`~/.dsh/skills`（跳过 `.system`）、`~/.agents/skills`、bundled 根 | 两端 Skill provider 相同；`.agents/skills` 是显式标准根 | 用户提供的 Desktop/Web 目录识别核验；官方 provider 文档作规则依据 | [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md) |
-| MiniMax Code | 桌面端、终端 TUI/CLI、ACP | 共享数据根 `~/.minimax` 下的 `skills/`；桌面标准根另有 `.builtin-skills/` 与 `agents/<agent>/skills/`；工作区根见官方文档 | CLI 与桌面共用数据根；`~/.agents/skills` 对桌面实测生效，CLI 未确认 | Windows 本机确认桌面三个运行时根；CLI 与桌面共享数据根为本机核验 | [MiniMax Code](https://github.com/MiniMax-AI/minimax-code)、[TUI capabilities](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md)、[Desktop download](https://agent.minimax.io/download) |
+| DeepSeek Harness Desktop / Web | 桌面端 Electron shell 与 Web 客户端 | 官方 provider 共用六类根及优先级：项目 `.dsh/skills`、项目 `.agents/skills`、配置 `customSkillDirs`、`<dshHome>/skills`（跳过 `.system`）、`<agentsHome>/skills`、配置 `bundledSkillDir` | `.agents/skills` 为共享目录；custom/bundled 只有读取真实活动配置后才能定位，bundled 按只读处理；项目与用户根由工作区及 Harness home 归属 | 官方 Desktop README + Skills provider 文档；历史 Windows/Web 路径观察不替代当前 macOS Desktop 验收 | [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[Skills](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)、[Releases](https://github.com/deepseek-ai/deepseek-harness/releases) |
+| MiniMax Code | 桌面端、终端 TUI/CLI、ACP | CLI 官方文档定义 CLI 数据根、`MINIMAX_DATA_DIR` / `MAVIS_DATA_DIR` 优先级与 profile 数据目录；Desktop 的 `.builtin-skills`、`skills/`、`agents/<agent>/skills/` 及共享 `.agents/skills` 仅有 2026-10-12 Windows 3.1.1.171 现场证据 | 不把 CLI 官方根外推为 Desktop 路径；Desktop macOS 根、当前版本、环境变量覆盖与跨 Agent 所有权仍未核实 | 官方 Desktop 产品页确认 macOS/Windows 与本地项目能力，但未公开路径；用户提供的 Windows 运行时权限日志确认当次扫描根 | [MiniMax Code Desktop](https://agent.minimax.io/download)、[官方 CLI 安装与数据目录](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/installation.md)、[CLI Skill 目录链接能力](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md) |
 
 补充约束：
 
@@ -505,6 +505,13 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 主要来源：[Pi Skills 官方文档](https://pi.dev/docs/latest/skills)、[Pi Settings 官方文档](https://pi.dev/docs/latest/settings)、[Pi coding-agent 官方 README](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)、[Pi coding-agent 官方仓库](https://github.com/badlogic/pi-mono)。资料复核日期：2026-09-12。
 
 ### 5.22 DeepSeek Harness
+### 2026-10-15 复核与 ADP-DISC 适配边界
+
+- 官方 Releases 页面截至 2026-10-15 列出的最新 Harness 预发布 tag 为 `v0.2.1-alpha.3`（2026-10-14）；Desktop README 说明 Electron shell 与 `@deepseek-ai/dsh` 使用同一精确版本。当前 macOS 工作站的 `dsh --version` 输出 `0.1.5-rc.1`，这是可选 CLI 的本机版本，不代表已安装 Desktop 版本；本机未发现 DeepSeek Harness Desktop 应用，不能据此记录 Desktop 真机路径/版本通过。
+- 官方 Skills provider 的六层顺序为 project-dsh、project-agents、custom、user-dsh、user-agents、bundled（rank 100—600）。桌面官方说明支持 `$DSH_HOME`，但 SkillHub 现有 TUI/Web profile 只列出固定的项目/用户 `.dsh/skills` 与共享 `.agents/skills`；`customSkillDirs` 和 `bundledSkillDir` 必须来自实际活动配置，不能猜路径。`bundled` 是打包来源，只读；`<dshHome>/skills/.system` 不进入普通用户 Skill 扫描。目录被发现不证明加载或调用。
+- 隔离夹具核对现有发现测试已覆盖“用户 `.dsh` 根可识别但 Skill 子目录缺失”以及“只有共享 `.agents/skills` 时不冒认 DeepSeek 品牌”。ADP-DEEP 还须以临时 `DSH_HOME`/workspace 验证动态根、custom/bundled 条件、只读归属、拒绝权限、重复物理路径及 Windows/macOS 分隔符；不使用真实用户 Skill 内容。
+- 官方 Desktop README 还明确区分 Desktop 拥有的 `$DSH_HOME/profiles/desktop` 与 CLI 可执行包、插件激活/锁文件；SkillHub 只处理已证实的 Skill 根，不接管 Harness profile 可执行状态或 app 包。
+
 
 本文中的 DeepSeek Harness 指 DeepSeek 官方的 `dsh` Agent Harness 开发者预览，不是单独的 DeepSeek 模型或 API 接入。其能力由插件组合提供，Skill 子系统由本地文件 provider、打包 provider 和 Consumer 共同组成；SkillHub 应把它作为独立的本地文件管理 profile。
 
@@ -529,9 +536,16 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 - 调用证据：官方 runtime 有 `ctx.skills.list()`、`ctx.skills.get()`、模型侧 `skill` tool 和用户侧 Skill catalog，但没有稳定的按 Skill 使用次数接口；SkillHub 不把 session log 中的事件直接等价为完整调用统计。
 - 结论：DeepSeek Harness CLI/TUI/Web/Desktop 均为完整适配候选。预置 profile 覆盖六类根，并按 rank 100→600 保留同名覆盖关系；`~/.dsh/skills/.system` 排除在普通用户 Skill 扫描之外，Web bundled 根默认未设置，`customSkillDirs` 默认为空但可由 `cordis` preset 注入应用内目录。仍需按适用 host 验证 custom、bundled、刷新和链接边界；当前软件实现尚不等于已通过每个桌面/Web/TUI 的真实部署验收。
 
-主要来源：[DeepSeek Harness 官方介绍](https://www.deepseek.com/en/harness/)、[DeepSeek 官方下载页](https://www.deepseek.com/en/download/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Desktop 官方说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)。资料复核日期：2026-10-12（桌面版）；原 Skill provider 规则复核日期：2026-09-12。
+主要来源：[DeepSeek Harness 官方介绍](https://www.deepseek.com/en/harness/)、[DeepSeek 官方下载页](https://www.deepseek.com/en/download/)、[DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)、[DeepSeek Harness Desktop 官方说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md)、[DeepSeek Harness Skills 官方文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/skills.md)、[官方 Releases](https://github.com/deepseek-ai/deepseek-harness/releases)。资料复核日期：2026-10-15。
 
 ### 5.23 MiniMax Code
+### 2026-10-15 复核与 ADP-DISC 适配边界
+
+- MiniMax 官方 Desktop 下载页确认 macOS/Windows 桌面形态和本地项目访问，但没有公布 Desktop Skill 文件根。官方 `minimax-code` 仓库文档针对 CLI：发布 npm 与源码 CLI 默认数据目录为 `~/.minimax`，选择 profile 时使用独立 profile 数据目录；`MINIMAX_DATA_DIR` 优先于兼容回退 `MAVIS_DATA_DIR`。这些是 CLI 契约，不能直接推出 Desktop 使用同一环境变量、目录或 profile 规则。
+- Desktop 根仍以已存档的 Windows 现场证据为边界：版本 `3.1.1.171` 当次日志观察到数据根下 `.builtin-skills/`、`skills/`、`agents/<agent>/skills/`，并确认当次桌面可读共享 `.agents/skills`。内置根只读；Agent 专属根归属当前 Agent/profile；`.agents/skills` 是共享目录。插件缓存和 `app.asar` 资源不作为普通可写目标。上述是一次 Windows 版本快照，不等于所有版本或 macOS 结论。
+- 当前 macOS 工作站未安装 MiniMax Code Desktop，因此 Desktop macOS 路径与版本仍待现场核验。下一步 ADP-MINI 先按 Windows 有证据范围实现；macOS 未经本机桌面及隔离 profile 验证，不开放猜测路径。测试需显式使用隔离 profile/data root，先验证环境变量实际归属客户端，再分别核验用户、Agent 专属、共享和内置只读所有权；同名或相似路径不能跨 profile 合并。
+- MiniMax 官方 CLI 公开的 workspace `.minimax/skills`、`.agents/skills`、`.claude/skills` 与目录链接能力只供 CLI/ACP 对照；不作为 Desktop profile fixture。Desktop 项目根和动态 Agent 根须由后续可复核桌面证据补充。
+
 
 本文中的 MiniMax Code 指 MiniMax 官方本地 Agent 产品，包括桌面端和开源仓库公开的 `mcode` 终端 TUI、headless CLI 与 ACP；MiniMax Agent 网页版是云端任务产品，不因同品牌或可创建 Skills 而成为本地文件管理目标。MiniMax Code 的 Skill 支持以 Agent Skills 目录型 `SKILL.md` 为主，客户端 profile 必须区分 CLI/ACP 与桌面端，不能把仓库公开范围误当成桌面应用源码或全部内部契约。
 
