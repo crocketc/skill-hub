@@ -78,6 +78,7 @@ import {
   SkillFiltersAdvanced,
 } from "./SkillFilters";
 import { BatchTagDialog, type BatchTagAction } from "./BatchTagDialog";
+import { BatchCombinationDialog, type BatchCombinationAction } from "./BatchCombinationDialog";
 import { SkillQuickDrawer } from "./SkillQuickDrawer";
 import type { SecurityFacade } from "../security/api";
 import type { LlmAdminFacade } from "../settings/llmApi";
@@ -136,10 +137,12 @@ interface PreferenceStatusProps {
 
 interface BatchBarProps {
   barRef: Ref<HTMLElement>;
+  canEditCombinations: boolean;
   canEditTags: boolean;
   checkUpdatesPending?: boolean;
   onDispatch: () => void;
   onCheckUpdates?: () => void;
+  onCollectionAction: (action: BatchCombinationAction) => void;
   onClear: () => void;
   onDelete: () => void;
   onSelectAll: () => void;
@@ -313,10 +316,12 @@ function PreferenceStatus({
 
 function BatchBar({
   barRef,
+  canEditCombinations,
   canEditTags,
   checkUpdatesPending,
   onDispatch,
   onCheckUpdates,
+  onCollectionAction,
   onClear,
   onDelete,
   onSelectAll,
@@ -373,6 +378,16 @@ function BatchBar({
             </Button>
             <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
               {t("skillLibrary.page.batch.removeTags")}
+            </Button>
+          </>
+        ) : null}
+        {canEditCombinations ? (
+          <>
+            <Button onClick={() => onCollectionAction("add")} size="sm" variant="ghost">
+              {t("skillLibrary.page.batch.addCombinations")}
+            </Button>
+            <Button onClick={() => onCollectionAction("remove")} size="sm" variant="ghost">
+              {t("skillLibrary.page.batch.removeCombinations")}
             </Button>
           </>
         ) : null}
@@ -458,6 +473,9 @@ export function SkillLibraryPage({
   // 危险通知走全局 alert 通道；批量错误随选择变更经 dismissByKind 撤销。
   const { dismissByKind, notify } = useAppNotifications();
   const [batchTagAction, setBatchTagAction] = useState<BatchTagAction>();
+  const [batchCollectionAction, setBatchCollectionAction] = useState<BatchCombinationAction>();
+  const [batchCollectionPending, setBatchCollectionPending] = useState(false);
+  const [batchCollectionError, setBatchCollectionError] = useState<string>();
   // P1-08：工具栏第二行（已保存视图）可折叠；搜索与模式开关保持在第一行。
   const [toolbarOpen, setToolbarOpen] = useState(true);
   // M-21 IA 重排：高级筛选带（工具栏第二 band）开合；窄窗口默认折叠，
@@ -926,6 +944,113 @@ export function SkillLibraryPage({
           tone: "danger",
         });
       }
+    }
+  };
+
+  const applyBatchCollections = async (
+    action: BatchCombinationAction,
+    combinationNames: string[],
+  ) => {
+    const listCombinations = facade.listCombinations?.bind(facade);
+    const updateCombination = facade.updateCombination?.bind(facade);
+    if (!listCombinations || !updateCombination || combinationNames.length === 0 || batchCollectionPending) return;
+
+    setBatchCollectionPending(true);
+    setBatchCollectionError(undefined);
+    try {
+      const selected = await materializeSelectedSkills();
+      if (selected.length === 0) {
+        setBatchCollectionError(t("skillLibrary.page.batch.emptyCollectionSelection"));
+        return;
+      }
+
+      // 重读最新组合成员后再计算增删，防止用打开对话框时的旧快照覆盖并发变化。
+      const combinations = await listCombinations();
+      const combinationsByName = new Map(combinations.map((combination) => [combination.name, combination]));
+      const refreshedCombinations = combinations.map((combination) => ({
+        ...combination,
+        members: [...combination.members],
+      }));
+      const selectedIds = new Set(selected.map((skill) => skill.id));
+      const outcomes: BatchOutcome[] = [];
+
+      for (const name of combinationNames) {
+        const combination = combinationsByName.get(name);
+        if (!combination) {
+          outcomes.push(...selected.map((skill) => ({
+            id: `${name}:${skill.id}`,
+            label: `${skill.name} · ${name}`,
+            message: t("skillLibrary.page.batch.combinationMissing"),
+            status: "failed" as const,
+          })));
+          continue;
+        }
+
+        const existingIds = new Set(combination.members);
+        const changedSkills = selected.filter((skill) =>
+          action === "add" ? !existingIds.has(skill.id) : existingIds.has(skill.id),
+        );
+        if (changedSkills.length === 0) {
+          outcomes.push(...selected.map((skill) => ({
+            id: `${name}:${skill.id}`,
+            label: `${skill.name} · ${name}`,
+            status: "skipped" as const,
+          })));
+          continue;
+        }
+
+        const changedIds = new Set(changedSkills.map((skill) => skill.id));
+        const nextMembers = action === "add"
+          ? [...new Set([...combination.members, ...changedIds])]
+          : combination.members.filter((skillId) => !selectedIds.has(skillId));
+        try {
+          await updateCombination(name, nextMembers);
+          const refreshed = refreshedCombinations.find((item) => item.name === name);
+          if (refreshed) refreshed.members = nextMembers;
+          outcomes.push(...selected.map((skill) => ({
+            id: `${name}:${skill.id}`,
+            label: `${skill.name} · ${name}`,
+            status: changedIds.has(skill.id) ? "succeeded" as const : "skipped" as const,
+          })));
+        } catch (reason: unknown) {
+          const message = describeError(reason, "skillLibrary.page.batch.combinationOutcomeError");
+          outcomes.push(...selected.map((skill) => ({
+            id: `${name}:${skill.id}`,
+            label: `${skill.name} · ${name}`,
+            ...(changedIds.has(skill.id) ? { message, status: "failed" as const } : { status: "skipped" as const }),
+          })));
+        }
+      }
+
+      const failedCount = outcomes.filter((outcome) => outcome.status === "failed").length;
+      const succeededCount = outcomes.filter((outcome) => outcome.status === "succeeded").length;
+      queryClient.setQueryData(skillLibraryKeys.combinations(), refreshedCombinations);
+      // 列表和组合目录都标为过期，但只主动重读当前技能页。对话框仍挂载时
+      // 避免根前缀同时重查组合，造成重复读取；组合管理/抽屉下次打开会重读。
+      await queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root, refetchType: "none" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: skillLibraryKeys.combinations(), refetchType: "none" }),
+        queryClient.invalidateQueries({ queryKey: skillLibraryKeys.page(query) }),
+      ]);
+      setBatchCollectionAction(undefined);
+      notify({
+        source: "library",
+        detailNode: <BatchOperationSummary outcomes={outcomes} />,
+        kind: "batch-collections",
+        title: t(
+          failedCount > 0
+            ? "skillLibrary.page.batchCollections.partialFailure"
+            : succeededCount > 0
+              ? "skillLibrary.page.batchCollections.done"
+              : "skillLibrary.page.batchCollections.noChanges",
+        ),
+        tone: failedCount > 0 ? "danger" : succeededCount > 0 ? "success" : "info",
+      });
+    } catch (reason: unknown) {
+      // 技能范围或最新组合清单未能读取时保持对话框打开；没有发起任何写入。
+      setBatchCollectionError(describeError(reason, "skillLibrary.page.batch.combinationsLoadError"));
+    } finally {
+      setBatchCollectionPending(false);
     }
   };
 
@@ -1667,10 +1792,15 @@ export function SkillLibraryPage({
       {selectedBatchTarget ? (
         <BatchBar
           barRef={setBatchBarElement}
+          canEditCombinations={Boolean(facade.listCombinations && facade.updateCombination)}
           canEditTags={Boolean(facade.saveSkillMetadata)}
           checkUpdatesPending={sourceUpdatesPending}
           onDispatch={startBatchDispatch}
           onCheckUpdates={facade.checkSourceUpdates ? startBatchUpdateCheck : undefined}
+          onCollectionAction={(action) => {
+            setBatchCollectionError(undefined);
+            setBatchCollectionAction(action);
+          }}
           onClear={() => {
             changeSelection({ kind: "none" });
           }}
@@ -1699,6 +1829,20 @@ export function SkillLibraryPage({
             setBatchTagAction(undefined);
             void applyBatchTags(batchTagAction, tags);
           }}
+        />
+      ) : null}
+
+      {selectedBatchTarget && batchCollectionAction && facade.listCombinations ? (
+        <BatchCombinationDialog
+          action={batchCollectionAction}
+          count={selectionCount(selectedBatchTarget)}
+          error={batchCollectionError}
+          listCombinations={facade.listCombinations.bind(facade)}
+          onCancel={() => {
+            if (!batchCollectionPending) setBatchCollectionAction(undefined);
+          }}
+          onConfirm={(combinationNames) => void applyBatchCollections(batchCollectionAction, combinationNames)}
+          pending={batchCollectionPending}
         />
       ) : null}
 

@@ -38,6 +38,18 @@ export function SkillLibraryPreview() {
       preset: "standard",
       widthPx: drawerWidthForPreset("standard", window.innerWidth),
     });
+    if (search.has("batchCollections")) {
+      const combinations = [
+        { name: "Document toolkit", members: ["skill-pdf", "skill-preview-only"] },
+        { name: "Research toolkit", members: ["skill-docx"] },
+      ];
+      previewFacade.listCombinations = async () =>
+        combinations.map((combination) => ({ ...combination, members: [...combination.members] }));
+      previewFacade.updateCombination = async (name, members) => {
+        const existing = combinations.find((combination) => combination.name === name);
+        if (existing) existing.members = [...members];
+      };
+    }
     // 抽屉深链上下文（?skill=…）：按真实契约补齐 W3-6 物化根路径与 W3-7
     // 组合清单，让快捷抽屉的主体位置/所属组合模块可交互；无参预览保持
     // 精简列表，不影响库页其他预览场景。

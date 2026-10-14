@@ -21,6 +21,7 @@ import {
 } from "./libraryViewContext";
 import {
   SkillLibraryUnavailableError,
+  skillLibraryKeys,
   type LibraryViewMode,
   type SavedSkillView,
   type SkillDrawerPreferences,
@@ -821,10 +822,12 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual([
-      // 当前已接通：派发、标签、导出向导。
+      // 当前已接通：派发、标签、组合变更与导出向导。
       "Add to…",
       "Add tags",
       "Remove tags",
+      "Batch add to combinations",
+      "Batch remove from combinations",
       "Start export",
       // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills from library",
@@ -843,6 +846,17 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
       within(batchBar).getByRole("button", { name: "Clear selection" }),
     ).toHaveClass("sh-button--ghost");
     expect(within(actions as HTMLElement).queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+  });
+
+  it("hides batch combination actions when the facade lacks real combination commands", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.updateCombination = undefined;
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+
+    expect(screen.queryByRole("button", { name: "Batch add to combinations" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Batch remove from combinations" })).not.toBeInTheDocument();
   });
 
   it("cleans legacy archived URL filters without selecting skills", async () => {
@@ -2089,6 +2103,114 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(view.router.state.location.pathname).toBe("/deploy");
     expect(new URLSearchParams(view.router.state.location.search).getAll("skill")).toEqual(["skill-docx", "skill-pdf"]);
     expect(facade.calls.emitBatchIntent).not.toContainEqual(expect.objectContaining({ action: "add_to" }));
+  });
+
+  it("adds the selected Skills to chosen combinations without replacing other members", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn()
+      .mockResolvedValueOnce([
+        { name: "文档工具", members: ["skill-pdf", "skill-unrelated"] },
+        { name: "研发工具", members: ["skill-unrelated-2"] },
+      ])
+      .mockResolvedValueOnce([
+        { name: "文档工具", members: ["skill-pdf", "skill-concurrently-added"] },
+        { name: "研发工具", members: ["skill-unrelated-2"] },
+      ]);
+    facade.updateCombination = vi.fn().mockResolvedValue(undefined);
+    const view = renderLibrary({ facade });
+    const invalidate = vi.spyOn(view.queryClient, "invalidateQueries");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch add to combinations" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Batch add to combinations" });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "文档工具" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batch add to combinations" }));
+
+    await waitFor(() => expect(facade.updateCombination).toHaveBeenCalledWith(
+      "文档工具",
+      ["skill-pdf", "skill-concurrently-added", "skill-docx"],
+    ));
+    expect(facade.updateCombination).toHaveBeenCalledTimes(1);
+    expect(facade.listCombinations).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: skillLibraryKeys.combinations(), refetchType: "none" });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: skillLibraryKeys.root, refetchType: "none" });
+    expect(await screen.findByTestId("batch-summary")).toHaveTextContent("1 succeeded");
+  });
+
+  it("removes only selected Skills from chosen combinations and preserves other members", async () => {
+    const facade = createMockSkillLibraryFacade();
+    const combinations = [
+      { name: "文档工具", members: ["skill-pdf", "skill-docx", "skill-unrelated"] },
+      { name: "PDF 工具", members: ["skill-pdf", "skill-unrelated-2"] },
+    ];
+    facade.listCombinations = vi.fn().mockResolvedValue(combinations);
+    facade.updateCombination = vi.fn().mockResolvedValue(undefined);
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch remove from combinations" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Batch remove from combinations" });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "文档工具" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batch remove from combinations" }));
+
+    await waitFor(() => expect(facade.updateCombination).toHaveBeenCalledWith(
+      "文档工具",
+      ["skill-unrelated"],
+    ));
+    expect(facade.updateCombination).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("batch-summary")).toHaveTextContent("2 succeeded");
+  });
+
+  it("reports per-Skill outcomes when a selected combination update fails", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn().mockResolvedValue([
+      { name: "文档工具", members: ["skill-pdf", "skill-unrelated"] },
+      { name: "研发工具", members: [] },
+    ]);
+    facade.updateCombination = vi.fn()
+      .mockRejectedValueOnce(new Error("combination write failed"))
+      .mockResolvedValueOnce(undefined);
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch add to combinations" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Batch add to combinations" });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "文档工具" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "研发工具" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batch add to combinations" }));
+
+    const summary = await screen.findByTestId("batch-summary");
+    expect(facade.updateCombination).toHaveBeenNthCalledWith(2, "研发工具", ["skill-docx", "skill-pdf"]);
+    expect(summary).toHaveTextContent("1 skipped");
+    expect(summary).toHaveTextContent("1 failed");
+    expect(summary).toHaveTextContent("2 succeeded");
+    expect(within(summary).getByText("DOCX Writer · 文档工具")).toBeVisible();
+    expect(within(summary).getByText("combination write failed")).toBeVisible();
+  });
+
+  it("keeps the dialog open and does not write if the latest combination list cannot be read", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.listCombinations = vi.fn()
+      .mockResolvedValueOnce([{ name: "文档工具", members: [] }])
+      .mockRejectedValueOnce(new Error("combination read failed"));
+    facade.updateCombination = vi.fn().mockResolvedValue(undefined);
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch add to combinations" }));
+    const dialog = await screen.findByRole("dialog", { name: "Batch add to combinations" });
+    fireEvent.click(await within(dialog).findByRole("checkbox", { name: "文档工具" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Batch add to combinations" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("combination read failed");
+    expect(facade.updateCombination).not.toHaveBeenCalled();
+    expect(dialog).toBeVisible();
   });
 
   it("carries a reverse-launch target from agent or project detail into the deploy URL", async () => {

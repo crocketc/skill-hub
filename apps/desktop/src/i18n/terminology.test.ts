@@ -264,6 +264,8 @@ it("locks the frozen action verbs verbatim", () => {
     ["projects.detail.launchDeployment", "添加到 Agent/项目", "Add to Agent/Project"],
     ["undeploy.eyebrow", "从 Agent/项目移除", "Remove from Agent/Project"],
     ["skillLibrary.page.batch.addTo", "添加到…", "Add to…"],
+    ["skillLibrary.page.batch.addCombinations", "批量加入组合", "Batch add to combinations"],
+    ["skillLibrary.page.batch.removeCombinations", "批量移出组合", "Batch remove from combinations"],
     ["deployment.batch.heading", "添加 {{count}} 个 Skill", "Add {{count}} Skills"],
   ];
   for (const [key, zh, en] of marquee) {

@@ -1420,6 +1420,8 @@
         "addTags": "Add tags",
         "addTagsDescription": "The entered tags will be added to every selected Skill.",
         "addTagsTitle": "Add tags",
+        "addCombinations": "Batch add to combinations",
+        "addCombinationsDescription": "Add the {{count}} selected Skills to the chosen combinations below. Existing members are kept.",
         "delete": "Delete selected Skills from library",
         "error": "The batch workflow could not be started",
         "export": "Submit export job",
@@ -1434,6 +1436,16 @@
         "removeTagsConfirmAction": "Confirm removal",
         "removeTagsRetained": "Retained: the Skill subject, content, and usage relationships stay unchanged.",
         "removeTagsRecovery": "Recovery: add the same tags back at any time; removals are not kept as history.",
+        "removeCombinations": "Batch remove from combinations",
+        "removeCombinationsDescription": "Remove the {{count}} selected Skills from the chosen combinations below. This does not delete Skills or change their contents.",
+        "combinationsLabel": "Choose combinations",
+        "combinationsLoading": "Loading combinations…",
+        "combinationsLoadError": "Combinations could not be loaded. Try again.",
+        "combinationsEmpty": "There are no combinations yet. Create one in the combination manager first.",
+        "openCombinationManager": "Open combination manager",
+        "emptyCollectionSelection": "No selected Skills remain in scope. Refresh the library and try again.",
+        "combinationMissing": "This combination no longer exists. Reopen the action and try again.",
+        "combinationOutcomeError": "Combination update failed ({{code}}).",
         "securityCheck": "Run security check",
         "tagOutcomeError": "Could not save tags ({{code}}).",
         "tagsHint": "Separate multiple tags with commas. Duplicate tags are ignored.",
@@ -1448,6 +1460,11 @@
       "batchTags": {
         "done": "Batch tag update finished",
         "partialFailure": "Batch tag update partially failed"
+      },
+      "batchCollections": {
+        "done": "Batch combination update finished",
+        "partialFailure": "Batch combination update partially failed",
+        "noChanges": "The selected combinations need no changes"
       },
       "batchRemovals": {
         "done": "Batch deletion finished",

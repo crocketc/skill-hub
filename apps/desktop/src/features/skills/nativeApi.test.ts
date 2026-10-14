@@ -710,6 +710,42 @@ describe("native combination export wiring", () => {
   });
 });
 
+describe("native combination membership wiring", () => {
+  beforeEach(() => {
+    vi.mocked(executeCommand).mockReset();
+    vi.mocked(queryApplication).mockReset();
+  });
+
+  it("reads the current combinations and updates membership through the native command", async () => {
+    vi.mocked(queryApplication).mockResolvedValueOnce({
+      type: "combinations",
+      payload: [{ name: "Writing stack", members: ["skill-1"] }],
+    } as unknown as AppQueryResult);
+    vi.mocked(executeCommand).mockResolvedValueOnce({
+      type: "operation_summary",
+      payload: {
+        operation_id: "op-combination-update",
+        phase: "committed",
+        message_code: "operation.update_combination.committed",
+        error_code: null,
+      },
+    } as unknown as AppCommandResult);
+
+    await expect(nativeSkillLibraryFacade.listCombinations?.()).resolves.toEqual([
+      { name: "Writing stack", members: ["skill-1"] },
+    ]);
+    await expect(
+      nativeSkillLibraryFacade.updateCombination?.("Writing stack", ["skill-1", "skill-2"]),
+    ).resolves.toBeUndefined();
+
+    expect(queryApplication).toHaveBeenCalledWith({ type: "list_combinations", payload: null });
+    expect(executeCommand).toHaveBeenCalledWith({
+      type: "update_combination",
+      payload: { name: "Writing stack", members: ["skill-1", "skill-2"] },
+    });
+  });
+});
+
 describe("native combination rename wiring", () => {
   it("sends rename_combination and returns the updated combination view", async () => {
     vi.mocked(executeCommand).mockResolvedValue({

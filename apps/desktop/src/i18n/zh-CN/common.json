@@ -1420,6 +1420,8 @@
         "addTags": "添加标签",
         "addTagsDescription": "输入的标签会添加到所有选中的 Skill。",
         "addTagsTitle": "批量添加标签",
+        "addCombinations": "批量加入组合",
+        "addCombinationsDescription": "把已选的 {{count}} 个 Skill 加入下方选择的组合；已存在的成员会保留。",
         "delete": "从库中删除所选 Skill",
         "error": "无法启动批量流程",
         "export": "提交导出任务",
@@ -1434,6 +1436,16 @@
         "removeTagsConfirmAction": "确认移除标签",
         "removeTagsRetained": "保留：Skill 本体、内容与使用关系均不受影响。",
         "removeTagsRecovery": "恢复：重新添加同名标签即可；移除操作不会自动记录历史。",
+        "removeCombinations": "批量移出组合",
+        "removeCombinationsDescription": "从下方选择的组合中移出已选的 {{count}} 个 Skill；不会删除 Skill 或更改其内容。",
+        "combinationsLabel": "选择组合",
+        "combinationsLoading": "正在读取组合…",
+        "combinationsLoadError": "无法读取组合，请重试。",
+        "combinationsEmpty": "暂无组合，请先到组合管理创建。",
+        "openCombinationManager": "打开组合管理",
+        "emptyCollectionSelection": "所选范围已没有可处理的 Skill，请刷新后重试。",
+        "combinationMissing": "此组合已不存在，请重新打开操作。",
+        "combinationOutcomeError": "组合调整失败（{{code}}）。",
         "securityCheck": "运行安全检查",
         "tagOutcomeError": "标签保存失败（{{code}}）。",
         "tagsHint": "多个标签请用逗号分隔，重复标签会自动合并。",
@@ -1448,6 +1460,11 @@
       "batchTags": {
         "done": "批量标签更新完成",
         "partialFailure": "批量标签更新部分失败"
+      },
+      "batchCollections": {
+        "done": "批量组合调整完成",
+        "partialFailure": "批量组合调整部分失败",
+        "noChanges": "所选组合无需调整"
       },
       "batchRemovals": {
         "done": "批量删除完成",
