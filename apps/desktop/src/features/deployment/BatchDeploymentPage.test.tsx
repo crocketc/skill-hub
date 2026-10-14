@@ -220,7 +220,9 @@ it("creates a pending Skill directory only after explicit confirmation", async (
 
   await renderBatchPage(facade, ["skill-pdf"]);
 
-  await user.click(await screen.findByRole("button", { name: "创建并加入派发" }));
+  const createAndDispatch = await screen.findByRole("button", { name: "创建并加入派发" });
+  expect(createAndDispatch).toHaveClass("sh-button--primary");
+  await user.click(createAndDispatch);
   expect(await screen.findByText("创建 Skill 目录？")).toBeVisible();
   expect(ensureTargetDirectory).not.toHaveBeenCalled();
 

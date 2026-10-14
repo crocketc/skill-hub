@@ -356,7 +356,9 @@ it("offers creation only when a target is explicitly missing", async () => {
   await renderDialog(facade);
 
   expect(await screen.findByText("待创建")).toBeVisible();
-  expect(screen.getByRole("button", { name: "创建并加入派发" })).toBeVisible();
+  const createAndDispatch = screen.getByRole("button", { name: "创建并加入派发" });
+  expect(createAndDispatch).toBeVisible();
+  expect(createAndDispatch).toHaveClass("sh-button--primary");
 });
 
 function cardModelFixture(memberIds: string[]): AgentCardModel {

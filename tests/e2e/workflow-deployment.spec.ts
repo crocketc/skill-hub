@@ -38,6 +38,22 @@ function conflictRow(page: Page, skillName: string, targetName: string) {
 }
 
 test.describe("deployment flow shell", () => {
+  test("creates a missing directory and continues the single dispatch flow", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=pending-single");
+
+    const createAndAdd = page.getByRole("button", { name: "Create and add" });
+    await expect(createAndAdd).toHaveClass(/sh-button--primary/);
+    await createAndAdd.click();
+    await expect(page.getByRole("heading", { name: "Create the Skill directory?" })).toBeVisible();
+    await page.getByRole("button", { name: "Create directory" }).click();
+
+    await expect(page.getByLabel("Preview Agent 1")).toBeChecked();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+    await expect(page.getByTestId("deployment-result")).toHaveCount(1);
+  });
+
   test("keeps the shared-directory chip inside its row and centers the target path", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/__preview/deployment?scenario=path-layout");
@@ -215,6 +231,22 @@ test.describe("deployment flow shell", () => {
 });
 
 test.describe("batch deployment flow", () => {
+  test("creates a missing directory and continues the batch dispatch flow", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=pending-batch");
+
+    const createAndAdd = page.getByRole("button", { name: "Create and add" });
+    await expect(createAndAdd).toHaveClass(/sh-button--primary/);
+    await createAndAdd.click();
+    await expect(page.getByRole("heading", { name: "Create the Skill directory?" })).toBeVisible();
+    await page.getByRole("button", { name: "Create directory" }).click();
+
+    await expect(page.getByLabel("Preview Agent 1")).toBeChecked();
+    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+    await expect(page.getByTestId("batch-summary")).toContainText("8 succeeded");
+  });
+
   test("uses the same read-only and supported-mode eligibility as the single flow", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/deployment?scenario=batch-target-eligibility");

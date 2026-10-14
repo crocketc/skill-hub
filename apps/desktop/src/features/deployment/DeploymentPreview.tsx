@@ -129,6 +129,8 @@ type PreviewScenario =
   | "batch-fallback"
   | "target-eligibility"
   | "batch-target-eligibility"
+  | "pending-single"
+  | "pending-batch"
   | "conflict-single"
   | "conflict-batch"
   | "conflict-stale-single"
@@ -151,6 +153,8 @@ const scenarios: readonly PreviewScenario[] = [
   "batch-fallback",
   "target-eligibility",
   "batch-target-eligibility",
+  "pending-single",
+  "pending-batch",
   "conflict-single",
   "conflict-batch",
   "conflict-stale-single",
@@ -165,12 +169,28 @@ const BATCH_SCENARIOS: readonly PreviewScenario[] = [
   "batch-partial",
   "batch-fallback",
   "batch-target-eligibility",
+  "pending-batch",
   "conflict-batch",
   "conflict-stale-batch",
 ];
 
 function isBatchScenario(scenario: PreviewScenario): boolean {
   return BATCH_SCENARIOS.includes(scenario);
+}
+
+function isPendingScenario(scenario: PreviewScenario): boolean {
+  return scenario === "pending-single" || scenario === "pending-batch";
+}
+
+function pendingTarget(created: boolean): DeploymentTarget {
+  const target = previewTargets(1)[0];
+  return {
+    ...target,
+    available: created,
+    writable: created,
+    directoryStatus: created ? "existing" : "missing",
+    physicalIdentityVerified: created,
+  };
 }
 
 function previewScenario(): PreviewScenario {
@@ -312,11 +332,13 @@ const SECURITY_ALERT_BLOCKED = {
 function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
   let previewAttempt = 0;
   let rejectStaleCommit = scenario.startsWith("conflict-stale-");
+  let pendingDirectoryCreated = false;
   return {
     listTargets: async () => {
       if (scenario === "unavailable") {
         throw new Error("preview.deploy_targets_unavailable");
       }
+      if (isPendingScenario(scenario)) return [pendingTarget(pendingDirectoryCreated)];
       return scenario === "target-eligibility" || scenario === "batch-target-eligibility" || scenario.startsWith("conflict-")
         ? previewTargetsForScenario(scenario)
         : previewTargets(3, scenario === "batch-bulk" || scenario === "path-layout", scenario === "path-layout");
@@ -352,6 +374,9 @@ function createBatchFacade(scenario: PreviewScenario): BatchDeploymentFacade {
           confirmationPreserved: preservedIds.has(pair.pairId),
         })),
       };
+    },
+    ensureTargetDirectory: async () => {
+      if (isPendingScenario(scenario)) pendingDirectoryCreated = true;
     },
     // 镜像生产结果投影：excluded→skipped、blocked/未确认回退→failed、
     // 其余→succeeded；结果行覆盖全部提交 selections（含排除项）。

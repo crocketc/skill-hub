@@ -579,7 +579,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                   description={t("deployment.targets.createDescription")}
                   onConfirm={() => void ensureTargetDirectory(pendingTarget)}
                   title={t("deployment.targets.createTitle")}
-                  trigger={<Button loading={creatingTargetId === pendingTarget.id} size="sm" variant="secondary">{t("deployment.targets.createAction")}</Button>}
+                  trigger={<Button loading={creatingTargetId === pendingTarget.id} size="sm" variant="primary">{t("deployment.targets.createAction")}</Button>}
                 />)}
               </div>
             );
