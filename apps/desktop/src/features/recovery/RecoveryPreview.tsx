@@ -38,7 +38,8 @@ function previewPhase(): OperationPhase {
 export function RecoveryPreview() {
   const facade = useMemo<OperationFacade>(() => {
     let detailAttempts = 0;
-    let hasReplacedContent = previewFlag("replaced");
+    let hasReplacedContent = previewFlag("replaced")
+      || window.localStorage.getItem("skillhub.preview.replacedBackup") === "1";
     return {
       get: async (operationId) => {
         if (previewFlag("detailError") && detailAttempts++ === 0) {
@@ -74,6 +75,7 @@ export function RecoveryPreview() {
       restoreDeploymentConflictBackup: async (backupId) => {
         if (backupId !== "preview-backup-1") throw new Error("replaced content was not found in preview");
         hasReplacedContent = false;
+        window.localStorage.removeItem("skillhub.preview.replacedBackup");
       },
     };
   }, []);

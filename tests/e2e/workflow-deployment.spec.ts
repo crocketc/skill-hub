@@ -33,6 +33,10 @@ function flowStatus(page: Page, regionName: string) {
   return page.getByRole("region", { name: regionName }).getByRole("status");
 }
 
+function conflictRow(page: Page, skillName: string, targetName: string) {
+  return page.getByTestId("disposition-row").filter({ hasText: skillName }).filter({ hasText: targetName });
+}
+
 test.describe("deployment flow shell", () => {
   test("keeps the shared-directory chip inside its row and centers the target path", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -260,7 +264,7 @@ test.describe("batch deployment flow", () => {
     await page.getByRole("button", { name: "Preview" }).click();
 
     // 五桶汇总如实呈现：未确认的回退计入「Still blocked」，不计为复制。
-    await expect(page.getByText("Links 0 · Full copies 0 · No change 0 · Excluded 0 · Still blocked 2")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 0 · No change 0 · Replaced 0 · Renamed 0 · Conflict skipped 0 · Excluded 0 · Still blocked 2")).toBeVisible();
 
     const copyGroup = page.getByTestId("disposition-group").filter({ hasText: "Full-copy dispatch is recommended" });
     await expect(copyGroup).toBeVisible();
@@ -269,7 +273,7 @@ test.describe("batch deployment flow", () => {
 
     // 确认后必须重新生成最终预览；确认经指纹校验被保留。
     await page.getByRole("button", { name: "Regenerate final preview" }).click();
-    await expect(page.getByText("Links 0 · Full copies 2 · No change 0 · Excluded 0 · Still blocked 0")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 2 · No change 0 · Replaced 0 · Renamed 0 · Conflict skipped 0 · Excluded 0 · Still blocked 0")).toBeVisible();
     await expect(copyGroup.getByTestId("confirmed-copy")).toHaveCount(2);
 
     await page.getByRole("button", { name: "Confirm and add" }).click();
@@ -290,7 +294,7 @@ test.describe("batch deployment flow", () => {
 
     // 排除与确认一样改变提交范围：必须经「Regenerate final preview」落地。
     await page.getByRole("button", { name: "Regenerate final preview" }).click();
-    await expect(page.getByText("Links 0 · Full copies 7 · No change 0 · Excluded 1 · Still blocked 0")).toBeVisible();
+    await expect(page.getByText("Links 0 · Full copies 7 · No change 0 · Replaced 0 · Renamed 0 · Conflict skipped 0 · Excluded 1 · Still blocked 0")).toBeVisible();
 
     await page.getByRole("button", { name: "Confirm and add" }).click();
     await expect(page.getByText("Adding finished", { exact: true })).toBeVisible();
@@ -311,6 +315,150 @@ test.describe("batch deployment flow", () => {
     await expect(page.getByRole("alert")).toContainText("not writable");
     await expect(page.getByRole("button", { name: "Confirm and add" })).toHaveCount(0);
     await expect(page.getByTestId("disposition-group")).toHaveCount(0);
+  });
+});
+
+test.describe("deployment conflict parity", () => {
+  const flows = [
+    {
+      name: "single-skill",
+      scenario: "conflict-single",
+      rows: [
+        ["Preview Skill", "Preview Agent 1"],
+        ["Preview Skill", "Preview Agent 2"],
+        ["Preview Skill", "Preview Agent 3"],
+      ] as const,
+      targets: ["Preview Agent 1", "Preview Agent 2", "Preview Agent 3"],
+    },
+    {
+      name: "batch",
+      scenario: "conflict-batch",
+      rows: [
+        ["Preview Skill 1", "Preview Agent 1"],
+        ["Preview Skill 2", "Preview Agent 1"],
+        ["Preview Skill 3", "Preview Agent 1"],
+      ] as const,
+      targets: ["Preview Agent 1"],
+    },
+  ];
+
+  for (const flow of flows) {
+    test(`shows matching replace, rename and skip receipts in the ${flow.name} flow`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/__preview/deployment?scenario=${flow.scenario}`);
+      for (const target of flow.targets) await page.getByLabel(target).check();
+      await page.getByRole("button", { name: "Preview" }).click();
+
+      const [replaceSkill, replaceTarget] = flow.rows[0];
+      const [renameSkill, renameTarget] = flow.rows[1];
+      const [skipSkill, skipTarget] = flow.rows[2];
+      const replaceRow = conflictRow(page, replaceSkill, replaceTarget);
+      const renameRow = conflictRow(page, renameSkill, renameTarget);
+      const skipRow = conflictRow(page, skipSkill, skipTarget);
+      await expect(replaceRow).toHaveCount(1);
+      await expect(renameRow).toHaveCount(1);
+      await expect(skipRow.getByRole("radio", { name: "Skip this target" })).toBeChecked();
+      await expect(replaceRow).toContainText("Dispatch consumer");
+
+      await replaceRow.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+      await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
+      await replaceRow.getByRole("checkbox", {
+        name: "I reviewed the shared-directory consumers and understand they may be affected.",
+      }).check();
+
+      await renameRow.getByRole("radio", { name: "Rename and dispatch as a new Skill" }).check();
+      const newName = renameRow.getByRole("textbox", { name: /New name/ });
+      await newName.fill("preview-reader-renamed");
+      await renameRow.getByRole("checkbox", {
+        name: "I reviewed the shared-directory consumers and understand they may be affected.",
+      }).check();
+      await expect(page.getByRole("button", { name: "Confirm and add" })).toBeEnabled();
+
+      if (flow.name === "batch") {
+        await expect(page.getByText(/Replaced 1 · Renamed 1 · Conflict skipped 1/)).toBeVisible();
+      }
+      await page.getByRole("button", { name: "Confirm and add" }).click();
+
+      await expect(page.getByText("deployment.results.status.message.skipped")).toHaveCount(0);
+      if (flow.name === "batch") {
+        const summary = page.getByTestId("batch-summary");
+        await expect(summary).toContainText("2 succeeded");
+        await expect(summary).toContainText("1 skipped");
+        await expect(summary.getByTestId("batch-outcome-skipped")).toContainText("Preview Skill 3 · Preview Agent 1");
+      } else {
+        const resultRows = page.getByTestId("deployment-result");
+        await expect(resultRows).toHaveCount(3);
+        const replacedResult = resultRows.filter({ hasText: "Replaced “Existing Skill" });
+        const renamedResult = resultRows.filter({ hasText: "preview-reader-renamed" });
+        const skippedResult = resultRows.filter({ hasText: "Preview Agent 3" });
+        await expect(replacedResult).toContainText("Replaced “Existing Skill");
+        await expect(renamedResult).toContainText("Dispatched successfully as the new name “preview-reader-renamed”.");
+        await expect(skippedResult).toContainText("Skipped");
+      }
+    });
+  }
+
+  for (const flow of [
+    { name: "single-skill", scenario: "conflict-stale-single", skill: "Preview Skill" },
+    { name: "batch", scenario: "conflict-stale-batch", skill: "Preview Skill 1" },
+  ]) {
+    test(`requires a fresh preview after the target changes in the ${flow.name} flow`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/__preview/deployment?scenario=${flow.scenario}`);
+      await page.getByLabel("Preview Agent 1").check();
+      await page.getByRole("button", { name: "Preview" }).click();
+
+      const row = conflictRow(page, flow.skill, "Preview Agent 1");
+      await expect(row.getByRole("radio", { name: "Replace the managed Skill at the target" })).toBeVisible();
+      await row.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+      await row.getByRole("checkbox", {
+        name: "I reviewed the shared-directory consumers and understand they may be affected.",
+      }).check();
+      await page.getByRole("button", { name: "Confirm and add" }).click();
+
+      await expect(page.locator(".sh-data-state[role='alert']")).toContainText("The target changed while being added.");
+      if (flow.name === "single-skill") await expect(page.getByTestId("deployment-result")).toHaveCount(0);
+      const refresh = page.getByRole("button", { name: "Regenerate final preview" });
+      await expect(refresh).toBeEnabled();
+      await refresh.click();
+
+      const refreshedRow = conflictRow(page, flow.skill, "Preview Agent 1");
+      await expect(refreshedRow).toContainText("Updated occupant after target drift");
+      await expect(refreshedRow.getByRole("radio", { name: "Skip this target" })).toBeChecked();
+      await expect(refreshedRow.getByRole("radio", { name: "Replace the managed Skill at the target" })).toHaveCount(0);
+      await page.getByRole("button", { name: "Confirm and add" }).click();
+      if (flow.name === "batch") {
+        const summary = page.getByTestId("batch-summary");
+        await expect(summary).toContainText("1 skipped");
+        await expect(summary.getByTestId("batch-outcome-skipped")).toContainText("Preview Skill 1 · Preview Agent 1");
+      } else {
+        await expect(page.getByTestId("deployment-result")).toHaveCount(1);
+        await expect(page.getByTestId("deployment-result")).toContainText("Skipped");
+      }
+    });
+  }
+
+  test("makes replaced original content available from the recovery page", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/__preview/deployment?scenario=conflict-single");
+    await page.getByLabel("Preview Agent 1").check();
+    await page.getByRole("button", { name: "Preview" }).click();
+
+    const row = conflictRow(page, "Preview Skill", "Preview Agent 1");
+    await row.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+    await row.getByRole("checkbox", {
+      name: "I reviewed the shared-directory consumers and understand they may be affected.",
+    }).check();
+    await page.getByRole("button", { name: "Confirm and add" }).click();
+    await expect(page.getByTestId("deployment-result")).toContainText("Replaced “Existing Skill");
+
+    await page.goto("/__preview/recovery");
+    await page.getByRole("tab", { name: "Replaced content" }).click();
+    await expect(page.getByText("preview-original-skill")).toBeVisible();
+    await page.getByRole("button", { name: "Restore this content" }).click();
+    const confirmation = page.getByRole("alertdialog");
+    await confirmation.getByRole("button", { name: "Confirm restore" }).click();
+    await expect(page.getByText("No replaced content can be restored right now.")).toBeVisible();
   });
 });
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { describeNativeError } from "../../api/nativeErrors";
+import { describeNativeError, nativeErrorCode } from "../../api/nativeErrors";
 import type { OperationTracker } from "../../platform/operationTracker";
 import { runTrackedOperation } from "../../platform/runTrackedOperation";
 import { useOptionalAppNotifications } from "../../ui/notifications";
@@ -69,6 +69,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
   const [confirmedSharedIds, setConfirmedSharedIds] = useState<Set<string>>(new Set());
   const [exclusionsDirty, setExclusionsDirty] = useState(false);
   const [confirmationsDirty, setConfirmationsDirty] = useState(false);
+  const [previewStale, setPreviewStale] = useState(false);
   const fingerprintsRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<BatchDeploymentResult[]>();
   const [listError, setListError] = useState<string>();
@@ -232,6 +233,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
         response.pairs.map((pair) => [pair.pairId, pair.confirmationFingerprint]),
       );
       setPreview(response);
+      setPreviewStale(false);
       setResults(undefined);
       // 排除项保留用户意图（后端预览不回传排除）；确认范围以后端显式判定
       // 恢复（14.7）：指纹漂移的确认不复活，重新要求用户处理。
@@ -247,6 +249,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       setExclusionsDirty(false);
       setConfirmationsDirty(false);
     } catch (reason) {
+      if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
@@ -345,6 +348,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
       setResults(committed);
       onCommitted?.(committed);
     } catch (reason) {
+      if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
       setCommitting(false);
@@ -403,7 +407,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
                     : t("deployment.status.results"),
                 };
 
-  const regenerateNeeded = exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
+  const regenerateNeeded = previewStale || exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
   const togglePair = (groupDisposition: string, pairId: string, checked: boolean) => {
     if (groupDisposition === "recommend_copy") {
       setConfirmationsDirty(true);
@@ -606,7 +610,7 @@ export function BatchDeploymentPage({ facade, skillIds, tracker, onCommitted, on
             noChange: finalSummary.noChange,
             excluded: finalSummary.excluded,
             blocked: finalSummary.blocked,
-            replace: finalSummary.replace,
+            replaced: finalSummary.replace,
             rename: finalSummary.rename,
             skip: finalSummary.skip,
           })}

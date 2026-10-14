@@ -111,7 +111,7 @@ function toPair(pair: NativePairPreview): DeploymentPairPreview {
 function resultMessage(outcome: NativePairCommitResult["outcome"]): string {
   if (outcome === "deployed") return "deployment.results.status.message.succeeded";
   if (outcome === "no_change") return "deployment.results.status.message.succeeded";
-  if (outcome === "excluded" || outcome === "skipped") return "deployment.results.status.message.skipped";
+  if (outcome === "excluded" || outcome === "skipped") return "deployment.results.status.skipped";
   if (outcome === "blocked") return "deployment.blockReason.committedBlocked";
   return "deployment.results.status.message.failed";
 }

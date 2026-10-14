@@ -80,6 +80,7 @@ export function DeploymentDialog({
   const [confirmedSharedIds, setConfirmedSharedIds] = useState<Set<string>>(new Set());
   const [exclusionsDirty, setExclusionsDirty] = useState(false);
   const [confirmationsDirty, setConfirmationsDirty] = useState(false);
+  const [previewStale, setPreviewStale] = useState(false);
   const fingerprintsRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<DeploymentResult[]>();
   const [listError, setListError] = useState<string>();
@@ -139,6 +140,7 @@ export function DeploymentDialog({
         response.pairs.map((pair) => [pair.pairId, pair.confirmationFingerprint]),
       );
       setPreview(response);
+      setPreviewStale(false);
       setResults(undefined);
       setExcludedIds(new Set());
       setConflictDecisions({});
@@ -152,6 +154,7 @@ export function DeploymentDialog({
       setConfirmationsDirty(false);
     } catch (reason) {
       setSecurityAlertBlocked(nativeErrorCode(reason) === "deployment.security_alert_blocked");
+      if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     }
   };
@@ -233,6 +236,7 @@ export function DeploymentDialog({
       onCommitted?.(withDisplayNames);
     } catch (reason) {
       setSecurityAlertBlocked(nativeErrorCode(reason) === "deployment.security_alert_blocked");
+      if (nativeErrorCode(reason) === "deployment.target_changed") setPreviewStale(true);
       setFlowError(describeNativeError(reason, (key, options) => String(t(key as never, options as never)), "deployment.errors.generic"));
     } finally {
       setCommitting(false);
@@ -300,7 +304,7 @@ export function DeploymentDialog({
                     : t("deployment.status.results"),
                 };
 
-  const regenerateNeeded = exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
+  const regenerateNeeded = previewStale || exclusionsDirty || confirmationsDirty || pendingConfirmationIds.length > 0;
   const togglePair = (groupDisposition: string, pairId: string, checked: boolean) => {
     if (groupDisposition === "recommend_copy") {
       setConfirmationsDirty(true);

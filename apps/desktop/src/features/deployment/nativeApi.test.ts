@@ -281,6 +281,7 @@ it("uses the server default skip for a conflict when no choice has changed", asy
     },
   });
   expect(results[0].status).toBe("skipped");
+  expect(results[0].message).toBe("deployment.results.status.skipped");
 });
 
 it("projects rename, replacement, and recovery-required receipts without exposing internal ids", async () => {

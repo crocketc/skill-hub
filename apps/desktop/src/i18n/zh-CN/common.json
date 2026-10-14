@@ -2178,7 +2178,7 @@
       "nonAtomicNotice": "批次将逐个 Skill、逐个目标提交，不是原子操作：部分成功不会自动回滚已成功的部分。",
       "committing": "正在添加，请稍候；批次非原子，逐项结果将在完成后展示。",
       "technicalDetails": "技术详情",
-      "finalSummary": "链接 {{link}} · 完整拷贝 {{copy}} · 无需变更 {{noChange}} · 替换 {{replace}} · 换名派发 {{rename}} · 跳过冲突 {{skip}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
+      "finalSummary": "链接 {{link}} · 完整拷贝 {{copy}} · 无需变更 {{noChange}} · 替换 {{replaced}} · 换名派发 {{rename}} · 跳过冲突 {{skip}} · 已排除 {{excluded}} · 仍受阻 {{blocked}}"
     },
     "mode": {
       "label": "派发方式",
