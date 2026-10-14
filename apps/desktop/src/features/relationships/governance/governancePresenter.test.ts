@@ -54,6 +54,33 @@ describe("presentGovernanceRow（统一使用关系）", () => {
     expect(presentation.summaryKey).not.toBe("relationships.governance.shortName.link_abnormal");
   });
 
+  it("separates an unverified form and identity from a real user decision", () => {
+    const unknownIdentity = presentGovernanceRow(usageView({
+      skill_id: null,
+      target: { ...usageView().target, directory_id: null, recognition: null },
+      entry_key: null,
+      form: null,
+      health_reasons: ["unable_to_verify", "user_confirmation"],
+    }));
+
+    expect(unknownIdentity.formKey).toBe("relationships.governance.form.unknown");
+    expect(unknownIdentity.summaryKey).toBe("relationships.governance.shortName.unable_to_verify");
+
+    const conflictingIdentity = presentGovernanceRow(usageView({
+      physical_source_ids_evidence: ["source-a", "source-b"],
+      health_reasons: ["user_confirmation"],
+    }));
+    expect(conflictingIdentity.summaryKey).toBe("relationships.governance.shortName.unable_to_verify");
+
+    const confirmedIdentityNeedsDecision = presentGovernanceRow(usageView({
+      form: null,
+      health_reasons: ["user_confirmation"],
+    }));
+
+    expect(confirmedIdentityNeedsDecision.formKey).toBe("relationships.governance.form.unknown");
+    expect(confirmedIdentityNeedsDecision.summaryKey).toBe("relationships.governance.shortName.user_confirmation");
+  });
+
   it("maps every health reason and preserves co-occurring reasons", () => {
     const reasons: UsageHealthReason[] = [
       "normal",

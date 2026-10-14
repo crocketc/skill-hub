@@ -177,9 +177,7 @@ export function GovernanceRelationIdentity({ row }: { row: UsageGovernanceRow })
   const relationId = usageGovernanceRowId(row);
   const presentation = presentGovernanceRow(row.usage);
   const noAction = classifyUsageRelation(row.usage) === "no_action";
-  const relationshipLabel = presentation.formKey
-    ? t(presentation.formKey as never)
-    : t("relationships.governance.form.unknown");
+  const relationshipLabel = t(presentation.formKey as never);
 
   return (
     <div className="sh-governance__identity">
@@ -238,8 +236,8 @@ export function GovernanceRelationTargetSummary({ row }: { row: UsageGovernanceR
 
 export function GovernanceRelationSource({ row }: { row: UsageGovernanceRow }) {
   const { t } = useTranslation();
-  const form = row.usage.form;
-  return <>{t(form ? `relationships.governance.form.${form}` as never : "relationships.governance.form.unknown")}</>;
+  const presentation = presentGovernanceRow(row.usage);
+  return <>{t(presentation.formKey as never)}</>;
 }
 
 export function GovernanceRelationTarget({ row }: { row: UsageGovernanceRow }) {

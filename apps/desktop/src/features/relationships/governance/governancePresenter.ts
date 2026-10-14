@@ -15,11 +15,11 @@ export interface GovernanceRowPresentation {
   summaryKey: string;
   descriptionKey: string;
   reasonKeys: Array<RelationGovernanceReason | UsageHealthReason>;
-  formKey?: string | null;
+  formKey: string;
   tone: GovernancePresentationTone;
 }
 
-export interface LegacyGovernanceRowPresentation extends Omit<GovernanceRowPresentation, "reasonKeys"> {
+export interface LegacyGovernanceRowPresentation extends Omit<GovernanceRowPresentation, "formKey" | "reasonKeys"> {
   reasonKeys: RelationGovernanceReason[];
 }
 
@@ -60,7 +60,7 @@ export function presentGovernanceRow(view: UsageRelationView): GovernanceRowPres
     summaryKey: `relationships.governance.shortName.${summary}`,
     descriptionKey: `relationships.governance.shortName.${summary}Description`,
     reasonKeys,
-    formKey: view.form ? `relationships.governance.form.${view.form}` : null,
+    formKey: `relationships.governance.form.${view.form ?? "unknown"}`,
     tone,
   };
 }
@@ -126,6 +126,9 @@ function usageSummary(
     classifyUsageRelation(view) === "no_action"
     && view.target.directory_role === "builtin"
   ) return "builtin_original";
+  if (reasons.includes("user_confirmation") && !hasConfirmedUsageIdentity(view)) {
+    return "unable_to_verify";
+  }
   const priority: readonly UsageHealthReason[] = [
     "user_confirmation",
     "link_abnormal",
@@ -139,6 +142,14 @@ function usageSummary(
   if (issue) return issue;
   if (view.management === "unmanaged") return "unmanaged";
   return "healthy";
+}
+
+function hasConfirmedUsageIdentity(view: UsageRelationView): boolean {
+  return view.skill_id !== null
+    && view.target.directory_id !== null
+    && view.entry_key !== null
+    && view.entry_key.directory_id === view.target.directory_id
+    && new Set(view.physical_source_ids_evidence).size <= 1;
 }
 
 function usageTone(summary: string): GovernancePresentationTone {

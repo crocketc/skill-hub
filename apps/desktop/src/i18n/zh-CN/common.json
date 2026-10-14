@@ -3361,7 +3361,7 @@
       "form": {
         "link": "链接",
         "full_copy": "完整拷贝",
-        "unknown": "形式待确认"
+        "unknown": "形式无法核验"
       },
       "manage": {
         "title": "转入技能库管理",

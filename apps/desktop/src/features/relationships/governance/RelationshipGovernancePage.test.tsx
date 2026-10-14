@@ -1024,6 +1024,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
         recognition: null,
       },
       entry_key: null,
+      form: null,
       health_reasons: ["unable_to_verify", "user_confirmation"],
     };
     const facade = createFacade(ledger, {
@@ -1037,6 +1038,8 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     await waitRows();
 
     const row = screen.getByTestId("governance-row");
+    expect(screen.getByTestId("governance-short-name-managed:dep-eligible")).toHaveTextContent("无法核验");
+    expect(screen.getByTestId("governance-short-name-managed:dep-eligible")).not.toHaveTextContent("待用户确认");
     expect(row).toHaveTextContent("暂时无法确认这个文件属于哪个 Agent（智能体）目录，因此不能批量处理。请到 Agent（智能体）页面重新扫描并核对目录，再回到此页核验。");
     expect(rowCheckbox("managed:dep-eligible")).toBeDisabled();
     expect(screen.getByTestId("governance-selection-availability")).toHaveTextContent(
@@ -1047,6 +1050,8 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     cleanup();
     await renderGovernanceApp({ facade, entries: ["/relationships/governance?view=table"] });
     await waitRows();
+    expect(screen.getByTestId("governance-source-managed:dep-eligible")).toHaveTextContent("形式无法核验");
+    expect(screen.getByTestId("governance-short-name-managed:dep-eligible")).toHaveTextContent("无法核验");
     expect(screen.getByTestId("governance-selection-availability")).toHaveTextContent(
       "可批量处理 0 条；暂不可处理 1 条；无需处理 0 条。",
     );

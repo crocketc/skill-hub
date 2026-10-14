@@ -28,6 +28,8 @@ test("governance board stays compact, switches views with selection, and opens t
   const unresolvedIdentity = page.getByTestId("governance-action-restriction-preview:blocked-directory");
   await expect(unresolvedIdentity).toContainText("重新扫描并核对目录");
   await expect(unresolvedIdentity).toHaveCount(1);
+  await expect(page.getByTestId("governance-short-name-preview:blocked-directory"))
+    .toHaveText("无法核验");
   const shortStatus = page.getByTestId("governance-short-name-preview:centralize-pdf");
   await shortStatus.focus();
   await expect(shortStatus).toHaveAccessibleDescription(
@@ -69,6 +71,20 @@ test("governance board stays compact, switches views with selection, and opens t
   await expect(page.getByTestId("governance-select-preview:centralize-pdf")).toBeChecked();
   await viewToggle.click();
   await expect(page.getByTestId("governance-header-relation")).toBeVisible();
+  const unknownFormRow = page.getByTestId("governance-row").filter({
+    has: page.getByTestId("governance-select-preview:blocked-directory"),
+  });
+  await expect(unknownFormRow.getByTestId("governance-source-preview:blocked-directory"))
+    .toHaveText("形式无法核验");
+  await expect(unknownFormRow.getByTestId("governance-short-name-preview:blocked-directory"))
+    .toHaveText("无法核验");
+  const confirmedIdentityDecisionRow = page.getByTestId("governance-row").filter({
+    has: page.getByTestId("governance-select-preview:shared-attention"),
+  });
+  await expect(confirmedIdentityDecisionRow.getByTestId("governance-source-preview:shared-attention"))
+    .toHaveText("完整拷贝");
+  await expect(confirmedIdentityDecisionRow.getByTestId("governance-short-name-preview:shared-attention"))
+    .toHaveText("待用户确认");
   await expect.poll(() => page.getByTestId("governance-row-list").evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await viewToggle.click();
   await expect(page.getByTestId("governance-board-column-pending")).toBeVisible();

@@ -506,6 +506,8 @@ it("labels no-action usage consistently in Chinese and English", () => {
   expect(enUS.relationships.governance.classification.no_action).toBe("No action needed");
   expect(zhCN.relationships.governance.form.link).toBe("链接");
   expect(zhCN.relationships.governance.form.full_copy).toBe("完整拷贝");
+  expect(zhCN.relationships.governance.form.unknown).toBe("形式无法核验");
   expect(enUS.relationships.governance.form.link).toBe("Link");
   expect(enUS.relationships.governance.form.full_copy).toBe("Full copy");
+  expect(enUS.relationships.governance.form.unknown).toBe("Form unverified");
 });

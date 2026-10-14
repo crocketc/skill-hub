@@ -3361,7 +3361,7 @@
       "form": {
         "link": "Link",
         "full_copy": "Full copy",
-        "unknown": "Form not confirmed"
+        "unknown": "Form unverified"
       },
       "manage": {
         "title": "Manage through skill library",
