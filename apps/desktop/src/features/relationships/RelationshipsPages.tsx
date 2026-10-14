@@ -3,6 +3,7 @@ import { SkillGraphPage } from "./graph/SkillGraphPage";
 import { ConflictDecisionPage } from "./decisions/ConflictDecisionPage";
 import { RelationshipGovernancePage } from "./governance/RelationshipGovernancePage";
 import { GovernanceHistoryPage } from "./governance/GovernanceHistoryPage";
+import type { LlmAdminFacade } from "../settings/llmApi";
 
 /**
  * 任务 5 的三条懒加载路由入口。业务画布已分别由任务 6（图谱）、任务 7（冲突处理）、
@@ -19,10 +20,14 @@ export function RelationshipsGraphPage() {
   );
 }
 
-export function RelationshipsDecisionsPage() {
+export function RelationshipsDecisionsPage({
+  llmFacade,
+}: {
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
+} = {}) {
   return (
     <RelationshipsLayout scope="decisions">
-      <ConflictDecisionPage />
+      <ConflictDecisionPage llmFacade={llmFacade} />
     </RelationshipsLayout>
   );
 }

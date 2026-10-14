@@ -1,46 +1,43 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import type { AnalyzeConflictScope } from "../../../api/bindings";
 import { createSkillHubI18n } from "../../../i18n";
-import { relationshipsKeys } from "../api";
+import { createOperationTracker } from "../../../platform/operationTracker";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
-import { useConflictAiAvailability } from "./useConflictDecisions";
+import { useConflictAiAnalysis } from "./useConflictDecisions";
 
-function AvailabilityProbe({ facade }: { facade: ConflictDecisionsFacade }) {
-  const { available } = useConflictAiAvailability(facade);
-  return <output>{available === null ? "pending" : available ? "available" : "unavailable"}</output>;
+function AnalysisProbe({ facade }: { facade: ConflictDecisionsFacade }) {
+  const analysis = useConflictAiAnalysis({ facade, canRun: false, tracker: createOperationTracker() });
+  return (
+    <button onClick={() => analysis.run({ type: "all" })} type="button">
+      Run analysis
+    </button>
+  );
 }
 
-describe("conflict decision query namespace", () => {
-  it("keeps AI availability under the relationships root so root invalidation reaches it", async () => {
+describe("conflict analysis execution guard", () => {
+  it("does not submit an AI analysis when the shared capability is not ready", async () => {
     const i18n = await createSkillHubI18n(["en-US"]);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const analyzeConflict = vi.fn(async (_scope: AnalyzeConflictScope) => {
+      throw new Error("blocked analysis must not reach the facade");
     });
-    const isAiAvailable = vi.fn(async () => true);
-    const facade = {
-      isAiAvailable,
-    } as unknown as ConflictDecisionsFacade;
+    const facade = { analyzeConflict } as unknown as ConflictDecisionsFacade;
 
     render(
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <MemoryRouter>
-            <AvailabilityProbe facade={facade} />
+            <AnalysisProbe facade={facade} />
           </MemoryRouter>
         </QueryClientProvider>
       </I18nextProvider>,
     );
 
-    expect(await screen.findByText("available")).toBeVisible();
-    const query = queryClient.getQueryCache().find({
-      queryKey: [relationshipsKeys.root, "decisions", "ai-available"],
-    });
-    expect(query?.queryKey).toEqual([relationshipsKeys.root, "decisions", "ai-available"]);
-
-    await queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] });
-    await waitFor(() => expect(isAiAvailable).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "Run analysis" }));
+    expect(analyzeConflict).not.toHaveBeenCalled();
   });
 });

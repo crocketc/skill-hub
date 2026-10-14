@@ -101,6 +101,14 @@ function wantsTranslationSetupScenario(): boolean {
   return new URLSearchParams(window.location.search).get("scenario") === "translation-setup";
 }
 
+function wantsSafetySetupScenario(): boolean {
+  return new URLSearchParams(window.location.search).get("scenario") === "safety-setup";
+}
+
+function wantsSemanticSetupScenario(): boolean {
+  return new URLSearchParams(window.location.search).get("scenario") === "semantic-setup";
+}
+
 function previewLlmFacade(): LlmAdminFacade {
   const longScenario = wantsLongScenario();
   let providers: LlmProviderView[] = longScenario
@@ -108,8 +116,8 @@ function previewLlmFacade(): LlmAdminFacade {
     : PREVIEW_PROVIDERS;
   const capabilities: LlmCapabilityState = {
     capabilities: {
-      safety_check: true,
-      semantic_duplicate: true,
+      safety_check: !wantsSafetySetupScenario(),
+      semantic_duplicate: !wantsSemanticSetupScenario(),
       description_translation: !wantsTranslationSetupScenario(),
       online_search_assist: false,
     },

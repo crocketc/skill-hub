@@ -1,4 +1,13 @@
-import type { ImportCandidate, SourceScanStatus } from "./api";
+import type {
+  ImportAction,
+  ImportCandidate,
+  ImportPlan,
+  ImportSecurityDecision,
+  SourceDescriptor,
+  SourceScanStatus,
+} from "./api";
+
+export type WizardSessionPhase = "candidates" | "security" | "conflicts";
 
 /**
  * DEV-12：标准导入向导的会话内扫描事实——扫描结果（逐来源候选与状态）、
@@ -14,6 +23,12 @@ export interface WizardSessionSnapshot {
   candidatesBySource: Array<{ source: string; candidates: ImportCandidate[] }>;
   sourceResults: Array<{ source: string; status: SourceScanStatus }>;
   selectedIds: string[];
+  phase: WizardSessionPhase;
+  descriptor?: SourceDescriptor;
+  plan?: ImportPlan;
+  actions: Record<string, ImportAction>;
+  securityDecisions: Record<string, ImportSecurityDecision>;
+  dispositionBaseline?: string[];
 }
 
 let snapshot: WizardSessionSnapshot | null = null;
@@ -29,11 +44,33 @@ export function saveWizardSession(next: WizardSessionSnapshot): void {
     })),
     sourceResults: next.sourceResults.map((entry) => ({ ...entry })),
     selectedIds: [...next.selectedIds],
+    actions: { ...next.actions },
+    securityDecisions: { ...next.securityDecisions },
+    ...(next.dispositionBaseline
+      ? { dispositionBaseline: [...next.dispositionBaseline] }
+      : {}),
   };
 }
 
 export function readWizardSession(): WizardSessionSnapshot | null {
-  return snapshot ? { ...snapshot } : null;
+  return snapshot
+    ? {
+        ...snapshot,
+        sources: [...snapshot.sources],
+        candidates: [...snapshot.candidates],
+        candidatesBySource: snapshot.candidatesBySource.map((entry) => ({
+          source: entry.source,
+          candidates: [...entry.candidates],
+        })),
+        sourceResults: snapshot.sourceResults.map((entry) => ({ ...entry })),
+        selectedIds: [...snapshot.selectedIds],
+        actions: { ...snapshot.actions },
+        securityDecisions: { ...snapshot.securityDecisions },
+        ...(snapshot.dispositionBaseline
+          ? { dispositionBaseline: [...snapshot.dispositionBaseline] }
+          : {}),
+      }
+    : null;
 }
 
 export function clearWizardSession(): void {

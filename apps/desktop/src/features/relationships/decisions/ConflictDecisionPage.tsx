@@ -20,6 +20,7 @@ import { DerivedRenameDialog } from "../../markdown/SaveAsCopyDialog";
 import { getCurrentSkillVersion as fetchCurrentSkillVersion, nativeMarkdownFacade } from "../../markdown/nativeApi";
 import type { SaveAsCopyFacade } from "../../markdown/api";
 import type { UsageChangeFacade } from "../../removal/api";
+import { nativeLlmFacade, type LlmAdminFacade } from "../../settings/llmApi";
 import { nativeUsageChangeFacade } from "../../removal/nativeApi";
 import {
   conflictDecisionLabelKey,
@@ -38,7 +39,7 @@ import {
 } from "../../../platform/operationTracker";
 import {
   useConflictAiAnalysis,
-  useConflictAiAvailability,
+  useConflictAiCapability,
   useConflictWorkspace,
   useResolveConflict,
 } from "./useConflictDecisions";
@@ -59,6 +60,7 @@ export interface ConflictDecisionPageProps {
   saveAsCopyFacade?: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview">;
   /** 来源技能当前版本读取器；测试可注入。 */
   getCurrentSkillVersion?: (skillId: string) => Promise<string | null>;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
 }
 
 const KIND_CHIP_LABEL_KEYS: Record<string, string> = {
@@ -79,6 +81,7 @@ export function ConflictDecisionPage({
   usageChangeFacade = nativeUsageChangeFacade,
   saveAsCopyFacade = nativeMarkdownFacade,
   getCurrentSkillVersion = fetchCurrentSkillVersion,
+  llmFacade = nativeLlmFacade,
 }: ConflictDecisionPageProps): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -109,8 +112,12 @@ export function ConflictDecisionPage({
     setDerivedRenameOpen(false);
     setDerivedRenameProblemSnapshot(null);
   }, [problemIdParam]);
-  const { available: aiAvailable } = useConflictAiAvailability(facade);
-  const ai = useConflictAiAnalysis({ facade, tracker });
+  const aiCapability = useConflictAiCapability(llmFacade, Boolean(facade.analyzeConflict));
+  const ai = useConflictAiAnalysis({
+    canRun: aiCapability.state === "ready",
+    facade,
+    tracker,
+  });
   const workspace = workspaceQuery.data;
   const cases = workspace?.cases ?? [];
   const handled = workspace?.handled ?? [];
@@ -436,7 +443,7 @@ export function ConflictDecisionPage({
           <ConflictComparison caseFact={selectedEntry.case} />
           <ConflictActions
             ai={ai}
-            aiAvailable={aiAvailable}
+            aiCapability={aiCapability}
             caseEntry={selectedEntry}
             mode="case"
             onCentralize={centralize}

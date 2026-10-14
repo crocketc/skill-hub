@@ -1,8 +1,9 @@
 import { act, screen, render, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSkillHubI18n } from "../../i18n";
 import { AppNotificationsProvider } from "../../ui/notifications";
@@ -13,23 +14,34 @@ import { createMockImportFacade, unavailableImportFacade, type ImportAction, typ
 import type { ImportGovernanceDecision } from "../relationshipGovernance/relationshipGovernance";
 import type { ImportGovernanceGroup } from "../../api/bindings";
 import type { DirectoryPicker } from "../../platform/directoryPicker";
+import type { LlmAdminFacade } from "../settings/llmApi";
+import { createReadyLlmStatusFacade } from "../settings/llmStatus.testFixtures";
 import { ImportWizard } from "./ImportWizard";
 
 /** 通知接线测试壳：向导消费全局通知服务（AppShell 同款 Provider + Router）。 */
 function TestShell({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  }));
   return (
     <MemoryRouter>
-      <AppNotificationsProvider>{children}</AppNotificationsProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppNotificationsProvider>{children}</AppNotificationsProvider>
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }
 
-async function renderWizard(facade = createMockImportFacade({ scenario: "safe-local" }), tracker?: ReturnType<typeof createOperationTracker>) {
+async function renderWizard(
+  facade = createMockImportFacade({ scenario: "safe-local" }),
+  tracker?: ReturnType<typeof createOperationTracker>,
+  llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus"> = createReadyLlmStatusFacade(),
+) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
     <TestShell>
       <I18nextProvider i18n={i18n}>
-        <ImportWizard facade={facade} tracker={tracker} />
+        <ImportWizard facade={facade} llmFacade={llmFacade} tracker={tracker} />
       </I18nextProvider>
     </TestShell>,
   );
@@ -40,6 +52,7 @@ async function renderGuidedWizard(
   facade = createMockImportFacade({ scenario: "safe-local" }),
   variant?: "onboarding" | "standard",
   directoryPicker?: DirectoryPicker,
+  llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus"> = createReadyLlmStatusFacade(),
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
   render(
@@ -47,6 +60,7 @@ async function renderGuidedWizard(
       <I18nextProvider i18n={i18n}>
         <ImportWizard
           facade={facade}
+          llmFacade={llmFacade}
           directoryPicker={directoryPicker}
           initialSources={["C:/codex/skills", "C:/claude/skills"]}
           initialSourceText="C:/codex/skills"
@@ -794,6 +808,43 @@ it("restores scan results and candidate selection after the wizard remounts", as
   expect(facade.calls.acquiredSources).toHaveLength(callsBeforeRemount);
 });
 
+it("restores the analyzed import step and plan after the wizard remounts", async () => {
+  const user = userEvent.setup();
+  const facade = createMockImportFacade({ scenario: "safe-local" });
+  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const options = {
+    facade,
+    initialSources: ["C:/codex/skills"],
+    initialSourceText: "C:/codex/skills",
+  };
+  const first = render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard {...options} />
+      </I18nextProvider>
+    </TestShell>,
+  );
+  await user.click(await screen.findByRole("button", { name: "继续下一步" }));
+  await screen.findByRole("button", { name: "分析冲突" });
+  await user.click(screen.getByRole("button", { name: "全选可导入候选" }));
+  await user.click(screen.getByRole("button", { name: "分析冲突" }));
+  expect(await screen.findByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
+  const callsBeforeRemount = facade.calls.acquiredSources.length;
+  first.unmount();
+
+  render(
+    <TestShell>
+      <I18nextProvider i18n={i18n}>
+        <ImportWizard {...options} />
+      </I18nextProvider>
+    </TestShell>,
+  );
+
+  expect(await screen.findByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+  expect(facade.calls.acquiredSources).toHaveLength(callsBeforeRemount);
+});
+
 it("keeps onboarding selections local instead of restoring them from the session store", async () => {
   const user = userEvent.setup();
   const picker = { pickDirectory: vi.fn(async () => "C:/picked/skills") };
@@ -1528,9 +1579,12 @@ describe("conflict analysis progress", () => {
 });
 
 describe("AI import pre-check", () => {
-  async function reachConflicts(facade: ReturnType<typeof createMockImportFacade>) {
+  async function reachConflicts(
+    facade: ReturnType<typeof createMockImportFacade>,
+    llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus"> = createReadyLlmStatusFacade(),
+  ) {
     const user = userEvent.setup();
-    await renderWizard(facade);
+    await renderWizard(facade, undefined, llmFacade);
     await user.type(screen.getByLabelText("来源"), "C:\\skills\\pdf");
     await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
     await screen.findByRole("button", { name: "分析冲突" });
@@ -1653,25 +1707,32 @@ describe("AI import pre-check", () => {
     ).toBeVisible();
   });
 
-  it("keeps import pre-check copy honest when no provider is configured", async () => {
+  it("gates only the AI pre-check when its capability is off", async () => {
     const user = userEvent.setup();
     const facade = createMockImportFacade({ scenario: "safe-local" });
     facade.runAiPreChecks = vi.fn();
-    facade.listLlmProviders = vi.fn(async () => []);
-    await renderWizard(facade);
+    const llmFacade = createReadyLlmStatusFacade({
+      capabilities: {
+        safety_check: false,
+        semantic_duplicate: true,
+        description_translation: true,
+        online_search_assist: true,
+      },
+    });
+    await reachConflicts(facade, llmFacade);
 
-    await user.type(screen.getByLabelText("来源"), "C:/skills");
-    await user.click(screen.getByRole("button", { name: "读取该来源的候选" }));
-    await screen.findByRole("button", { name: "分析冲突" });
-    await user.click(screen.getByRole("checkbox", { name: /PDF/ }));
-    await user.click(screen.getByRole("button", { name: "分析冲突" }));
-    // 第 24 节：AI 预检入口在安全检测步尾部。
     expect(await screen.findByRole("heading", { name: "AI 预检（可选）" })).toBeVisible();
-    expect(facade.listLlmProviders).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "运行 AI 预检" })).not.toBeInTheDocument();
-    expect(
-      screen.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
-    ).toBeVisible();
+    const runPreCheck = screen.getByRole("button", { name: "运行 AI 预检" });
+    expect(runPreCheck).toBeDisabled();
+    expect(await screen.findByRole("link", { name: "前往网络与 AI 设置" })).toHaveAttribute(
+      "href",
+      "/settings?section=networkAi#settings-panel-networkAi",
+    );
+    expect(screen.getByRole("button", { name: "跳过预检" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "提交导入" })).toBeEnabled();
+
+    await user.click(runPreCheck);
+    expect(facade.runAiPreChecks).not.toHaveBeenCalled();
   });
 
   it("keeps the AI entries available when a usable provider is configured", async () => {

@@ -5,7 +5,9 @@ import { describeNativeError } from "../../api/nativeErrors";
 import { useAppNotifications } from "../../ui/notifications";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
-import { usableLlmProviderLabel } from "../settings/llmApi";
+import { nativeLlmFacade, type LlmAdminFacade } from "../settings/llmApi";
+import { LlmCapabilityStatusNotice } from "../settings/LlmCapabilityStatusNotice";
+import { useLlmCapability } from "../settings/llmStatus";
 import { ConflictResolution } from "./ConflictResolution";
 import { SecurityDecisionSection } from "./SecurityDecisionSection";
 import type { BatchCandidateLabel } from "./batchCandidateLabel";
@@ -38,7 +40,12 @@ import { ImportShell, type ImportStatus, type ImportStep } from "./ImportShell";
 import { ImportSummary } from "./ImportSummary";
 import { SourceInput } from "./SourceInput";
 import { readSessionSelectedSources, writeSessionSelectedSources } from "./sessionSources";
-import { clearWizardSession, readWizardSession, saveWizardSession } from "./wizardSession";
+import {
+  clearWizardSession,
+  readWizardSession,
+  saveWizardSession,
+  type WizardSessionPhase,
+} from "./wizardSession";
 import {
   desktopDirectoryPicker,
   normalizeWindowsPath,
@@ -141,7 +148,19 @@ type WizardEvent =
   | { type: "commit_succeeded"; results: ImportResult[]; batch?: ImportBatchSummary }
   | { type: "source_preview_started"; source: string }
   | { type: "source_preview_finished"; source: string; status: SourceScanStatus }
-  | { type: "session_restored"; candidates: WizardState["candidates"]; sourceResults: SourceScanResult[]; candidatesBySource: WizardState["candidatesBySource"]; selectedIds: string[] }
+  | {
+      type: "session_restored";
+      candidates: WizardState["candidates"];
+      sourceResults: SourceScanResult[];
+      candidatesBySource: WizardState["candidatesBySource"];
+      selectedIds: string[];
+      phase: WizardSessionPhase;
+      descriptor?: SourceDescriptor;
+      plan?: ImportPlan;
+      actions: Record<string, ImportAction>;
+      securityDecisions: Record<string, ImportSecurityDecision>;
+      dispositionBaseline?: string[];
+    }
   | { type: "failed"; error: string; previousPhase: WizardPhase }
   | { type: "cancelled" }
   | { type: "retry" };
@@ -284,7 +303,7 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
     case "show_candidates":
       return { ...state, phase: "candidates" };
     case "session_restored":
-      // DEV-12：会话恢复——扫描结果与已勾选候选直接回到候选选择步；
+      // DEV-12：返回向导时恢复已分析的计划、当前步骤与用户决定；
       // 仅当来源集合与保存时一致才派发本事件。
       return {
         ...state,
@@ -292,7 +311,12 @@ function reducer(state: WizardState, event: WizardEvent): WizardState {
         candidatesBySource: event.candidatesBySource,
         sourceResults: event.sourceResults,
         selectedIds: event.selectedIds,
-        phase: "candidates",
+        descriptor: event.descriptor,
+        plan: event.plan,
+        actions: event.actions,
+        securityDecisions: event.securityDecisions,
+        dispositionBaseline: event.dispositionBaseline,
+        phase: event.phase,
       };
     case "candidates_selected":
       return { ...state, selectedIds: event.ids };
@@ -471,6 +495,7 @@ function flowStepIndex(
 export interface ImportWizardProps {
   directoryPicker?: DirectoryPicker;
   facade?: ImportFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   initialSources?: string[];
   initialSourceText?: string;
   importGuide?: string;
@@ -488,6 +513,7 @@ export interface ImportWizardProps {
 export function ImportWizard({
   directoryPicker = desktopDirectoryPicker,
   facade = unavailableImportFacade,
+  llmFacade = nativeLlmFacade,
   initialSources = [],
   initialSourceText = "",
   importGuide,
@@ -543,23 +569,12 @@ export function ImportWizard({
   const [aiPreCheckRunning, setAiPreCheckRunning] = useState(false);
   const [aiPreCheckError, setAiPreCheckError] = useState<string | null>(null);
   const [aiPreCheckSkipped, setAiPreCheckSkipped] = useState(false);
-  // Task 8：AI 可用性接真实信号——已配置并启用的供应商存在即可用。
-  // null 表示查询尚未返回（此时不显示按钮，也不伪造不可用提示）。
-  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    facade
-      .listLlmProviders()
-      .then((providers) => {
-        if (!cancelled) setAiAvailable(usableLlmProviderLabel(providers) !== "");
-      })
-      .catch(() => {
-        if (!cancelled) setAiAvailable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [facade]);
+  const aiPreCheckCapability = useLlmCapability(llmFacade, "safety_check", {
+    enabled: Boolean(facade.runAiPreChecks),
+    requiredTestLevel: "structured",
+    preconditionsMet: Boolean(state.plan && facade.runAiPreChecks),
+  });
+  const aiPreCheckReady = aiPreCheckCapability.state === "ready";
 
   // M-29：已选来源同步进会话存储（标准变体）；副作用集中在 effect，避免渲染期写入。
   useEffect(() => {
@@ -577,14 +592,27 @@ export function ImportWizard({
       clearWizardSession();
       return;
     }
+    const phaseCandidate = state.phase === "failed" ? state.previousPhase : state.phase;
+    let phase: WizardSessionPhase = phaseCandidate === "security" || phaseCandidate === "conflicts"
+      ? phaseCandidate
+      : "candidates";
+    if ((phase === "security" || phase === "conflicts") && !state.plan) {
+      phase = "candidates";
+    }
     saveWizardSession({
       candidates: state.candidates,
       candidatesBySource: state.candidatesBySource,
       selectedIds: state.selectedIds,
       sourceResults: state.sourceResults,
       sources: selectedSources,
+      phase,
+      descriptor: state.descriptor,
+      ...(phase === "candidates" ? {} : { plan: state.plan }),
+      actions: state.actions,
+      securityDecisions: state.securityDecisions,
+      dispositionBaseline: state.dispositionBaseline,
     });
-  }, [variant, selectedSources, state.phase, state.candidates, state.candidatesBySource, state.selectedIds, state.sourceResults]);
+  }, [variant, selectedSources, state.phase, state.previousPhase, state.descriptor, state.plan, state.actions, state.securityDecisions, state.dispositionBaseline, state.candidates, state.candidatesBySource, state.selectedIds, state.sourceResults]);
 
   // DEV-12/DEV-13：标准向导挂载时二选一——
   // ① 会话中有同一来源集合的扫描事实：原样恢复（扫描结果 + 已勾选候选），
@@ -606,6 +634,12 @@ export function ImportWizard({
         selectedIds: saved.selectedIds,
         sourceResults: saved.sourceResults,
         type: "session_restored",
+        phase: saved.phase,
+        descriptor: saved.descriptor,
+        plan: saved.plan,
+        actions: saved.actions,
+        securityDecisions: saved.securityDecisions,
+        dispositionBaseline: saved.dispositionBaseline,
       });
       return;
     }
@@ -958,7 +992,7 @@ type: "failed",
   };
 
   const runAiPreChecks = async () => {
-    if (!state.plan || !facade.runAiPreChecks || aiPreCheckRunning) return;
+    if (!state.plan || !facade.runAiPreChecks || !aiPreCheckReady || aiPreCheckRunning) return;
     setAiPreCheckRunning(true);
     setAiPreCheckError(null);
     setAiPreCheckSkipped(false);
@@ -1429,10 +1463,10 @@ type: "failed",
             <p>
               {t("importWorkflow.aiPreCheck.scope", { count: state.plan.candidates.length })}
             </p>
-            {facade.runAiPreChecks && aiAvailable ? (
+            {facade.runAiPreChecks ? (
               <div className="sh-button-row">
                 <Button
-                  disabled={aiPreCheckRunning}
+                  disabled={!aiPreCheckReady || aiPreCheckRunning}
                   loading={aiPreCheckRunning}
                   onClick={() => void runAiPreChecks()}
                   variant="secondary"
@@ -1446,12 +1480,9 @@ type: "failed",
                 </Button>
               </div>
             ) : (
-              <p>
-                {aiAvailable
-                  ? t("importWorkflow.aiPreCheck.unavailable")
-                  : t("importWorkflow.aiPreCheck.providerMissing")}
-              </p>
+              <p>{t("importWorkflow.aiPreCheck.unavailable")}</p>
             )}
+            {facade.runAiPreChecks ? <LlmCapabilityStatusNotice capability={aiPreCheckCapability} /> : null}
             {aiPreCheckSkipped ? <p role="status">{t("importWorkflow.aiPreCheck.skippedNote")}</p> : null}
             {aiPreCheckError ? (
               <>

@@ -32,6 +32,7 @@ import { PendingPreview } from "../features/pending/PendingPreview";
 import { OperationsPreview, OperationProgressPreview } from "../features/operations/OperationsPreview";
 import { RecoveryPreview } from "../features/recovery/RecoveryPreview";
 import { GovernancePreview } from "../features/relationships/governance/GovernancePreview";
+import { ConflictDecisionPreview } from "../features/relationships/decisions/ConflictDecisionPreview";
 import { DiscoveryRoute } from "./DiscoveryRoute";
 import { SkillDetailPreview } from "../features/skill-detail/SkillDetailPreview";
 import { nativeSkillDetailFacade } from "../features/skill-detail/nativeApi";
@@ -410,6 +411,7 @@ export const appRouter = createBrowserRouter([
             { path: "operation-progress", element: <OperationProgressPreview /> },
             { path: "recovery", element: <RecoveryPreview /> },
             { path: "relationship-governance", element: <GovernancePreview /> },
+            { path: "relationships-decisions", element: <ConflictDecisionPreview /> },
             {
               path: "relationships",
               lazy: async () => {

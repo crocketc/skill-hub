@@ -6,7 +6,6 @@ import type {
   ResolveConflictCase,
 } from "../../../api/bindings";
 import { executeCommand, queryApplication } from "../../../api/bindings";
-import { usableLlmProviderLabel } from "../../settings/llmApi";
 import type { RelationshipConflictsParams } from "../api";
 
 export type {
@@ -25,7 +24,6 @@ export type {
 export interface ConflictDecisionsFacade {
   getConflictWorkspace(params?: RelationshipConflictsParams): Promise<ConflictWorkspace>;
   /** 与设置页同一真实 LLM 供应商判定（已启用 + 本地或凭据已配置）。 */
-  isAiAvailable(): Promise<boolean>;
   analyzeConflict(scope: AnalyzeConflictScope): Promise<ConflictAnalysis>;
   resolveConflictCase(command: ResolveConflictCase): Promise<ConflictResolutionOutcome>;
 }
@@ -44,11 +42,6 @@ export const nativeConflictDecisionsFacade: ConflictDecisionsFacade = {
       return unexpectedResult("get_conflict_workspace");
     }
     return result.payload;
-  },
-  async isAiAvailable() {
-    const result = await queryApplication({ type: "list_llm_providers" });
-    if (result.type !== "llm_providers") return unexpectedResult("list_llm_providers");
-    return usableLlmProviderLabel(result.payload) !== "";
   },
   async analyzeConflict(scope) {
     const result = await executeCommand({

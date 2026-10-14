@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { ConflictWorkspaceCase, EnvironmentProblemView } from "../../../api/bindings";
 import { describeNativeError } from "../../../api/nativeErrors";
 import { Button } from "../../../ui/Button";
+import { LlmCapabilityStatusNotice } from "../../settings/LlmCapabilityStatusNotice";
+import type { LlmCapabilityState } from "../../settings/llmStatus";
 import {
   allConflictScope,
   caseConflictScope,
@@ -16,7 +18,7 @@ interface ConflictCaseActionsProps {
   mode?: "case";
   caseEntry: ConflictWorkspaceCase;
   ai: ConflictAiAnalysisState;
-  aiAvailable: boolean | null;
+  aiCapability: LlmCapabilityState;
   centralizeDisabled?: boolean;
   onCentralize: () => void;
   onFollowSuggestion: () => void;
@@ -78,7 +80,7 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
 
   const {
     ai,
-    aiAvailable,
+    aiCapability,
     caseEntry,
     onCentralize,
     onFollowSuggestion,
@@ -87,7 +89,7 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
     resolving,
   } = props;
   const { case: caseFact, latest_analysis: latestAnalysis, recommended_decision } = caseEntry;
-  const aiUsable = aiAvailable === true;
+  const aiUsable = aiCapability.state === "ready";
   const { lastRun } = ai;
   const lastRunFailureReason = lastRun?.failure_code
     ? describeNativeError(
@@ -134,9 +136,6 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
 
       <div className="sh-conflict-actions__ai">
         <h4>{t("relationships.decisions.ai.heading")}</h4>
-        {aiAvailable === false ? (
-          <p role="status">{t("relationships.decisions.ai.unavailable")}</p>
-        ) : null}
         <div className="sh-button-row">
           <Button
             disabled={!aiUsable || ai.running}
@@ -166,6 +165,7 @@ export function ConflictActions(props: ConflictActionsProps): JSX.Element {
             {t("relationships.decisions.ai.runAll")}
           </Button>
         </div>
+        <LlmCapabilityStatusNotice capability={aiCapability} />
         {ai.error ? <p role="alert">{ai.error}</p> : null}
         {lastRun && !ai.error ? (
           <div data-testid="conflict-ai-run">

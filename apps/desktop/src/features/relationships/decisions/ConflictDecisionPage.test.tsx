@@ -26,6 +26,8 @@ import {
 import type { AppNotifications } from "../../../ui/notifications";
 import type { UsageChangeFacade } from "../../removal/api";
 import type { SaveAsCopyFacade } from "../../markdown/api";
+import type { LlmAdminFacade } from "../../settings/llmApi";
+import { createReadyLlmStatusFacade } from "../../settings/llmStatus.testFixtures";
 import { ConflictDecisionPage } from "./ConflictDecisionPage";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
 import type { RelationGovernanceFacade } from "../governance/api";
@@ -171,7 +173,6 @@ function resolveOutcome(cmd: ResolveConflictCase): ConflictResolutionOutcome {
 function createFacade(workspace: ConflictWorkspace) {
   const facade: ConflictDecisionsFacade = {
     getConflictWorkspace: vi.fn(async () => workspace),
-    isAiAvailable: vi.fn(async () => true),
     analyzeConflict: vi.fn(async (scope: AnalyzeConflictScope) => ({
       ...emptyRun,
       scope,
@@ -366,6 +367,7 @@ async function renderPage(
     usageChangeFacade?: UsageChangeFacade;
     saveAsCopyFacade?: Pick<SaveAsCopyFacade, "saveAsCopyReplacementPreview">;
     getCurrentSkillVersion?: (skillId: string) => Promise<string | null>;
+    llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   } = {},
 ) {
   const i18n = await createSkillHubI18n(["zh-CN"]);
@@ -382,7 +384,8 @@ async function renderPage(
           <LocationProbe />
           <ConflictDecisionPage
           environmentFacade={options.problemFacade}
-          facade={facade}
+            facade={facade}
+            llmFacade={options.llmFacade ?? createReadyLlmStatusFacade()}
             getCurrentSkillVersion={options.getCurrentSkillVersion}
             saveAsCopyFacade={options.saveAsCopyFacade}
             notifications={notifications}
@@ -633,10 +636,11 @@ describe("ConflictDecisionPage", () => {
 
   it("keeps manual decisions available when no LLM provider is configured", async () => {
     const facade = createFacade(workspaceFixture());
-    facade.isAiAvailable = vi.fn(async () => false);
-    const { notifications } = await renderPage(facade);
+    const { notifications } = await renderPage(facade, {
+      llmFacade: createReadyLlmStatusFacade({ provider: null }),
+    });
 
-    expect(await screen.findByText("尚未配置可用的 LLM 供应商；人工决定不受影响。")).toBeVisible();
+    expect(await screen.findByText("尚未选择此操作实际使用的模型供应商。")).toBeVisible();
     const keepDistinct = screen.getByRole("button", { name: "保留为独立 Skill" });
     expect(keepDistinct).toBeEnabled();
 
@@ -658,6 +662,30 @@ describe("ConflictDecisionPage", () => {
     await waitFor(() => {
       expect(new URLSearchParams(lastLocation?.search).get("conflictId")).toBe("conflict:b");
     });
+  });
+
+  it("disables only AI conflict analysis when its capability is turned off", async () => {
+    const facade = createFacade(workspaceFixture());
+    const llmFacade = createReadyLlmStatusFacade({
+      capabilities: {
+        safety_check: true,
+        semantic_duplicate: false,
+        description_translation: true,
+        online_search_assist: true,
+      },
+    });
+    await renderPage(facade, { llmFacade });
+
+    const runAnalysis = await screen.findByRole("button", { name: "分析此冲突" });
+    expect(runAnalysis).toBeDisabled();
+    expect(await screen.findByRole("link", { name: "前往网络与 AI 设置" })).toHaveAttribute(
+      "href",
+      "/settings?section=networkAi#settings-panel-networkAi",
+    );
+    expect(screen.getByRole("button", { name: "保留为独立 Skill" })).toBeEnabled();
+
+    fireEvent.click(runAnalysis);
+    expect(facade.analyzeConflict).not.toHaveBeenCalled();
   });
 
   it("runs the three AI scopes with exact payloads through the unified tracker", async () => {
@@ -914,7 +942,6 @@ describe("ConflictDecisionPage", () => {
     });
     const pendingFacade: ConflictDecisionsFacade = {
       getConflictWorkspace: () => new Promise(() => {}),
-      isAiAvailable: async () => true,
       analyzeConflict: async (scope) => ({ ...emptyRun, scope }),
       resolveConflictCase: async (cmd) => resolveOutcome(cmd),
     };
@@ -922,7 +949,7 @@ describe("ConflictDecisionPage", () => {
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <MemoryRouter initialEntries={["/relationships/decisions"]}>
-            <ConflictDecisionPage facade={pendingFacade} tracker={createOperationTracker()} />
+            <ConflictDecisionPage facade={pendingFacade} llmFacade={createReadyLlmStatusFacade()} tracker={createOperationTracker()} />
           </MemoryRouter>
         </QueryClientProvider>
       </I18nextProvider>,

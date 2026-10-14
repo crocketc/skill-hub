@@ -9,6 +9,7 @@ import {
   type SourceDescriptor,
 } from "./api";
 import { ImportWizard } from "./ImportWizard";
+import { getPreviewLlmFacade } from "../settings/SettingsLlmPreview";
 
 /** 为 bulk 预览生成 60 个候选：名称、路径长度各异，覆盖 50+ 条目场景。 */
 function bulkCandidates(source: SourceDescriptor): ImportCandidate[] {
@@ -33,6 +34,7 @@ type PreviewScenario =
   | "batch-conflicts"
   | "security-danger"
   | "security-warning-duplicates"
+  | "safety-setup"
   | "governance"
   | "fail-acquire"
   | "cancel"
@@ -46,6 +48,7 @@ const scenarios: readonly PreviewScenario[] = [
   "batch-conflicts",
   "security-danger",
   "security-warning-duplicates",
+  "safety-setup",
   "governance",
   "fail-acquire",
   "cancel",
@@ -161,6 +164,7 @@ export function ImportWizardPreview() {
     <ImportWizard
       facade={setup.facade}
       initialSources={setup.initialSources}
+      llmFacade={getPreviewLlmFacade()}
       onOpenGovernance={() => undefined}
       onOpenGovernanceTask={() => undefined}
       variant={setup.variant}

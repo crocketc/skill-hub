@@ -124,3 +124,56 @@ test("the import wizard offers an optional AI pre-check with per-object outcomes
   // AI 建议不会自动变成写操作；导入决定仍归用户。
   await expect(page.getByText(/AI suggestions are never turned into write operations automatically/)).toBeVisible();
 });
+
+test("import pre-check settings return to the same import session", async ({ page }) => {
+  await page.goto("/__preview/import-wizard?scenario=safety-setup");
+  await page.getByLabel("Source", { exact: true }).fill("C:/skills/fixture");
+  await page.getByRole("button", { name: "Read candidates from this source" }).click();
+  await page.getByRole("button", { name: "Select all importable candidates" }).click();
+  await page.getByRole("button", { name: "Analyze conflicts" }).click();
+
+  await expect(page.getByRole("heading", { name: "AI pre-check (optional)" })).toBeVisible();
+  const runPreCheck = page.getByRole("button", { name: "Run AI pre-check" });
+  await expect(runPreCheck).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Skip pre-check" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Commit import" })).toBeEnabled();
+  await page.getByRole("link", { name: "Open Network & AI settings" }).click();
+
+  await expect(page).toHaveURL(/\/__preview\/settings-llm\?section=networkAi#settings-panel-networkAi$/);
+  const safetySwitch = page.getByRole("switch", { name: "AI safety check" });
+  await expect(safetySwitch).toBeVisible();
+  await safetySwitch.check();
+  await page.goBack();
+
+  await expect(page).toHaveURL(/\/__preview\/import-wizard\?scenario=safety-setup$/);
+  await expect(page.getByRole("heading", { name: "AI pre-check (optional)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run AI pre-check" })).toBeEnabled();
+  await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Run AI pre-check" }).click();
+  await expect(page.getByText("Service preview · model preview-model · 2 object(s)")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Commit import" })).toBeEnabled();
+});
+
+test("relationship conflict settings return to the same conflict", async ({ page }) => {
+  await page.goto("/__preview/relationships-decisions?scenario=semantic-setup&conflictId=preview-conflict-1");
+  await expect(page.getByRole("region", { name: "Conflict group preview-conflict-1" })).toBeVisible();
+
+  const analyzeConflict = page.getByRole("button", { name: "Analyze this conflict" });
+  await expect(analyzeConflict).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Keep as separate Skills" })).toBeEnabled();
+  await page.getByRole("link", { name: "Open Network & AI settings" }).click();
+
+  await expect(page).toHaveURL(/\/__preview\/settings-llm\?section=networkAi#settings-panel-networkAi$/);
+  const semanticSwitch = page.getByRole("switch", { name: "AI semantic duplicate analysis" });
+  await expect(semanticSwitch).toBeVisible();
+  await semanticSwitch.check();
+  await page.goBack();
+
+  await expect(page).toHaveURL(/\/__preview\/relationships-decisions\?scenario=semantic-setup&conflictId=preview-conflict-1$/);
+  await expect(page.getByRole("region", { name: "Conflict group preview-conflict-1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Analyze this conflict" })).toBeEnabled();
+  await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Analyze this conflict" }).click();
+  await expect(page.getByText("No conflict groups match this scope.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Conflict group preview-conflict-1" })).toBeVisible();
+});

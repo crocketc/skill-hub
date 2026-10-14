@@ -15,11 +15,13 @@ import { runTrackedOperation } from "../../../platform/runTrackedOperation";
 import { type AppNotifications, useOptionalAppNotifications } from "../../../ui/notifications";
 import { relationshipsKeys } from "../api";
 import type { ConflictDecisionsFacade } from "./decisionsApi";
+import { nativeLlmFacade, type LlmAdminFacade } from "../../settings/llmApi";
+import { useLlmCapability } from "../../settings/llmStatus";
 
 /**
  * 冲突处理工作台的页面级 hooks（任务 7）：
  * - 工作台查询：键携带 relationship_revision（0016 迁移后修订变化必须换键）；
- * - AI 可用性：复用真实 LLM 供应商判定，绝不伪造可用；
+ * - AI 可用性：复用共享只读能力状态，未就绪时只停用 AI 分析；
  * - AI 分析：经统一执行桥（phased），完成后失效工作台让结论回流 latest_analysis；
  * - 决定写入：经统一执行桥（instant，即时命令不闪顶栏），成功后失效整个
  *   relationships 命名空间（结论写入会推进 relationship_revision）。
@@ -52,20 +54,14 @@ export function useConflictWorkspace(facade: ConflictDecisionsFacade) {
   return query;
 }
 
-export interface ConflictAiAvailability {
-  /** null 表示可用性尚未确认：不显示“不可用”，也不假装可用。 */
-  available: boolean | null;
-}
-
-export function useConflictAiAvailability(facade: ConflictDecisionsFacade): ConflictAiAvailability {
-  const query = useQuery({
-    queryKey: [relationshipsKeys.root, "decisions", "ai-available"] as const,
-    queryFn: () => facade.isAiAvailable(),
-    retry: false,
-    staleTime: 60_000,
+export function useConflictAiCapability(
+  llmFacade: Pick<LlmAdminFacade, "readRuntimeStatus"> = nativeLlmFacade,
+  preconditionsMet = true,
+) {
+  return useLlmCapability(llmFacade, "semantic_duplicate", {
+    requiredTestLevel: "structured",
+    preconditionsMet,
   });
-  if (query.isError) return { available: false };
-  return { available: query.data ?? null };
 }
 
 export interface ConflictAiAnalysisState {
@@ -81,8 +77,9 @@ type ConflictAnalysisState = Awaited<ReturnType<ConflictDecisionsFacade["analyze
 export function useConflictAiAnalysis(options: {
   facade: ConflictDecisionsFacade;
   tracker?: OperationTracker;
+  canRun: boolean;
 }): ConflictAiAnalysisState {
-  const { facade, tracker = operationTracker } = options;
+  const { canRun, facade, tracker = operationTracker } = options;
   const { t } = useTranslation();
   const notifications = useOptionalAppNotifications();
   const queryClient = useQueryClient();
@@ -91,7 +88,7 @@ export function useConflictAiAnalysis(options: {
   const [error, setError] = useState<string | null>(null);
 
   const run = (scope: Parameters<ConflictDecisionsFacade["analyzeConflict"]>[0]) => {
-    if (running) return;
+    if (!canRun || running) return;
     setRunning(true);
     setError(null);
     runTrackedOperation({
