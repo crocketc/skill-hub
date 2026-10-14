@@ -23,6 +23,7 @@ export const BRAND_DISPLAY_NAMES: Record<string, string> = {
   grok: "Grok",
   hermes: "Hermes",
   kimi: "Kimi",
+  "minimax-code": "MiniMax Code",
   openai: "OpenAI",
   openclaw: "OpenClaw",
   opencode: "OpenCode",

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { ClientKind } from "../api/bindings";
-import { brandDisplayName, BrandTag, BRAND_DISPLAY_NAMES } from "./BrandTag";
+import { brandDisplayName, BrandTag, BRAND_DISPLAY_NAMES, normalizeBrandKey } from "./BrandTag";
 import "./AgentPresentation.css";
 
 export type AgentKindKey = ClientKind | "unknown";
@@ -65,7 +65,7 @@ export function agentKindLabel(kind: AgentKindKey, translate: (key: string) => s
 }
 
 export function agentBrandKey(id: string): string {
-  const lowered = id.trim().toLowerCase();
+  const lowered = normalizeBrandKey(id);
   if (!lowered) return "unknown";
   if (BRAND_DISPLAY_NAMES[lowered]) return lowered;
   const profile = lowered.split(".")[0] ?? lowered;

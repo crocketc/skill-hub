@@ -23,6 +23,7 @@ const profileIds = [
   "grok",
   "hermes",
   "kimi",
+  "minimax-code",
   "openai",
   "openclaw",
   "opencode",
@@ -85,6 +86,23 @@ it("renders Pi and DeepSeek Harness compact brand icons", () => {
   );
 
   expect(document.querySelectorAll(".sh-agent-presentation--compact img")).toHaveLength(2);
+});
+
+it("keeps MiniMax Code deployment presentation readable with its official brand accent", () => {
+  const { container } = render(
+    <AgentDeploymentIcons
+      agents={[{ id: "minimax-code.desktop", agentId: "minimax-code.desktop", brand: "minimax-code", name: "MiniMax Code Desktop" }]}
+      ariaLabel="Agent deployments: 1"
+    />,
+  );
+
+  expect(screen.getByTitle("MiniMax Code · Desktop")).toBeVisible();
+  expect(container.querySelector(".sh-agent-presentation--compact .sh-brand-tag")).toHaveClass(
+    "sh-brand-tag--minimax-code",
+  );
+  expect(container.querySelector("[data-agent-id='minimax-code.desktop']")).toHaveStyle({
+    "--agent-accent": "#FF6452",
+  });
 });
 
 it("uses compact display names and summarizes agents after the seventh tag", () => {

@@ -121,6 +121,18 @@
       "{user_home}/.agents/skills",
       "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.skills",
       "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.user_skills"
+    ],
+    "minimax-code": [
+      "{user_home}/.minimax/skills",
+      "{user_home}/.minimax/agents/{agent_directory}/skills",
+      "{user_home}/.minimax/.builtin-skills",
+      "{user_home}/.agents/skills"
     ]
+  },
+  "client_os_scope_exceptions": {
+    "minimax-code.desktop": {
+      "supported_os": ["windows"],
+      "reason": "Desktop filesystem roots were confirmed only in the 2026-10-12 Windows field observation."
+    }
   }
 }

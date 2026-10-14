@@ -30,8 +30,8 @@
       "type": "object", "additionalProperties": false,
       "required": ["path", "scope", "precedence", "marker"],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "agent_root": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1, "description": "Supports one anchored {agent_directory} component for direct, non-hidden Agent child discovery; recursive globs are not supported."},
+        "agent_root": {"type": "string", "minLength": 1, "description": "May use the same bounded {agent_directory} component as its path candidate."},
         "scope": {"enum": ["global", "project", "extra"]},
         "precedence": {"enum": ["preferred", "lower_priority_copy", "may_coexist", "unknown"]},
         "marker": {"type": "string", "minLength": 1},

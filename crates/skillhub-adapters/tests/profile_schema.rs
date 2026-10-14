@@ -108,6 +108,24 @@ fn rejects_unsafe_agent_root() {
 }
 
 #[test]
+fn direct_child_expansion_is_bounded_to_one_anchored_path_component() {
+    for path in [
+        "{user_home}/.example/{agent_directory}/{agent_directory}/skills",
+        "{user_home}/.example/prefix-{agent_directory}/skills",
+        "{user_home}/.example/*/skills",
+        "/tmp/{agent_directory}/skills",
+        "{agent_directory}/{user_home}/skills",
+        "{user_home}/{agent_directory}/skills",
+    ] {
+        let json = profile_with_path(path);
+        assert!(parse_custom_profile(&json).is_err(), "accepted {path}");
+    }
+
+    let valid = profile_with_path("{user_home}/.example/agents/{agent_directory}/skills");
+    assert!(parse_custom_profile(&valid).is_ok());
+}
+
+#[test]
 fn rejects_missing_or_empty_display_name() {
     let missing = r#"{
       "profile_version": 1, "research_date": "2026-09-15",

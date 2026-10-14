@@ -24,7 +24,7 @@
   flex: none;
 }
 
-.sh-brand-tag--neutral {
+.sh-brand-tag--neutral, .sh-brand-tag--minimax-code {
   --brand-chip-background: #eef1f4;
   --brand-chip-border: #d3dae1;
   --brand-chip-foreground: #3c4650;
@@ -162,6 +162,7 @@
 [data-theme="grok-night"] .sh-brand-tag--codebuddy,
 [data-theme="grok-night"] .sh-brand-tag--comate,
 [data-theme="grok-night"] .sh-brand-tag--kimi,
+[data-theme="grok-night"] .sh-brand-tag--minimax-code,
 [data-theme="grok-night"] .sh-brand-tag--openclaw,
 [data-theme="grok-night"] .sh-brand-tag--hermes,
 [data-theme="grok-night"] .sh-brand-tag--grok,

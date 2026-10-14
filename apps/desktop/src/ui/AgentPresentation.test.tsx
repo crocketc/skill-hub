@@ -29,6 +29,18 @@ it("combines a real brand logo with a user-facing platform type", async () => {
   expect(screen.queryByText("codebuddy.code")).not.toBeInTheDocument();
 });
 
+it("presents MiniMax Code with its readable brand and desktop type", async () => {
+  const { container } = await renderPresentation({ agentId: "minimax-code.desktop" });
+
+  expect(screen.getByText("MiniMax Code")).toBeVisible();
+  expect(screen.getByText("桌面端")).toBeVisible();
+  expect(container.querySelector(".sh-agent-presentation")).toHaveAttribute(
+    "aria-label",
+    "MiniMax Code · 桌面端",
+  );
+  expect(screen.queryByText("minimax-code.desktop")).not.toBeInTheDocument();
+});
+
 it("does not expose technical instance names next to the brand and platform type", async () => {
   await renderPresentation({
     agentId: "anthropic.claude-code",

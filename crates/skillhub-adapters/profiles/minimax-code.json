@@ -1,0 +1,66 @@
+{
+  "profile_version": 1,
+  "research_date": "2026-10-15",
+  "official_references": [
+    "https://agent.minimax.io/download",
+    "https://github.com/MiniMax-AI/minimax-code/blob/main/docs/installation.md",
+    "https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md",
+    "https://www.minimax.io/brand-vi"
+  ],
+  "brand": "MiniMax Code",
+  "clients": [
+    {
+      "id": "minimax-code.desktop",
+      "kind": "desktop",
+      "display_name": "MiniMax Code Desktop",
+      "supported_os": ["windows"],
+      "path_candidates": [
+        {
+          "path": "{user_home}/.minimax/skills",
+          "agent_root": "{user_home}/.minimax",
+          "scope": "global",
+          "precedence": "unknown",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.minimax/agents/{agent_directory}/skills",
+          "agent_root": "{user_home}/.minimax/agents/{agent_directory}",
+          "scope": "global",
+          "precedence": "unknown",
+          "marker": "SKILL.md"
+        },
+        {
+          "path": "{user_home}/.minimax/.builtin-skills",
+          "agent_root": "{user_home}/.minimax",
+          "scope": "global",
+          "precedence": "may_coexist",
+          "marker": "SKILL.md",
+          "builtin": true
+        },
+        {
+          "path": "{user_home}/.agents/skills",
+          "agent_root": "{user_home}/.minimax",
+          "scope": "global",
+          "precedence": "unknown",
+          "marker": "SKILL.md",
+          "shared_reference": true
+        }
+      ],
+      "skill_marker": "SKILL.md",
+      "deployment": {
+        "copy": true,
+        "symlink": false,
+        "junction": false,
+        "limitations": [
+          "runtime_loading_unknown",
+          "deployment_precedence_unknown",
+          "symlink_support_unconfirmed",
+          "junction_support_unconfirmed",
+          "desktop_data_root_override_unverified",
+          "macos_desktop_paths_unverified"
+        ]
+      },
+      "call_policy": "unknown"
+    }
+  ]
+}

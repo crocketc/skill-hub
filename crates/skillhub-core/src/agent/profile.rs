@@ -26,13 +26,13 @@ pub fn validate_profile_strict(profile: &AgentProfile) -> Result<(), String> {
         }
         for candidate in &client.path_candidates {
             let path = candidate.path.trim();
-            if path.is_empty() || is_unbounded_root(path) || path.contains("**") {
+            if path.is_empty() || is_unbounded_root(path) || !valid_agent_directory_pattern(path) {
                 return Err("unbounded scan root".into());
             }
             if let Some(agent_root) = candidate.agent_root.as_deref() {
                 if agent_root.trim().is_empty()
                     || is_unbounded_root(agent_root)
-                    || agent_root.contains("**")
+                    || !valid_agent_directory_pattern(agent_root)
                 {
                     return Err("unbounded agent recognition root".into());
                 }
@@ -112,6 +112,36 @@ fn is_unbounded_root(path: &str) -> bool {
         || home_root
         || windows_home_root
         || unc_root
+}
+
+/// The only dynamic profile segment is one Agent directory directly below an
+/// explicitly anchored root. This supports per-Agent roots without accepting
+/// glob patterns or recursive scans.
+fn valid_agent_directory_pattern(path: &str) -> bool {
+    let count = path.matches("{agent_directory}").count();
+    if path.contains('*') || count > 1 {
+        return false;
+    }
+    if count == 0 {
+        return true;
+    }
+    let Some((anchored_prefix, _)) = path.split_once("{agent_directory}") else {
+        return false;
+    };
+    let component_is_marker = path
+        .split(['/', '\\'])
+        .any(|component| component == "{agent_directory}");
+    let after_anchor = anchored_prefix
+        .split_once("{user_home}")
+        .or_else(|| anchored_prefix.split_once("{project_root}"))
+        .map(|(_, suffix)| suffix)
+        .unwrap_or_default();
+    let parent_is_bounded = after_anchor
+        .split(['/', '\\'])
+        .any(|component| !component.is_empty());
+    component_is_marker
+        && parent_is_bounded
+        && (anchored_prefix.contains("{user_home}") || anchored_prefix.contains("{project_root}"))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, specta::Type)]
@@ -272,6 +302,7 @@ impl ProfileCatalog {
             include_str!("../../../skillhub-adapters/profiles/pi.json"),
             include_str!("../../../skillhub-adapters/profiles/deepseek-harness.json"),
             include_str!("../../../skillhub-adapters/profiles/doubao.json"),
+            include_str!("../../../skillhub-adapters/profiles/minimax-code.json"),
         ];
         Self {
             profiles: PROFILES
@@ -326,18 +357,38 @@ pub fn path_matches_candidate(candidate: &super::PathCandidate, path: &str) -> b
         .trim_matches('/');
     let candidate = candidate.trim_end_matches('/');
     let path = path.trim_end_matches('/');
-    if suffix.is_empty() {
-        return path.is_empty();
-    }
     let windows = looks_like_windows_path(candidate) || looks_like_windows_path(path);
-    if windows {
-        let path = path.to_ascii_lowercase();
-        let candidate = candidate.to_ascii_lowercase();
-        let suffix = suffix.to_ascii_lowercase();
-        candidate == path || path == suffix || path.ends_with(&format!("/{suffix}"))
-    } else {
-        candidate == path || path == suffix || path.ends_with(&format!("/{suffix}"))
+    path_has_suffix_components(path, suffix, windows)
+}
+
+fn path_has_suffix_components(path: &str, suffix: &str, case_insensitive: bool) -> bool {
+    let expected = suffix
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    let actual = path
+        .split('/')
+        .filter(|component| !component.is_empty())
+        .collect::<Vec<_>>();
+    if expected.is_empty() {
+        return actual.is_empty();
     }
+    if actual.len() < expected.len() {
+        return false;
+    }
+    let actual_suffix = &actual[actual.len() - expected.len()..];
+    expected
+        .iter()
+        .zip(actual_suffix)
+        .all(|(expected, actual)| {
+            if *expected == "{agent_directory}" {
+                !actual.is_empty() && *actual != "." && *actual != ".."
+            } else if case_insensitive {
+                expected.eq_ignore_ascii_case(actual)
+            } else {
+                expected == actual
+            }
+        })
 }
 
 fn looks_like_windows_path(path: &str) -> bool {

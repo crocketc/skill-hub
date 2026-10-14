@@ -985,6 +985,32 @@ fn profile_path_matching_is_posix_case_sensitive_and_trims_trailing_separators()
 }
 
 #[test]
+fn direct_child_profile_path_matches_exactly_one_path_component() {
+    let dynamic = PathCandidate {
+        path: r"C:\Users\Ada\.minimax\agents\{agent_directory}\skills".into(),
+        agent_root: Some(r"C:\Users\Ada\.minimax\agents\{agent_directory}".into()),
+        scope: TargetScope::Global,
+        precedence: DirectoryPrecedence::Preferred,
+        marker: "SKILL.md".into(),
+        shared_reference: false,
+        builtin: false,
+    };
+
+    assert!(path_matches_candidate(
+        &dynamic,
+        r"c:\users\ada\.MINIMAX\AGENTS\mavis\skills\"
+    ));
+    assert!(!path_matches_candidate(
+        &dynamic,
+        r"C:\Users\Ada\.minimax\agents\mavis\nested\skills"
+    ));
+    assert!(!path_matches_candidate(
+        &dynamic,
+        r"C:\Users\Ada\.minimax\agents\mavis\skills-demo"
+    ));
+}
+
+#[test]
 fn unknown_ownership_representation_pair_keeps_governance_reason() {
     let unknown = RelationTargetFact::directory(
         "native",

@@ -231,6 +231,47 @@ fn inferred_agent_root(path: &str) -> Option<String> {
 }
 
 fn expand_pattern(raw: &str, roots: &DiscoveryRoots) -> Vec<PathBuf> {
+    if raw.contains("{agent_directory}") {
+        if raw.matches("{agent_directory}").count() != 1 {
+            return Vec::new();
+        }
+        let Some((parent_pattern, suffix)) = raw.split_once("{agent_directory}") else {
+            return Vec::new();
+        };
+        let parent_pattern = parent_pattern.trim_end_matches(['/', '\\']);
+        let parents = expand_pattern(parent_pattern, roots);
+        let mut expanded = Vec::new();
+        for parent in parents {
+            let Ok(canonical_parent) = fs::canonicalize(&parent) else {
+                continue;
+            };
+            let Ok(entries) = fs::read_dir(&parent) else {
+                continue;
+            };
+            let mut children = entries
+                .filter_map(Result::ok)
+                .filter_map(|entry| {
+                    let file_type = entry.file_type().ok()?;
+                    let name = entry.file_name();
+                    if !file_type.is_dir()
+                        || file_type.is_symlink()
+                        || name.to_string_lossy().starts_with('.')
+                    {
+                        return None;
+                    }
+                    let child = entry.path();
+                    let canonical_child = fs::canonicalize(&child).ok()?;
+                    if !canonical_child.starts_with(&canonical_parent) {
+                        return None;
+                    }
+                    Some(child)
+                })
+                .collect::<Vec<_>>();
+            children.sort_by_key(|path| path.file_name().map(|name| name.to_os_string()));
+            expanded.extend(children.iter().map(|child| join_relative(child, suffix)));
+        }
+        return expanded;
+    }
     if raw.contains("{user_home}") {
         return vec![join_relative(
             &roots.user_home,

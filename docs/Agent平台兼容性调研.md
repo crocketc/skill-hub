@@ -543,8 +543,9 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 
 - MiniMax 官方 Desktop 下载页确认 macOS/Windows 桌面形态和本地项目访问，但没有公布 Desktop Skill 文件根。官方 `minimax-code` 仓库文档针对 CLI：发布 npm 与源码 CLI 默认数据目录为 `~/.minimax`，选择 profile 时使用独立 profile 数据目录；`MINIMAX_DATA_DIR` 优先于兼容回退 `MAVIS_DATA_DIR`。这些是 CLI 契约，不能直接推出 Desktop 使用同一环境变量、目录或 profile 规则。
 - Desktop 根仍以已存档的 Windows 现场证据为边界：版本 `3.1.1.171` 当次日志观察到数据根下 `.builtin-skills/`、`skills/`、`agents/<agent>/skills/`，并确认当次桌面可读共享 `.agents/skills`。内置根只读；Agent 专属根归属当前 Agent/profile；`.agents/skills` 是共享目录。插件缓存和 `app.asar` 资源不作为普通可写目标。上述是一次 Windows 版本快照，不等于所有版本或 macOS 结论。
-- 当前 macOS 工作站未安装 MiniMax Code Desktop，因此 Desktop macOS 路径与版本仍待现场核验。下一步 ADP-MINI 先按 Windows 有证据范围实现；macOS 未经本机桌面及隔离 profile 验证，不开放猜测路径。测试需显式使用隔离 profile/data root，先验证环境变量实际归属客户端，再分别核验用户、Agent 专属、共享和内置只读所有权；同名或相似路径不能跨 profile 合并。
-- MiniMax 官方 CLI 公开的 workspace `.minimax/skills`、`.agents/skills`、`.claude/skills` 与目录链接能力只供 CLI/ACP 对照；不作为 Desktop profile fixture。Desktop 项目根和动态 Agent 根须由后续可复核桌面证据补充。
+- 当前 macOS 工作站未安装 MiniMax Code Desktop，因此 Desktop macOS 路径与版本仍待现场核验。ADP-MINI 已按 Windows 证据实现；MiniMax Desktop profile 只声明 Windows，不猜测 macOS 路径。数据根覆盖变量仍须先证明归属 Desktop 后再测试；同名或相似路径不能跨 profile 合并。
+- MiniMax 官方 CLI 公开的 workspace `.minimax/skills`、`.agents/skills`、`.claude/skills` 与目录链接能力只供 CLI/ACP 对照；不作为 Desktop profile fixture。Desktop 项目根仍待后续可复核证据；Windows 现场确认的动态 Agent 根仅扩展一层直接子目录，不递归或跟随目录链接。
+- 品牌呈现采用 `MiniMax Code` 文字标签，不添加未确认可复用许可的 Logo；派发标记强调色按官方 [MiniMax Brand Book（品牌手册）](https://www.minimax.io/brand-vi) 色板使用 `#FF6452`。品牌资源来源和“不自制图标”的边界见 `assets/branding/SOURCES.md`。
 
 
 本文中的 MiniMax Code 指 MiniMax 官方本地 Agent 产品，包括桌面端和开源仓库公开的 `mcode` 终端 TUI、headless CLI 与 ACP；MiniMax Agent 网页版是云端任务产品，不因同品牌或可创建 Skills 而成为本地文件管理目标。MiniMax Code 的 Skill 支持以 Agent Skills 目录型 `SKILL.md` 为主，客户端 profile 必须区分 CLI/ACP 与桌面端，不能把仓库公开范围误当成桌面应用源码或全部内部契约。
@@ -560,7 +561,7 @@ OpenClaw 的本地 Skill 层级、扫描深度、安装更新、启停、链接�
 - 调用证据：CLI 提供 `/skills`、`/mcp` 与 `/doctor` 命令，但目前没有纳入本文证据的稳定按 Skill 调用次数接口；安装或命令可见不代表运行时任务正确执行。
 - 结论：MiniMax Code CLI / ACP 与桌面端均为部分文件管理接入候选。桌面版三个标准扫描根、桌面与 CLI 共享用户数据根以及桌面侧共享目录识别已有本机证据；桌面 app.asar Skill 与 host 能力不随 CLI 提供，插件目录 Skill 排除在 SkillHub 当前支持范围外。仍需确认跨 Agent/profile 的路径解析、CLI 对共享 `.agents/skills` 的发现、优先级、刷新与链接行为。MiniMax Agent 网页版只作为云端能力边界说明，不创建文件部署 profile。
 
-主要来源：[MiniMax Code 官方仓库与 README](https://github.com/MiniMax-AI/minimax-code)、[MiniMax Code 官方安装及数据目录文档](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/installation.md)、[MiniMax Code 官方 TUI 能力与 Skill 链接说明](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md)、[MiniMax Code 官方产品下载与桌面/网页边界](https://agent.minimax.io/download)。资料复核日期：2026-10-12。
+主要来源：[MiniMax Code 官方仓库与 README](https://github.com/MiniMax-AI/minimax-code)、[MiniMax Code 官方安装及数据目录文档](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/installation.md)、[MiniMax Code 官方 TUI 能力与 Skill 链接说明](https://github.com/MiniMax-AI/minimax-code/blob/main/docs/tui-capabilities.md)、[MiniMax Code 官方产品下载与桌面/网页边界](https://agent.minimax.io/download)、[MiniMax Brand Book（品牌手册）](https://www.minimax.io/brand-vi)。资料复核日期：2026-10-15；Desktop 路径现场证据仍为 2026-10-12 Windows 3.1.1.171。
 
 ### 5.24 豆包工作（Doubao Work）
 

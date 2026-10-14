@@ -30,6 +30,14 @@ it("renders compound known ids with their catalog spelling", () => {
   expect(screen.getByText("GitHub Copilot")).toBeVisible();
 });
 
+it("uses the readable MiniMax Code brand name without inventing an unavailable logo", () => {
+  const { container } = render(<BrandTag brand="minimax-code" />);
+
+  expect(screen.getByText("MiniMax Code")).toBeVisible();
+  expect(container.querySelector(".sh-brand-tag--minimax-code")).toBeInTheDocument();
+  expect(container.querySelector(".sh-brand-tag__icon")).toBeNull();
+});
+
 // M-30（验收反馈"Pi 与 DeepSeek Harness 缺少品牌 Logo"）：两个品牌现在
 // 都有来自官方一手来源的图标，必须渲染真实素材而不是只有颜色标签。
 it("renders Pi and DeepSeek Harness as known platform brands with official logos", () => {

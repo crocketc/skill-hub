@@ -757,3 +757,214 @@ fn builtin_candidates_flow_into_logical_targets_as_platform_read_only_roots() {
         "builtin flag must be serialized for downstream consumers"
     );
 }
+
+#[test]
+fn direct_child_paths_expand_one_agent_level_without_following_directory_links() {
+    use skillhub_core::agent::{
+        AgentClient, AgentProfile, CallPolicy, ClientKind, DeploymentCapability,
+        DirectoryPrecedence, PathCandidate, ProfileCatalog, TargetScope,
+    };
+
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    let agents = home.join(".minimax/agents");
+    std::fs::create_dir_all(agents.join("mavis/skills")).unwrap();
+    std::fs::create_dir_all(agents.join("empty-agent")).unwrap();
+    std::fs::create_dir_all(agents.join("mavis/nested/skills")).unwrap();
+    std::fs::create_dir_all(agents.join(".builtin/skills")).unwrap();
+    std::fs::write(agents.join("not-an-agent"), "file").unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let outside = workspace.path().join("outside-agent");
+        std::fs::create_dir_all(outside.join("skills")).unwrap();
+        symlink(outside, agents.join("linked-agent")).unwrap();
+    }
+
+    let client = AgentClient {
+        id: "fixture.desktop".into(),
+        display_name: "Fixture Desktop".into(),
+        kind: ClientKind::Desktop,
+        supported_os: vec![OperatingSystem::Windows],
+        path_candidates: vec![PathCandidate {
+            path: "{user_home}/.minimax/agents/{agent_directory}/skills".into(),
+            agent_root: Some("{user_home}/.minimax/agents/{agent_directory}".into()),
+            scope: TargetScope::Global,
+            precedence: DirectoryPrecedence::Preferred,
+            marker: "SKILL.md".into(),
+            shared_reference: false,
+            builtin: false,
+        }],
+        skill_marker: "SKILL.md".into(),
+        deployment: DeploymentCapability {
+            copy: true,
+            symlink: false,
+            junction: false,
+            limitations: vec![],
+        },
+        call_policy: CallPolicy::Unknown,
+    };
+    let catalog = ProfileCatalog {
+        profiles: vec![AgentProfile {
+            profile_version: 1,
+            research_date: "2026-10-15".into(),
+            official_references: vec!["https://example.com".into()],
+            brand: "Fixture".into(),
+            clients: vec![client],
+        }],
+    };
+
+    let snapshot = DiscoverAgents::new(catalog)
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    let targets = snapshot
+        .logical_targets
+        .iter()
+        .filter(|target| target.client_id == "fixture.desktop")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets.len(),
+        2,
+        "only direct, ordinary child directories are enumerated"
+    );
+
+    let mavis = targets
+        .iter()
+        .find(|target| {
+            target.path.ends_with("agents\\mavis\\skills")
+                || target.path.ends_with("agents/mavis/skills")
+        })
+        .expect("mavis Skill directory");
+    assert!(mavis.exists);
+    let mavis_root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| root.id == mavis.agent_root_id)
+        .expect("mavis Agent root observation");
+    assert!(
+        mavis_root.path.ends_with("agents\\mavis") || mavis_root.path.ends_with("agents/mavis")
+    );
+    assert!(mavis_root.exists);
+
+    let empty = targets
+        .iter()
+        .find(|target| {
+            target.path.ends_with("empty-agent\\skills")
+                || target.path.ends_with("empty-agent/skills")
+        })
+        .expect("missing Skill directory remains observable");
+    assert!(!empty.exists);
+    assert_eq!(
+        empty.status,
+        skillhub_core::agent::DirectoryObservationStatus::Missing
+    );
+    let empty_root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| root.id == empty.agent_root_id)
+        .expect("empty Agent root observation");
+    assert!(empty_root.exists);
+}
+
+#[test]
+fn minimax_desktop_discovery_keeps_user_agent_builtin_and_shared_roots_distinct() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    for relative in [
+        ".minimax/skills",
+        ".minimax/agents/mavis/skills",
+        ".minimax/agents/.builtin/skills",
+        ".minimax/.builtin-skills",
+        ".agents/skills",
+    ] {
+        std::fs::create_dir_all(home.join(relative)).unwrap();
+    }
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    let minimax = snapshot
+        .logical_targets
+        .iter()
+        .filter(|target| target.profile_id == "minimax-code")
+        .collect::<Vec<_>>();
+    assert_eq!(minimax.len(), 4);
+    let builtin = minimax
+        .iter()
+        .find(|target| target.path.ends_with(".builtin-skills"))
+        .expect("verified built-in root");
+    assert!(builtin.builtin);
+    let dynamic = minimax
+        .iter()
+        .find(|target| {
+            target.path.ends_with("agents\\mavis\\skills")
+                || target.path.ends_with("agents/mavis/skills")
+        })
+        .expect("one observed Agent-specific root");
+    let dynamic_root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| root.id == dynamic.agent_root_id)
+        .expect("Agent-specific root fact");
+    assert!(
+        dynamic_root.path.ends_with("agents\\mavis") || dynamic_root.path.ends_with("agents/mavis")
+    );
+    assert!(!minimax
+        .iter()
+        .any(|target| target.path.contains("agents/.builtin/skills")
+            || target.path.contains("agents\\.builtin\\skills")));
+
+    let shared = minimax
+        .iter()
+        .find(|target| target.shared_reference)
+        .expect("MiniMax shared-directory reference");
+    let generic_owner = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| {
+            target.profile_id == "agent-skills" && target.path.ends_with(".agents\\skills")
+                || target.profile_id == "agent-skills" && target.path.ends_with(".agents/skills")
+        })
+        .expect("generic Agent Skills remains the shared directory owner");
+    assert!(!generic_owner.shared_reference);
+    assert_eq!(shared.physical_id, generic_owner.physical_id);
+
+    let macos = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Macos, &home))
+        .unwrap();
+    assert!(!macos
+        .instances
+        .iter()
+        .any(|instance| instance.profile_id == "minimax-code"));
+    assert!(!macos
+        .logical_targets
+        .iter()
+        .any(|target| target.profile_id == "minimax-code"));
+}
+
+#[test]
+fn minimax_shared_directory_does_not_claim_brand_without_the_native_root() {
+    let workspace = tempdir().unwrap();
+    let home = workspace.path().join("home");
+    std::fs::create_dir_all(home.join(".agents/skills")).unwrap();
+
+    let snapshot = DiscoverAgents::builtin()
+        .discover(&DiscoveryRoots::new(OperatingSystem::Windows, &home))
+        .unwrap();
+    let shared = snapshot
+        .logical_targets
+        .iter()
+        .find(|target| target.profile_id == "minimax-code" && target.shared_reference)
+        .expect("shared path remains discoverable as a reference");
+    let root = snapshot
+        .agent_roots
+        .iter()
+        .find(|root| root.id == shared.agent_root_id)
+        .expect("MiniMax native-root evidence");
+    assert!(!root.exists);
+    assert_eq!(
+        root.status,
+        skillhub_core::agent::DirectoryObservationStatus::Missing
+    );
+}

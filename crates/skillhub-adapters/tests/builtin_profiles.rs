@@ -22,6 +22,7 @@ const PROFILE_FILES: &[&str] = &[
     "pi",
     "deepseek-harness",
     "doubao",
+    "minimax-code",
 ];
 
 #[test]
@@ -49,6 +50,7 @@ fn builtin_catalog_contains_every_researched_brand_and_no_roo_code() {
         "pi",
         "deepseek-harness",
         "doubao-work",
+        "minimax-code",
     ] {
         assert!(ids.contains(expected), "missing {expected}");
     }
@@ -67,17 +69,34 @@ fn every_builtin_profile_passes_strict_loader_and_matches_expectations() {
             skillhub_adapters::agent::load_profile(profile_dir.join(format!("{id}.json")))
                 .unwrap_or_else(|error| panic!("invalid builtin profile {id}: {error}"));
         assert_eq!(profile.profile_version, 1);
-        assert!(profile.clients.iter().all(|client| {
-            !client.display_name.trim().is_empty()
-                && client.supported_os.len() == 2
-                && client.supported_os.iter().all(|os| {
-                    matches!(
-                        os,
-                        skillhub_core::agent::OperatingSystem::Windows
-                            | skillhub_core::agent::OperatingSystem::Macos
-                    )
-                })
-        }));
+        let os_scope_exceptions = expectations["client_os_scope_exceptions"]
+            .as_object()
+            .unwrap();
+        assert!(
+            profile.clients.iter().all(|client| {
+                if client.display_name.trim().is_empty() {
+                    return false;
+                }
+                if let Some(expected) = os_scope_exceptions.get(&client.id) {
+                    let expected_os = expected["supported_os"].as_array().unwrap();
+                    return client.supported_os.len() == expected_os.len()
+                        && client.supported_os.iter().zip(expected_os).all(
+                            |(actual, expected)| {
+                                actual == &serde_json::from_value(expected.clone()).unwrap()
+                            },
+                        );
+                }
+                client.supported_os.len() == 2
+                    && client.supported_os.iter().all(|os| {
+                        matches!(
+                            os,
+                            skillhub_core::agent::OperatingSystem::Windows
+                                | skillhub_core::agent::OperatingSystem::Macos
+                        )
+                    })
+            }),
+            "client platform declarations must match explicit evidence scopes"
+        );
         let expected_paths = expectations["profiles"][*id].as_array().unwrap();
         let actual_paths = profile
             .clients
@@ -172,6 +191,48 @@ fn workbuddy_local_directories_follow_the_2026_09_05_confirmation() {
     assert!(
         !client.deployment.symlink && !client.deployment.junction,
         "WorkBuddy 链接能力未经官方确认，不得声明"
+    );
+}
+
+#[test]
+fn minimax_desktop_profile_matches_only_confirmed_windows_roots_and_read_only_builtin_scope() {
+    let catalog = ProfileCatalog::builtin();
+    let profile = catalog
+        .profiles
+        .iter()
+        .find(|profile| profile.brand == "MiniMax Code")
+        .expect("MiniMax Code profile");
+    let client = &profile.clients[0];
+    assert_eq!(client.id, "minimax-code.desktop");
+    assert_eq!(client.display_name, "MiniMax Code Desktop");
+    assert_eq!(
+        client.supported_os,
+        vec![skillhub_core::agent::OperatingSystem::Windows]
+    );
+    assert!(client.deployment.copy);
+    assert!(!client.deployment.symlink && !client.deployment.junction);
+
+    let builtin = client
+        .path_candidates
+        .iter()
+        .find(|candidate| candidate.builtin)
+        .expect("the verified built-in root is explicitly read-only");
+    assert_eq!(builtin.path, "{user_home}/.minimax/.builtin-skills");
+    assert_eq!(
+        client
+            .path_candidates
+            .iter()
+            .filter(|candidate| candidate.shared_reference)
+            .count(),
+        1
+    );
+    assert_eq!(
+        client
+            .path_candidates
+            .iter()
+            .filter(|candidate| candidate.path.contains("{agent_directory}"))
+            .count(),
+        1
     );
 }
 
@@ -527,6 +588,10 @@ fn builtin_directories_are_declared_as_read_only_platform_candidates() {
             "{user_home}/AppData/Local/DoubaoWork/User Data/Default/.doubaowork/agent_mode/workspace/.skills".to_string(),
         ],
     );
+    assert_eq!(
+        builtin_paths("minimax-code.desktop"),
+        vec!["{user_home}/.minimax/.builtin-skills".to_string()],
+    );
     let builtin_count = catalog
         .profiles
         .iter()
@@ -535,7 +600,7 @@ fn builtin_directories_are_declared_as_read_only_platform_candidates() {
         .filter(|candidate| candidate.builtin)
         .count();
     assert_eq!(
-        builtin_count, 6,
+        builtin_count, 7,
         "only the real-machine confirmed built-in directories may be declared"
     );
     let all_builtin = catalog

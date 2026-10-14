@@ -66,6 +66,13 @@
   真机核实（2026-09-25）不作为稳定公开契约，未写入 profile；profile 只
   声明共享目录 `{user_home}/.agents/skills`。
 
+## minimax-code（MiniMax Code）
+
+- 品牌名使用 `MiniMax Code`，Agent 桌面类型仍由统一 presenter（展示转换层）显示。
+- 未随本次接入添加品牌 Logo：官方品牌手册公布了 Logo 使用规则与素材，但项目当前未留存可复用的独立许可素材；界面按现有无素材策略显示中性文字品牌标签，不自制或截取图标。
+- 技能派发标记使用品牌强调色 `#FF6452`，来源为 [MiniMax Brand Book](https://www.minimax.io/brand-vi) 的官方色板（2026-10-15 查看）。
+- 官方桌面产品来源：[MiniMax Code 下载页](https://agent.minimax.io/download)；路径只采用已归档的 Windows 现场证据，不由品牌或 CLI 资料推断。
+
 ## SkillHub 自有素材
 
 - `assets/branding/tauri-icons/`：SkillHub 应用自有图标母版（非第三方素材），

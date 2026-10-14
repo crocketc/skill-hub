@@ -28,6 +28,7 @@ export const AGENT_PROFILE_IDS = [
   "grok",
   "hermes",
   "kimi",
+  "minimax-code",
   "openai",
   "openclaw",
   "opencode",
@@ -53,6 +54,7 @@ const AGENT_VISUALS: Record<string, AgentVisual> = {
   grok: { color: "#111827" },
   hermes: { color: "#c2410c" },
   kimi: { color: "#0ea5e9" },
+  "minimax-code": { color: "#FF6452" },
   openai: { color: "#10a37f" },
   openclaw: { color: "#ea580c" },
   opencode: { color: "#334155" },
@@ -78,6 +80,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   grok: "Grok",
   hermes: "Hermes",
   kimi: "Kimi",
+  "minimax-code": "MiniMax Code",
   openai: "OpenAI",
   openclaw: "OpenClaw",
   opencode: "OpenCode",
@@ -89,11 +92,11 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export function getAgentVisual(agent: AgentDeployment): AgentVisual {
-  return AGENT_VISUALS[(agent.brand ?? agent.agentId ?? agent.id).toLowerCase()] ?? { color: "#64748b" };
+  return AGENT_VISUALS[agentBrandKey(agent.brand ?? agent.agentId ?? agent.id)] ?? { color: "#64748b" };
 }
 
 export function getAgentDisplayName(agent: AgentDeployment) {
-  return AGENT_DISPLAY_NAMES[(agent.brand ?? agent.agentId ?? agent.id).toLowerCase()] ?? agent.name;
+  return AGENT_DISPLAY_NAMES[agentBrandKey(agent.brand ?? agent.agentId ?? agent.id)] ?? agent.name;
 }
 
 function AgentMark({ agent }: { agent: AgentDeployment }) {
