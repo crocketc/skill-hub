@@ -16,7 +16,8 @@ test("pending review prepares the existing batch workspace without running it", 
   await expect(batch).toBeFocused();
   await expect(page.getByRole("checkbox", { name: "Select DOCX Writer" })).toBeChecked();
   await expect(page.getByRole("link", { name: "Return to pending items" })).toHaveAttribute("href", "/pending?kind=basic_check");
-  await expect(page.getByRole("button", { name: "Run security check" })).toBeVisible();
+  // 该批量检查尚未接入真实能力，因此不向用户展示不可执行入口；待审项目和返回上下文仍保留。
+  await expect(page.getByRole("button", { name: "Run security check" })).toHaveCount(0);
   await expect(page.getByText("Security check completed")).toHaveCount(0);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);

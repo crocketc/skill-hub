@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SKILL_QUERY } from "./api";
 import {
   excludeFromAllFiltered,
+  filterSelectedItems,
   retainExplicitSelection,
   selectAllFiltered,
   selectExplicit,
@@ -71,6 +72,23 @@ describe("Skill selection", () => {
       throw new Error("expected an explicit selection");
     }
     expect(selectionToBatchTarget(selected)).toEqual({ kind: "skill_ids", skillIds: ["a", "b"] });
+  });
+
+  it("applies filtered exclusions and explicit IDs to materialized pages", () => {
+    const rows = [{ id: "skill-a" }, { id: "skill-b" }, { id: "skill-c" }];
+    const allFiltered = excludeFromAllFiltered(
+      selectAllFiltered({ filters: DEFAULT_SKILL_QUERY.filters, text: "" }, "filter:all", 3),
+      "skill-b",
+      true,
+    );
+
+    expect(filterSelectedItems(allFiltered, rows)).toEqual([
+      { id: "skill-a" },
+      { id: "skill-c" },
+    ]);
+    expect(filterSelectedItems({ kind: "explicit", skillIds: ["skill-c"] }, rows)).toEqual([
+      { id: "skill-c" },
+    ]);
   });
 
   it("adds only the current page to all-filtered exclusions without losing its snapshot", () => {

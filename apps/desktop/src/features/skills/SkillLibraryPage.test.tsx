@@ -164,9 +164,7 @@ describe("SkillLibraryPage", () => {
     expect(screen.getByRole("checkbox", { name: "Select PDF Reader" })).not.toBeChecked();
     expect(screen.getByText("Prepared for safety review")).toBeVisible();
     expect(facade.calls.emitBatchIntent).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Run security check" }));
-    await waitFor(() => expect(facade.calls.emitBatchIntent).toHaveLength(1));
-    expect(facade.calls.emitBatchIntent[0].target).toEqual({ kind: "skill_ids", skillIds: ["skill-docx"] });
+    expect(screen.queryByRole("button", { name: "Run security check" })).not.toBeInTheDocument();
   });
 
   it("keeps source review preparation editable and never reapplies cleared selection", async () => {
@@ -681,18 +679,37 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
       screen.getByRole("button", { name: "Select all 80 filtered results" }),
     );
     expect(screen.getByText("All 80 filtered results selected")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Run security check" }));
-    await waitFor(() => {
-      expect(facade.calls.emitBatchIntent).toContainEqual({
-        action: "security_check",
-        target: {
-          kind: "filtered",
-          excludedSkillIds: [],
-          filter: expect.objectContaining({ text: "" }),
-        },
-      });
-    });
-    expect(screen.queryByText("Security check completed")).not.toBeInTheDocument();
+  });
+
+  it("materializes all-filtered selections with exclusions for the export workflow", async () => {
+    const facade = createMockSkillLibraryFacade({ total: 80 });
+    const { router } = renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select all 80 filtered results" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
+
+    expect(screen.getByText("All 79 filtered results selected")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+
+    expect(await screen.findByText("Data protection export")).toBeVisible();
+    const state = router.state.location.state as { exportSkillIds: string[] };
+    expect(state.exportSkillIds).toHaveLength(79);
+    expect(state.exportSkillIds).not.toContain("skill-pdf");
+  });
+
+  it("does not render batch actions without a real capability", async () => {
+    const facade = createMockSkillLibraryFacade();
+    facade.saveSkillMetadata = undefined;
+    renderLibrary({ facade });
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
+
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    expect(within(batchBar).queryByRole("button", { name: "Add tags" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Remove tags" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Run security check" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Submit export job" })).not.toBeInTheDocument();
   });
 
   it("applies batch tag additions through per-skill metadata saves", async () => {
@@ -804,14 +821,11 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual([
-      // 高频：添加到目标、标签、导出、检查更新
+      // 当前已接通：派发、标签、导出向导。
       "Add to…",
       "Add tags",
       "Remove tags",
       "Start export",
-      // 管理类
-      "Run security check",
-      "Submit export job",
       // 破坏性操作单独分组且位于最右侧
       "Delete selected Skills from library",
     ]);
@@ -896,20 +910,21 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     ).not.toBeInTheDocument();
   });
 
-  it("distinguishes the export wizard entry from the native batch export submission", async () => {
+  it("offers exactly one export entry and routes it to the existing wizard", async () => {
     const facade = createMockSkillLibraryFacade();
-    renderLibrary({ facade });
+    const { router } = renderLibrary({ facade });
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
 
     const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    const wizard = within(batchBar).getByRole("button", { name: "Start export" });
-    const submission = within(batchBar).getByRole("button", { name: "Submit export job" });
-    expect(wizard.getAttribute("title")).toBeTruthy();
-    expect(submission.getAttribute("title")).toBeTruthy();
-    expect(wizard.getAttribute("title")).not.toBe(submission.getAttribute("title"));
+    expect(within(batchBar).getAllByRole("button", { name: /export/i })).toHaveLength(1);
+    expect(within(batchBar).getByRole("button", { name: "Start export" })).toHaveAttribute("title");
+    expect(within(batchBar).queryByRole("button", { name: "Submit export job" })).not.toBeInTheDocument();
+    fireEvent.click(within(batchBar).getByRole("button", { name: "Start export" }));
+    expect(await screen.findByText("Data protection export")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/settings/data-protection");
   });
 
   it("starts the standard export flow with the explicitly selected skill ids", async () => {
@@ -1818,22 +1833,18 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("explains unavailable batch workflows without inventing completion", async () => {
+  it("does not offer unconnected batch actions through the generic placeholder facade", async () => {
     const facade = createMockSkillLibraryFacade();
-    vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
-      new SkillLibraryUnavailableError(),
-    );
+    const emitBatchIntent = vi.spyOn(facade, "emitBatchIntent");
     renderLibrary({ facade });
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This batch workflow is not connected",
-    );
-    expect(screen.queryByText("Export completed")).not.toBeInTheDocument();
+    const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
+    expect(within(batchBar).queryByRole("button", { name: "Run security check" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Submit export job" })).not.toBeInTheDocument();
+    expect(emitBatchIntent).not.toHaveBeenCalled();
   });
 
 
@@ -2104,15 +2115,13 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
   it("clears stale batch error notices when the selected scope changes", async () => {
     const facade = createMockSkillLibraryFacade();
-    vi.spyOn(facade, "emitBatchIntent").mockRejectedValue(
-      new Error("batch preparation failed"),
-    );
+    facade.checkSourceUpdates = vi.fn().mockRejectedValue(new Error("update check failed"));
     renderLibrary({ facade });
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Submit export job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );

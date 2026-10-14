@@ -39,7 +39,6 @@ import {
   isSkillLibraryUnavailable,
   SkillLibraryUnavailableError,
   skillLibraryKeys,
-  type BatchAction,
   type SavedSkillView,
   type SkillColumnId,
   type SkillDrawerPreferences,
@@ -66,7 +65,8 @@ import {
   retainExplicitSelection,
   selectAllFiltered,
   selectionCount,
-  selectionToBatchTarget,
+  filterSelectedItems,
+  isSkillSelected as selectionIncludesSkill,
   selectExplicit,
   excludeFromAllFiltered,
   setPageSelection,
@@ -136,8 +136,9 @@ interface PreferenceStatusProps {
 
 interface BatchBarProps {
   barRef: Ref<HTMLElement>;
+  canEditTags: boolean;
   checkUpdatesPending?: boolean;
-  onAction: (action: BatchAction) => void;
+  onDispatch: () => void;
   onCheckUpdates?: () => void;
   onClear: () => void;
   onDelete: () => void;
@@ -147,14 +148,6 @@ interface BatchBarProps {
   page: SkillPage;
   selection: Exclude<SkillSelection, { kind: "none" }>;
 }
-
-const BATCH_ACTION_KEYS = {
-  add_to: "skillLibrary.page.batch.addTo",
-  add_tag: "skillLibrary.page.batch.addTags",
-  export: "skillLibrary.page.batch.export",
-  remove_tag: "skillLibrary.page.batch.removeTags",
-  security_check: "skillLibrary.page.batch.securityCheck",
-} as const satisfies Record<BatchAction, string>;
 
 // P1-08：分组切换的分段控件选项（短文本）。视图切换已迁入壳层标题栏
 // （features/skills/libraryViewContext.tsx 的 LibraryViewModeSwitch）。
@@ -320,8 +313,9 @@ function PreferenceStatus({
 
 function BatchBar({
   barRef,
+  canEditTags,
   checkUpdatesPending,
-  onAction,
+  onDispatch,
   onCheckUpdates,
   onClear,
   onDelete,
@@ -365,27 +359,23 @@ function BatchBar({
       {/* 高频操作、管理操作与破坏性删除分组呈现。 */}
       <div className="sh-skill-library__batch-actions">
         <Button
-          onClick={() => onAction("add_to")}
+          onClick={onDispatch}
           size="sm"
           title={t("skillLibrary.page.batch.addToTitle")}
           variant="ghost"
         >
-          {t(BATCH_ACTION_KEYS.add_to)}
+          {t("skillLibrary.page.batch.addTo")}
         </Button>
-        <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
-          {t("skillLibrary.page.batch.addTags")}
-        </Button>
-        <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
-          {t("skillLibrary.page.batch.removeTags")}
-        </Button>
-        <Button
-          onClick={onStartExport}
-          size="sm"
-          title={t("skillLibrary.page.batch.startExportTitle")}
-          variant="ghost"
-        >
-          {t("skillLibrary.page.batch.startExport")}
-        </Button>
+        {canEditTags ? (
+          <>
+            <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
+              {t("skillLibrary.page.batch.addTags")}
+            </Button>
+            <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
+              {t("skillLibrary.page.batch.removeTags")}
+            </Button>
+          </>
+        ) : null}
         {onCheckUpdates ? (
           <Button
             disabled={checkUpdatesPending}
@@ -399,19 +389,12 @@ function BatchBar({
           </Button>
         ) : null}
         <Button
-          onClick={() => onAction("security_check")}
+          onClick={onStartExport}
           size="sm"
+          title={t("skillLibrary.page.batch.startExportTitle")}
           variant="ghost"
         >
-          {t(BATCH_ACTION_KEYS.security_check)}
-        </Button>
-        <Button
-          onClick={() => onAction("export")}
-          size="sm"
-          title={t("skillLibrary.page.batch.exportTitle")}
-          variant="ghost"
-        >
-          {t(BATCH_ACTION_KEYS.export)}
+          {t("skillLibrary.page.batch.startExport")}
         </Button>
         <div className="sh-skill-library__batch-destructive">
           <Button onClick={onDelete} size="sm" variant="ghost">
@@ -868,38 +851,22 @@ export function SkillLibraryPage({
     writeDrawerSkill(undefined);
   };
 
-  const emitBatchAction = (action: BatchAction) => {
+  const startBatchDispatch = () => {
     if (selection.kind === "none" || selectionCount(selection) <= 0) return;
-    if (action === "add_to") {
-      void selectedSkillsForRemoval().then(
-        (skills) => {
-          const search = new URLSearchParams();
-          skills.forEach((skill) => search.append("skill", skill.id));
-          if (deployTarget) search.append("target", deployTarget.id);
-          navigate({ pathname: "/deploy", search: `?${search.toString()}` });
-        },
-        () =>
-          notify({ source: "library",
-            kind: "batch",
-            title: t("skillLibrary.page.batch.error"),
-            tone: "danger",
-          }),
-      );
-      return;
-    }
-    const request = batchRequestRef.current + 1;
-    batchRequestRef.current = request;
-    const intent = { action, target: selectionToBatchTarget(selection) };
-    void facade.emitBatchIntent(intent).catch((error: unknown) => {
-      if (request !== batchRequestRef.current) return;
-      notify({ source: "library",
-        kind: "batch",
-        title: isSkillLibraryUnavailable(error)
-          ? t("skillLibrary.page.batch.unconnected")
-          : t("skillLibrary.page.batch.error"),
-        tone: "danger",
-      });
-    });
+    void materializeSelectedSkills().then(
+      (skills) => {
+        const search = new URLSearchParams();
+        skills.forEach((skill) => search.append("skill", skill.id));
+        if (deployTarget) search.append("target", deployTarget.id);
+        navigate({ pathname: "/deploy", search: `?${search.toString()}` });
+      },
+      () =>
+        notify({ source: "library",
+          kind: "batch",
+          title: t("skillLibrary.page.batch.error"),
+          tone: "danger",
+        }),
+    );
   };
 
   // P1-10：批量标签写落地——生产 emitBatchIntent 未绑定，这里改为
@@ -910,7 +877,7 @@ export function SkillLibraryPage({
     const request = batchRequestRef.current + 1;
     batchRequestRef.current = request;
     try {
-      const selected = await selectedSkillsForRemoval();
+      const selected = await materializeSelectedSkills();
       const save = facade.saveSkillMetadata?.bind(facade);
       // 各选中项互不依赖，并行 get→set；逐项失败语义保持不变。
       const outcomes: BatchOutcome[] = await Promise.all(selected.map(async (skill) => {
@@ -969,7 +936,7 @@ export function SkillLibraryPage({
     batchRequestRef.current = request;
     setSourceUpdatesPending(true);
     const checkFacade = facade.checkSourceUpdates;
-    void selectedSkillsForRemoval()
+    void materializeSelectedSkills()
       .then(async (skills) => {
         const entries = await checkFacade(skills.map((skill) => skill.id));
         if (request !== batchRequestRef.current) return;
@@ -1001,12 +968,13 @@ export function SkillLibraryPage({
       });
   };
 
-  const startBatchExport = () => {    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
+  const startBatchExport = () => {
+    if (selection.kind === "none" || selectionCount(selection) <= 0) return;
     if (selection.kind === "explicit") {
       navigate("/settings/data-protection", { state: { exportSkillIds: [...selection.skillIds] } });
       return;
     }
-    void selectedSkillsForRemoval().then(
+    void materializeSelectedSkills().then(
       (skills) => navigate("/settings/data-protection", {
         state: { exportSkillIds: skills.map((skill) => skill.id) },
       }),
@@ -1019,7 +987,7 @@ export function SkillLibraryPage({
     );
   };
 
-  const selectedSkillsForRemoval = async (): Promise<Array<{ id: string; name: string }>> => {
+  const materializeSelectedSkills = async (): Promise<Array<{ id: string; name: string }>> => {
     if (selection.kind === "explicit") {
       const names = new Map(pageQuery.data?.items.map((item) => [item.id, item.name]));
       return Promise.all(selection.skillIds.map(async (id) => ({
@@ -1027,12 +995,21 @@ export function SkillLibraryPage({
         name: names.get(id) ?? (await facade.getSkillQuickView(id)).name,
       })));
     }
+    if (selection.kind === "none") return [];
     const items: Array<{ id: string; name: string }> = [];
+    let scanned = 0;
     let pageNumber = 1;
     while (true) {
-      const result = await facade.listSkills({ ...query, page: pageNumber, pageSize: 100 });
-      items.push(...result.items.map((item) => ({ id: item.id, name: item.name })));
-      if (items.length >= result.total || result.items.length === 0) return items;
+      const result = await facade.listSkills({
+        ...query,
+        ...selection.filter,
+        page: pageNumber,
+        pageSize: 100,
+      });
+      scanned += result.items.length;
+      items.push(...filterSelectedItems(selection, result.items)
+        .map((item) => ({ id: item.id, name: item.name })));
+      if (scanned >= result.total || result.items.length === 0) return items;
       pageNumber += 1;
     }
   };
@@ -1043,7 +1020,7 @@ export function SkillLibraryPage({
     setBatchRemovalOutcomes([]);
     dismissByKind("removal-summary");
     try {
-      const selected = single ? [single] : await selectedSkillsForRemoval();
+      const selected = single ? [single] : await materializeSelectedSkills();
       // Each prepared row is persisted. Settle successful rows if any selected
       // Skill cannot be prepared, instead of leaving invisible previews behind.
       const results = await Promise.allSettled(
@@ -1323,9 +1300,7 @@ export function SkillLibraryPage({
 
   const page = pageQuery.data;
   const isSkillSelected = (skillId: string) =>
-    selection.kind === "all_filtered"
-      ? !selection.excludedSkillIds.includes(skillId)
-      : selection.kind === "explicit" && selection.skillIds.includes(skillId);
+    selectionIncludesSkill(selection, skillId);
   const toggleSkillSelected = (skillId: string, selected: boolean) => {
     setSelectionAnnouncement(undefined);
     if (selection.kind === "all_filtered") {
@@ -1692,8 +1667,9 @@ export function SkillLibraryPage({
       {selectedBatchTarget ? (
         <BatchBar
           barRef={setBatchBarElement}
+          canEditTags={Boolean(facade.saveSkillMetadata)}
           checkUpdatesPending={sourceUpdatesPending}
-          onAction={emitBatchAction}
+          onDispatch={startBatchDispatch}
           onCheckUpdates={facade.checkSourceUpdates ? startBatchUpdateCheck : undefined}
           onClear={() => {
             changeSelection({ kind: "none" });

@@ -105,6 +105,20 @@ export function selectionCount(state: SkillSelection): number {
   return state.total - normalizeIds(state.excludedSkillIds).length;
 }
 
+export function isSkillSelected(state: SkillSelection, skillId: string): boolean {
+  if (state.kind === "none") return false;
+  if (state.kind === "explicit") return state.skillIds.includes(skillId);
+  return !state.excludedSkillIds.includes(skillId);
+}
+
+/** Apply the current selection to a page queried with its saved filter snapshot. */
+export function filterSelectedItems<T extends { id: string }>(
+  state: SkillSelection,
+  items: T[],
+): T[] {
+  return items.filter((item) => isSkillSelected(state, item.id));
+}
+
 export function selectionToBatchTarget(
   state: Exclude<SkillSelection, { kind: "none" }>,
 ): BatchTarget {

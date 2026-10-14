@@ -49,7 +49,8 @@ test("skill library keeps the professional table reachable with selection", asyn
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
   await expect(batchBar).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Run security check" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Run security check" })).toHaveCount(0);
+  await expect(batchBar.getByRole("button", { name: "Submit export job" })).toHaveCount(0);
   await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
@@ -84,9 +85,25 @@ test("selected skills expose separated batch actions in the default card view", 
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
   await expect(batchBar).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Run security check" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Run security check" })).toHaveCount(0);
+  await expect(batchBar.getByRole("button", { name: "Submit export job" })).toHaveCount(0);
   await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
+});
+
+test("filtered batch dispatch excludes unchecked Skills from its exact target set", async ({ page }) => {
+  await page.goto("/__preview/skill-library?total=80");
+  await page.getByRole("button", { name: "Table view" }).click();
+  await page.getByRole("checkbox", { name: "Select current page" }).check();
+  await page.getByRole("button", { name: "Select all 80 filtered results" }).click();
+  await page.getByRole("checkbox", { name: "Select PDF Reader" }).uncheck();
+  await expect(page.getByText("All 79 filtered results selected")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add to…" }).click();
+  await expect(page).toHaveURL(/\/deploy\?/);
+  const target = new URL(page.url());
+  expect(target.searchParams.getAll("skill")).toHaveLength(79);
+  expect(target.searchParams.getAll("skill")).not.toContain("skill-pdf");
 });
 
 test("quick drawer opens from card activation and the version section stays reachable", async ({ page }) => {
