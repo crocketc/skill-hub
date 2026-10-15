@@ -64,13 +64,29 @@ test("graph Agent nodes keep their brand, platform type and connected layout", a
   await page.setViewportSize({ width: 800, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth))
     .toBeLessThanOrEqual(await page.evaluate(() => document.documentElement.clientWidth));
+  await expect.poll(() => surface.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(440);
   await expect(longBrand).toBeVisible();
-  const noNarrowOverlap = await agentNodes.evaluateAll((nodes) => {
+  await expect.poll(() => agentNodes.evaluateAll((nodes) => {
+    const surface = nodes[0]?.closest<HTMLElement>("[data-testid='skill-graph-surface']");
+    const layer = nodes[0]?.closest<HTMLElement>(".sh-graph-canvas__layer");
     const boxes = nodes.map((node) => node.getBoundingClientRect());
-    return boxes.every((box, index) => boxes.slice(index + 1).every((other) =>
-      box.right <= other.left || other.right <= box.left || box.bottom <= other.top || other.bottom <= box.top,
-    ));
-  });
-  expect(noNarrowOverlap).toBe(true);
+    for (let index = 0; index < boxes.length; index += 1) {
+      for (let otherIndex = index + 1; otherIndex < boxes.length; otherIndex += 1) {
+        const first = boxes[index];
+        const second = boxes[otherIndex];
+        if (first.right <= second.left || second.right <= first.left || first.bottom <= second.top || second.bottom <= first.top) continue;
+        return {
+          first: nodes[index].textContent?.trim(),
+          second: nodes[otherIndex].textContent?.trim(),
+          firstRect: { x: first.x, y: first.y, width: first.width, height: first.height },
+          secondRect: { x: second.x, y: second.y, width: second.width, height: second.height },
+          surface: surface ? { width: surface.clientWidth, height: surface.clientHeight } : null,
+          layer: layer ? { width: layer.style.width, height: layer.style.height, transform: layer.style.transform } : null,
+          positions: nodes.map((node) => ({ text: node.textContent?.trim(), left: (node as HTMLElement).style.left, top: (node as HTMLElement).style.top })),
+        };
+      }
+    }
+    return null;
+  })).toBeNull();
   await page.screenshot({ path: path.join(screenshots, "dense-agents-narrow-800x600.png") });
 });

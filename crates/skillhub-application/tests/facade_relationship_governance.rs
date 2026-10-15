@@ -1778,6 +1778,21 @@ async fn shared_reference_conversion_repoints_one_alias_and_keeps_the_shared_bod
         return;
     }
     let fixture = fixture_with(RelationKind::SharedReference { other_consumers: 1 }).await;
+    let alias_relation = fixture
+        .database
+        .lock()
+        .expect("database lock")
+        .relationship_repository()
+        .list_relations()
+        .expect("relations")
+        .into_iter()
+        .find(|relation| relation.relation_id == fixture.relation_id)
+        .expect("alias relation");
+    assert_eq!(
+        alias_relation.directory_node_id.as_deref(),
+        Some("directory:agent-skills"),
+        "the relationship's directory is the Agent-local alias location, not the symlink target"
+    );
     let shared_body = fixture
         .shared_body
         .clone()

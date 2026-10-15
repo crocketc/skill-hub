@@ -1,5 +1,6 @@
 import { emitPendingFactsChanged } from "./pendingEvents";
 import { queryClient } from "../app/queryClient";
+import { relationshipsKeys } from "../features/relationships/api";
 
 /**
  * 发现事实变更的应用内广播（2026-09-26）：启动期后台 Agent 重扫完成后，
@@ -15,7 +16,7 @@ export function notifyDiscoveryFactsChanged(): void {
   emitPendingFactsChanged();
   // 目录识别/能力变化会改变关系资格与概览计数。统一从事实广播处失效缓存，
   // 确保当前页和稍后返回的页面都不会继续使用扫描前的关系投影。
-  void queryClient.invalidateQueries({ queryKey: ["relationships"] });
+  void queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] });
   void queryClient.invalidateQueries({ queryKey: ["overview"] });
 }
 

@@ -47,7 +47,7 @@ describe("onUsageFactsChanged", () => {
     const client = new QueryClient();
     const keys = [
       overviewKeys.root,
-      relationshipsKeys.root,
+      [relationshipsKeys.root],
       skillDetailKeys.root,
       skillLibraryKeys.root,
     ];

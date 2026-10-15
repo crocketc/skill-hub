@@ -316,11 +316,11 @@ test("overflow review sample bounds tags and relation scrolling to each list", a
 
 test("review drawer shows local safety results and translation shortcuts without network calls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 719 });
-  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review&drawerSample=translation-unconfigured");
+  await page.goto("/__preview/skill-library?skill=skill-pdf&drawerPrototype=review&drawerSample=translation-unconfigured&scenario=translation-setup");
   const drawer = page.getByTestId("drawer-panel");
   const useTranslation = drawer.getByRole("button", { name: /use existing translation as my purpose|使用已有译文作为我的用途/i });
   await expect(drawer.getByRole("button", { name: /AI translation|AI 翻译/i })).toBeVisible();
-  await expect(drawer.getByRole("link", { name: /configure AI translation|配置 AI 翻译/i })).toHaveAttribute("href", /settings.*networkAi/);
+  await expect(drawer.getByRole("link", { name: /open Network & AI settings|打开网络与 AI 设置/i })).toHaveAttribute("href", /settings.*networkAi/);
   await expect(useTranslation).toBeVisible();
   await expect(useTranslation).toHaveText(/set as purpose|设为用途/i);
   const basicCheck = drawer.getByRole("button", { name: /recheck|重新检查/i });

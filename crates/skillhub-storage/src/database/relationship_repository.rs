@@ -18,7 +18,7 @@ use skillhub_core::relationship::{
 use skillhub_core::source::{SourceDescriptor, SourceKind, SourceLocator};
 use skillhub_core::{AppError, AppResult, ErrorCode, RecoveryAction, Severity, SkillId};
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct RelationshipRepository<'a> {
     pub(crate) database: &'a Database,
@@ -722,7 +722,11 @@ fn directory_node_id_for_path_tx(
     transaction: &Transaction<'_>,
     path: &str,
 ) -> AppResult<Option<String>> {
-    let candidate = comparable_path(path);
+    // `directory_node_id` describes the directory containing this entry.
+    // Resolve symlinked parent components (for example macOS `/var`), but
+    // preserve the entry's final component: resolving a skill symlink here
+    // would associate an Agent-local alias with its shared link target.
+    let candidate = comparable_entry_path(Path::new(path));
     let mut statement = transaction
         .prepare("SELECT node_id, path FROM directory_nodes WHERE exists_flag=1")
         .map_err(database_error)?;
@@ -744,6 +748,19 @@ fn directory_node_id_for_path_tx(
         }
     }
     Ok((matches.len() == 1).then(|| matches.remove(0)))
+}
+
+fn comparable_entry_path(path: &Path) -> String {
+    if !std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return comparable_path(path.to_string_lossy().as_ref());
+    }
+    let (Some(parent), Some(file_name)) = (path.parent(), path.file_name()) else {
+        return comparable_path(path.to_string_lossy().as_ref());
+    };
+    let normalized_parent = canonicalize_existing_prefix(parent)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| parent.to_path_buf());
+    observed_path_key(normalized_parent.join(file_name).to_string_lossy().as_ref())
 }
 
 fn comparable_path(path: &str) -> String {

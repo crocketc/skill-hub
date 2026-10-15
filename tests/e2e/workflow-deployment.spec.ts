@@ -500,7 +500,7 @@ test.describe("deployment conflict parity", () => {
       await expect(skipRow.getByRole("radio", { name: "Skip this target" })).toBeChecked();
       await expect(replaceRow).toContainText("Dispatch consumer");
 
-      await replaceRow.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+      await replaceRow.getByRole("radio", { name: "Replace the Skill at the target" }).check();
       await expect(page.getByRole("button", { name: "Confirm and add" })).toBeDisabled();
       await replaceRow.getByRole("checkbox", {
         name: "I reviewed the shared-directory consumers and understand they may be affected.",
@@ -549,8 +549,8 @@ test.describe("deployment conflict parity", () => {
       await page.getByRole("button", { name: "Preview" }).click();
 
       const row = conflictRow(page, flow.skill, "Preview Agent 1");
-      await expect(row.getByRole("radio", { name: "Replace the managed Skill at the target" })).toBeVisible();
-      await row.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+      await expect(row.getByRole("radio", { name: "Replace the Skill at the target" })).toBeVisible();
+      await row.getByRole("radio", { name: "Replace the Skill at the target" }).check();
       await row.getByRole("checkbox", {
         name: "I reviewed the shared-directory consumers and understand they may be affected.",
       }).check();
@@ -565,7 +565,7 @@ test.describe("deployment conflict parity", () => {
       const refreshedRow = conflictRow(page, flow.skill, "Preview Agent 1");
       await expect(refreshedRow).toContainText("Updated occupant after target drift");
       await expect(refreshedRow.getByRole("radio", { name: "Skip this target" })).toBeChecked();
-      await expect(refreshedRow.getByRole("radio", { name: "Replace the managed Skill at the target" })).toHaveCount(0);
+      await expect(refreshedRow.getByRole("radio", { name: "Replace the Skill at the target" })).toHaveCount(0);
       await page.getByRole("button", { name: "Confirm and add" }).click();
       if (flow.name === "batch") {
         const summary = page.getByTestId("batch-summary");
@@ -585,7 +585,7 @@ test.describe("deployment conflict parity", () => {
     await page.getByRole("button", { name: "Preview" }).click();
 
     const row = conflictRow(page, "Preview Skill", "Preview Agent 1");
-    await row.getByRole("radio", { name: "Replace the managed Skill at the target" }).check();
+    await row.getByRole("radio", { name: "Replace the Skill at the target" }).check();
     await row.getByRole("checkbox", {
       name: "I reviewed the shared-directory consumers and understand they may be affected.",
     }).check();

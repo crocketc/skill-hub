@@ -151,9 +151,9 @@ test("capability switches render their data scope and persist a toggle", async (
   await expect(page.getByText("Offline by default")).toBeVisible();
 
   const duplicate = page.getByRole("switch", { name: "AI semantic duplicate analysis" });
-  await expect(duplicate).not.toBeChecked();
-  await duplicate.click();
   await expect(duplicate).toBeChecked();
+  await duplicate.click();
+  await expect(duplicate).not.toBeChecked();
 
   await expect(
     page.getByRole("combobox", { name: "AI output language" }),

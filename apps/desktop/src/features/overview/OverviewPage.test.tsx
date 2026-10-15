@@ -337,7 +337,7 @@ it("uses unified object statistics instead of configured or discovered Agent tot
 it("drills the Agent object metric into the Agent management workspace", async () => {
   await renderOverview();
 
-  const agentMetric = screen.getByRole("link", { name: "3 Agent objects · shared directories: 1" });
+  const agentMetric = await screen.findByRole("link", { name: "3 Agent objects · shared directories: 1" });
   expect(agentMetric).toHaveAttribute("href", "/agents");
 
   fireEvent.click(agentMetric);

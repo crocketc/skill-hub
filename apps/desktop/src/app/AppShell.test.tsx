@@ -189,7 +189,7 @@ describe("AppShell", () => {
     expect(invalidate.mock.calls.map(([request]) => request?.queryKey)).toEqual(
       expect.arrayContaining([
         overviewKeys.root,
-        relationshipsKeys.root,
+        [relationshipsKeys.root],
         skillDetailKeys.root,
         skillLibraryKeys.root,
       ]),

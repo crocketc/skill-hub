@@ -82,7 +82,7 @@ describe("useRelationshipContextCheck（任务 11.6）", () => {
     expect(facade.revalidate).toHaveBeenCalledWith(["r1", "r2"], "light");
     expect(sessionStorage.getItem(governanceContextCheckStorageKey("all"))).toBe("1");
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: relationshipsKeys.root,
+      queryKey: [relationshipsKeys.root],
     }));
 
     // 行集合随筛选变化不重放；同会话重挂载同 scope 也不重放。
@@ -132,7 +132,7 @@ describe("useRelationshipContextCheck（任务 11.6）", () => {
 
     await waitFor(() => expect(facade.revalidate).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: relationshipsKeys.root,
+      queryKey: [relationshipsKeys.root],
     }));
     // 任务 12.7：失败不标记完成——同会话重挂载后仍会再次发起检查。
     expect(sessionStorage.getItem(governanceContextCheckStorageKey("all"))).toBeNull();

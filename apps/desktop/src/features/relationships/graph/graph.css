@@ -259,6 +259,11 @@
 @media (max-width: 60rem) {
   .sh-graph__body {
     grid-template-columns: minmax(0, 1fr);
+    /* 详情改为画布下方排列后，必须给图谱保留可用高度；否则 600px 高窗口中
+       画布会塌缩到详情区的固有高度，力导向布局无法分开节点；同时为详情保留
+       最小滚动高度，窄高窗口时由页面承载纵向滚动。 */
+    grid-template-rows: minmax(28rem, 1fr) minmax(12rem, 1fr);
+    min-height: calc(40rem + var(--space-4));
   }
 }
 

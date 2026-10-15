@@ -2195,7 +2195,7 @@
       "unknownExistingSkill": "the existing Skill",
       "actions": {
         "skip": "Skip this target",
-        "replaceTarget": "Replace the managed Skill at the target",
+        "replaceTarget": "Replace the Skill at the target",
         "renameAndDeploy": "Rename and dispatch as a new Skill"
       },
       "sharedConsumers": {

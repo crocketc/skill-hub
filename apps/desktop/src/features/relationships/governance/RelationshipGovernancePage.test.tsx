@@ -553,7 +553,7 @@ interface RenderedContext {
 
 async function renderGovernanceApp(options: RenderOptions = {}): Promise<RenderedContext> {
   const i18n = await createSkillHubI18n([options.locale ?? "zh-CN"]);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
   const {
     entries = ["/relationships/governance"],
     initialIndex = 0,
@@ -603,6 +603,11 @@ async function waitRows() {
   // action-context query before asserting names, details, or safe actions.
   await waitFor(() => expect(screen.queryByTestId("governance-action-context-loading")).not.toBeInTheDocument());
   await waitFor(() => expect(screen.getAllByTestId("governance-row").length).toBeGreaterThan(0));
+}
+
+async function waitForInitialContextRefresh(facade: RelationGovernanceFacade) {
+  await waitFor(() => expect(facade.revalidate).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
 }
 
 function rowCheckbox(relationId: string): HTMLInputElement {
@@ -705,7 +710,8 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
     expect(screen.getByText("Notes A")).toBeVisible();
     expect(screen.getByText("Notes B")).toBeVisible();
     expect(screen.getByTestId("governance-current-problem").closest(".sh-governance")).not.toBeNull();
-    expect(facade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(1);
+    await waitForInitialContextRefresh(facade);
+    await waitFor(() => expect(facade.getUsageEnvironmentProblems).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
     expect(screen.getByRole("button", { name: "返回待处理列表" })).toBeVisible();
   });
@@ -1061,6 +1067,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
   it("filters the unified usage facts by search text without changing the ledger query", async () => {
     const { facade } = await renderGovernanceApp();
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     const input = screen.getByLabelText("搜索 Skill、目标或路径");
     fireEvent.change(input, { target: { value: "notes" } });
@@ -1068,7 +1075,7 @@ describe("RelationshipGovernancePage 清单（按关系边渲染）", () => {
 
     await waitFor(() => expect(screen.getAllByTestId("governance-row")).toHaveLength(1));
     expect(screen.getByTestId("governance-row")).toHaveTextContent("notes");
-    expect(facade.listGovernance).toHaveBeenCalledTimes(1);
+    expect(facade.listGovernance).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the normal add shortcut clearly separate from governance execution", async () => {
@@ -1447,6 +1454,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       usageChangeFacade,
     });
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     const syncAction = await screen.findByTestId(`governance-action-sync-${relationId}`);
     expect(syncAction).toBeEnabled();
@@ -1470,7 +1478,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       prepared_id: prepared.prepared_id,
     }));
     expect(await screen.findByTestId("managed-usage-change-result")).toBeVisible();
-    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(3));
     expect(tracker.getSnapshot().find((operation) => operation.kind === "sync")?.operationId)
       .toBe(prepared.operation_id);
   });
@@ -1543,6 +1551,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       usageChangeFacade,
     });
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     fireEvent.click(await screen.findByTestId(`governance-action-restore-${relationId}`));
     const dialog = await screen.findByRole("dialog", { name: "恢复使用目标" });
@@ -1560,7 +1569,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       prepared_id: prepared.prepared_id,
     }));
     expect(await screen.findByTestId("managed-usage-change-result")).toBeVisible();
-    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(3));
   });
 
   it("previews a single conversion with the chosen content basis and copy form before commit", async () => {
@@ -1578,6 +1587,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
     };
     const { facade, tracker } = await renderGovernanceApp({ usageChangeFacade });
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     fireEvent.click(rowAction("managed:dep-eligible"));
     const dialog = await screen.findByRole("dialog", { name: "转入技能库管理" });
@@ -1600,7 +1610,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       prepared_id: "prepared-manage-1",
     }));
     expect(await screen.findByTestId("usage-manage-result")).toBeVisible();
-    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(3));
 
     const managed = tracker.getSnapshot().find((operation) => operation.kind === "usage_manage");
     expect(managed?.operationId).toBe("op-manage-1");
@@ -1636,6 +1646,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       usageChangeFacade,
     });
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     fireEvent.click(rowAction("managed:dep-undeploy"));
     expect(await screen.findByRole("dialog", { name: "解除这条使用关系？" })).toBeVisible();
@@ -1655,7 +1666,7 @@ describe("RelationshipGovernancePage 单条治理", () => {
       prepared_id: "prepared-unified-release-1",
     }));
     await screen.findByTestId("usage-release-result");
-    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(facade.listGovernance).toHaveBeenCalledTimes(3));
     const undeployOp = tracker.getSnapshot().find((operation) => operation.kind === "undeploy");
     expect(undeployOp?.operationId).toBe("op-unified-release-1");
   });
@@ -1998,9 +2009,10 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       facade: agentFacade,
     });
     await waitRows();
+    await waitForInitialContextRefresh(agentFacade);
     expect(screen.getAllByTestId("governance-row")).toHaveLength(1);
     expect(screen.getByTestId("governance-row")).toHaveTextContent("PDF 阅读器");
-    expect(agentFacade.listGovernance).toHaveBeenCalledTimes(1);
+    expect(agentFacade.listGovernance).toHaveBeenCalledTimes(2);
     agentRender.unmount();
 
     const otherSkill = makeRow({
@@ -2154,7 +2166,8 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
     });
 
     expect(await screen.findByRole("dialog", { name: "转入技能库管理" })).toBeVisible();
-    expect(facade.listGovernance).toHaveBeenCalledTimes(1);
+    await waitForInitialContextRefresh(facade);
+    expect(facade.listGovernance).toHaveBeenCalledTimes(2);
     expect(facade.prepareGovernanceBatch).not.toHaveBeenCalled();
   });
 
@@ -2185,17 +2198,18 @@ describe("RelationshipGovernancePage 来源返回与视图状态", () => {
       initialIndex: 1,
     });
     await waitRows();
+    await waitForInitialContextRefresh(facade);
 
     // 已提交筛选写入历史。切到无需处理页签后后退一步回到默认待处理页签，
     // 再后退才离开治理页回 Agent 详情。
     fireEvent.click(screen.getByTestId("governance-bucket-no_action"));
     expect(screen.getByTestId("location-search")).toHaveTextContent("governance=no_action");
-    expect(facade.listGovernance).toHaveBeenCalledTimes(1);
+    expect(facade.listGovernance).toHaveBeenCalledTimes(2);
     await screen.findByTestId("governance-row-list");
 
     fireEvent.click(screen.getByTestId("nav-back"));
     expect(await screen.findByTestId("governance-bucket-pending")).toHaveAttribute("aria-pressed", "true");
-    expect(facade.listGovernance).toHaveBeenCalledTimes(1);
+    expect(facade.listGovernance).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByTestId("nav-back"));
     expect(await screen.findByText("AGENT_ORIGIN")).toBeVisible();
@@ -2844,10 +2858,11 @@ it("queries unified active usage facts separately from the legacy action ledger"
     facade: facadeWithOverview,
   });
   await waitRows();
+  await waitForInitialContextRefresh(facadeWithOverview);
 
   expect(facade.listGovernance).toHaveBeenCalled();
   expect(screen.getByTestId("relationships-nav-count-governance")).toHaveTextContent("5");
-  expect(getRelationshipOverview).toHaveBeenCalledTimes(1);
+  expect(getRelationshipOverview).toHaveBeenCalledTimes(2);
   expect(screen.getByText("查看已存在的技能关系，并按是否需要处理分组；变更先预览、再确认。"))
     .toBeVisible();
   expect(screen.getAllByTestId("governance-row")).toHaveLength(1);

@@ -114,12 +114,10 @@ export function SkillLibraryPreview() {
         };
       };
     }
-    if (drawerSample !== "translation-unconfigured") {
-      previewFacade.translateDescription = async (skillId) => {
-        const view = await previewFacade.getSkillQuickView(skillId);
-        return { text: view.translatedDescription ?? view.originalDescription ?? "" };
-      };
-    }
+    previewFacade.translateDescription = async (skillId) => {
+      const view = await previewFacade.getSkillQuickView(skillId);
+      return { text: view.translatedDescription ?? view.originalDescription ?? "" };
+    };
     return previewFacade;
   });
   const showNotificationPreview = new URLSearchParams(window.location.search)

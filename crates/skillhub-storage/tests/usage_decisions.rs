@@ -242,7 +242,9 @@ fn automatic_retained_is_not_user_release() {
     // legacy facts exactly as they were stored.
     db.connection_for_test()
         .execute_batch(
-            "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+            "DROP INDEX idx_deployment_preview_recent_requests;
+             ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+             ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
              DROP TABLE IF EXISTS active_usage_evidence;
              DROP TABLE IF EXISTS active_usage_slots;
              DROP TABLE IF EXISTS usage_decisions;
@@ -544,7 +546,9 @@ fn migration_is_idempotent_and_survives_restart() {
         );
         db.connection_for_test()
             .execute_batch(
-                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+                "DROP INDEX idx_deployment_preview_recent_requests;
+                 ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+                 ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
                  DROP TABLE active_usage_evidence;
                  DROP TABLE active_usage_slots;
                  DROP TABLE usage_decisions;
@@ -630,7 +634,9 @@ fn unknown_legacy_decision_keeps_evidence() {
             .expect("save unmodified source fact");
         db.connection_for_test()
             .execute_batch(
-                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+                "DROP INDEX idx_deployment_preview_recent_requests;
+                 ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+                 ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
                  DROP TABLE active_usage_evidence;
                  DROP TABLE active_usage_slots;
                  DROP TABLE usage_decisions;
@@ -704,7 +710,9 @@ fn migration_maps_explicit_deployment_release() {
         );
         db.connection_for_test()
             .execute_batch(
-                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+                "DROP INDEX idx_deployment_preview_recent_requests;
+                 ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+                 ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
                  DROP TABLE active_usage_evidence;
                  DROP TABLE active_usage_slots;
                  DROP TABLE usage_decisions;
@@ -758,7 +766,9 @@ fn revoked_legacy_retention_does_not_migrate_as_current_decision() {
         );
         db.connection_for_test()
             .execute_batch(
-                "ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
+                "DROP INDEX idx_deployment_preview_recent_requests;
+                 ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
+                 ALTER TABLE skill_lineage DROP COLUMN origin_display_name;
                  DROP TABLE active_usage_evidence;
                  DROP TABLE active_usage_slots;
                  DROP TABLE usage_decisions;

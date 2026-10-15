@@ -30,9 +30,9 @@ test("skill library defaults to card view and switches to tagged card grouping",
   await expect(page.getByTestId("skill-cards")).toBeVisible();
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
   // P1-11：“查看”按钮是独立语义插槽，与卡区激活（开抽屉）分离。
-  // 真实流接线轮（315e69f4）：卡片统一布局后按钮文案为「View」，不重复 Skill 名。
+  // 详情入口使用固定的简短文案，不重复 Skill 名。
   await expect(
-    page.getByTestId("skill-card-skill-pdf").getByRole("button", { name: "View", exact: true }),
+    page.getByTestId("skill-card-skill-pdf").getByRole("button", { name: "View details", exact: true }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Group by tag" }).click();

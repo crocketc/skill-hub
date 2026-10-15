@@ -1,10 +1,11 @@
-import { clearSessionSelectedSources } from "../features/import/sessionSources";
-import { clearWizardSession } from "../features/import/wizardSession";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
+import { clearSessionSelectedSources } from "../features/import/sessionSources";
+import { clearWizardSession } from "../features/import/wizardSession";
 import type { BootstrapSnapshot, GovernanceTaskFact } from "../api/bindings";
 import * as bindings from "../api/bindings";
 import { createSkillHubI18n } from "../i18n";
@@ -125,24 +126,26 @@ async function renderDiscoveryRoute(
   const i18n = await createSkillHubI18n(["zh-CN"]);
   const refreshSnapshot = vi.fn(async () => {});
   render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[{ pathname: "/discovery/local", state: options.locationState }]}>
-        <AppNotificationsProvider>
-          <Routes>
-            <Route
-              element={<Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />}
-              path="/"
-            >
+    <QueryClientProvider client={queryClient}>
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter initialEntries={[{ pathname: "/discovery/local", state: options.locationState }]}>
+          <AppNotificationsProvider>
+            <Routes>
               <Route
-                element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
-                path="discovery/local"
-              />
-              <Route element={<GovernanceLocationProbe />} path="relationships/governance" />
-            </Route>
-          </Routes>
-        </AppNotificationsProvider>
-      </MemoryRouter>
-    </I18nextProvider>,
+                element={<Outlet context={{ refreshSnapshot, snapshot } satisfies BootstrapOutletContext} />}
+                path="/"
+              >
+                <Route
+                  element={<DiscoveryRoute discoveryFacade={stubDiscoveryFacade()} importFacade={facade} view="local" />}
+                  path="discovery/local"
+                />
+                <Route element={<GovernanceLocationProbe />} path="relationships/governance" />
+              </Route>
+            </Routes>
+          </AppNotificationsProvider>
+        </MemoryRouter>
+      </I18nextProvider>
+    </QueryClientProvider>,
   );
   return { refreshSnapshot };
 }

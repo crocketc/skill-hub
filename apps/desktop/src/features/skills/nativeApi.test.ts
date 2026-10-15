@@ -196,6 +196,7 @@ describe("native skill library facade", () => {
             label: "Codex CLI",
             path: "C:\\agents\\codex",
             available: true,
+            writable: true,
             physical_id: "codex",
             modes: [],
           },

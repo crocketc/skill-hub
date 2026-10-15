@@ -24,6 +24,7 @@ import { skillLibraryKeys } from "../skills/api";
 import type {
   DeploymentRelationFact,
   EnvironmentProblemAnalysis,
+  LlmRuntimeStatus,
   PreparedUsageChange,
   RelationGovernanceBatchOutcome,
   RelationGovernanceLedger,
@@ -35,6 +36,7 @@ import type {
   UsageChangeResult,
 } from "../../api/bindings";
 import type { RelationGovernanceFacade } from "../relationships/governance/api";
+import type { LlmAdminFacade } from "../settings/llmApi";
 import { createOperationTracker, type OperationTracker } from "../../platform/operationTracker";
 import { separateCheckFixture, type SecurityFacade } from "../security/api";
 import type { SkillLibraryFacade, SkillLibraryQuery, SkillTableRow } from "../skills/api";
@@ -44,6 +46,7 @@ interface RenderDetailOptions {
   entry?: InitialEntry;
   directoryOpener?: { openDirectory: (path: string) => Promise<void> };
   facade?: SkillDetailFacade;
+  llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   governanceFacade?: RelationGovernanceFacade;
   libraryFacade?: Pick<SkillLibraryFacade, "listSkills">;
   locale?: "en-US" | "zh-CN";
@@ -97,6 +100,7 @@ async function renderDetail({
   entry = "/library/skill-pdf",
   directoryOpener,
   facade = createMockSkillDetailFacade(),
+  llmFacade,
   governanceFacade = createTestGovernanceFacade(),
   libraryFacade = createTestLibraryFacade().facade,
   locale = "en-US",
@@ -117,11 +121,11 @@ async function renderDetail({
           <LocationProbe />
           <Routes>
             <Route
-              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} llmFacade={llmFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/library/:skillId"
             />
             <Route
-              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
+              element={<SkillDetailPage directoryOpener={directoryOpener} facade={facade} governanceFacade={governanceFacade} libraryFacade={libraryFacade} llmFacade={llmFacade} markdownFacade={markdownFacade} removalFacade={removalFacade} usageChangeFacade={usageChangeFacade} securityFacade={securityFacade} tracker={tracker} />}
               path="/__preview/skill-detail/:skillId"
             />
             <Route element={<p>Library route</p>} path="/library" />
@@ -1935,6 +1939,17 @@ describe("SkillDetailPage lifecycle and combinations (W3-7)", () => {
 // 按钮+如实文案；已配置→真实 analyzeSemanticDuplicates；失败→可读原因）。
 // DEV 演示开关与模拟结果文本移除。
 describe("SkillDetailPage AI usage insights (W3-8)", () => {
+  const llmStatus = (provider: LlmRuntimeStatus["provider"]): Pick<LlmAdminFacade, "readRuntimeStatus"> => ({
+    async readRuntimeStatus() {
+      return {
+        provider,
+        capabilities: { semantic_duplicate: true },
+        ai_output_language: "system",
+        runner_available: true,
+      };
+    },
+  });
+
   beforeEach(() => {
     Object.defineProperty(window, "IntersectionObserver", {
       configurable: true,
@@ -1953,11 +1968,23 @@ describe("SkillDetailPage AI usage insights (W3-8)", () => {
 
   it("runs the real AI similarity analysis from the review usage section", async () => {
     const facade = createMockSkillDetailFacade();
-    await renderDetail({ facade });
+    await renderDetail({
+      facade,
+      llmFacade: llmStatus({
+        id: "test-provider",
+        deployment: "local",
+        endpoint_configured: true,
+        model_configured: true,
+        credential_configured: false,
+        last_connection_test: { service_ok: true, model_ok: true, structured_ok: true, tested_at: "now" },
+      }),
+    });
 
     expect(await screen.findByText("Deterministic duplicate candidates")).toBeVisible();
     expect(screen.getByText("PDF Reader（副本）")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Run analysis" }));
+    const runAnalysis = screen.getByRole("button", { name: "Run analysis" });
+    await waitFor(() => expect(runAnalysis).toBeEnabled());
+    fireEvent.click(runAnalysis);
     expect(await screen.findByText("PDF Text Extractor")).toBeVisible();
     expect(facade.calls.analyzedDuplicateSkills).toEqual(["skill-pdf"]);
     expect(screen.queryByText("模拟 AI 已配置")).not.toBeInTheDocument();
@@ -1966,14 +1993,14 @@ describe("SkillDetailPage AI usage insights (W3-8)", () => {
   });
 
   it("keeps deterministic candidates usable when no AI provider is configured", async () => {
-    const facade = createMockSkillDetailFacade({ aiAvailable: false });
-    await renderDetail({ facade });
+    const facade = createMockSkillDetailFacade();
+    await renderDetail({ facade, llmFacade: llmStatus(null) });
 
     const run = await screen.findByRole("button", { name: "Run analysis" });
     expect(run).toBeDisabled();
     expect(
       screen.getByText(
-        "No usable LLM provider is configured; AI actions are disabled and deterministic candidates remain available.",
+        "No model provider is selected for this action.",
       ),
     ).toBeVisible();
     expect(screen.getByText("PDF Reader（副本）")).toBeVisible();

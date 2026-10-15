@@ -481,9 +481,13 @@ export function SkillGraphPage({
   }, []);
 
   const handleCanvasSizeChange = useCallback((next: GraphLayoutSize) => {
-    setLayoutSize((current) =>
-      current.width === next.width && current.height === next.height ? current : next,
-    );
+    // 视口可小于逻辑画布。若按窄屏/短容器尺寸压缩布局边界，碰撞约束会
+    // 被挤到同一条边上；保留设计画布下限，缩放由画布视口单独承担。
+    const width = Math.max(next.width, CANVAS_SIZE.width);
+    const height = Math.max(next.height, CANVAS_SIZE.height);
+    setLayoutSize((current) => current.width === width && current.height === height
+      ? current
+      : { width, height });
   }, []);
 
   const saveReturnState = useCallback(() => {

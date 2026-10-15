@@ -34,7 +34,7 @@ test("lands the import on a summary with the governance task deep link and organ
     page.getByRole("status", { name: "安全检测结论" }),
   ).toBeVisible({ timeout: 10_000 });
   await expect(
-    page.getByText("尚未配置可用的 LLM 供应商，无法运行 AI 预检；可直接继续导入。"),
+    page.getByText("当前环境未提供 AI 预检能力，可直接继续导入。"),
   ).toBeVisible();
 
   // 本次导入无强制冲突决策，提交直接可用。

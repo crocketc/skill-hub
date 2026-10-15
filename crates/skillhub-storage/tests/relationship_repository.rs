@@ -84,6 +84,8 @@ fn migration_backfills_takeover_only_from_explicit_skillhub_owned_links() {
              DROP TABLE active_usage_evidence;
              DROP TABLE active_usage_slots;
              DROP TABLE usage_decisions;
+             DROP INDEX idx_deployment_preview_recent_requests;
+             ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
              PRAGMA user_version=21;",
         )
         .expect("restore prior schema version");

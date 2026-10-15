@@ -2195,7 +2195,7 @@
       "existingEntry": "目标中已有内容",
       "actions": {
         "skip": "跳过此目标",
-        "replaceTarget": "替换目标中的托管技能",
+        "replaceTarget": "替换目标中的技能",
         "renameAndDeploy": "换名后派发为新技能"
       },
       "sharedConsumers": {

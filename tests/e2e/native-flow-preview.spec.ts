@@ -944,7 +944,7 @@ test("pending, recovery, and security routes expose state boundaries", async ({ 
   ).toBeVisible();
   // #11（2026-10-08）页签改名：「备份恢复」→「未完成操作」；锚点随界面文案重锚。
   await page.getByRole("tab", { name: "Unfinished operations" }).click();
-  await expect(page.getByText(/full backup\/restore flow/i)).toBeVisible();
+  await expect(page.getByText("Nothing needs recovery right now.")).toBeVisible();
 
   await page.goto("/library/pdf-reader/security");
   await expect(page.getByRole("heading", { name: "Basic security check" })).toBeVisible();
@@ -1116,7 +1116,7 @@ test("conflict workbench keeps members readable, actions reachable and preview s
   }
 
   // ② 动作区可达：处理决定控件完整落在视口内。
-  const decision = page.locator("section.sh-conflict-actions").first();
+  const decision = page.locator(".sh-conflict-actions__buttons").first();
   await decision.scrollIntoViewIfNeeded();
   const decisionBox = (await decision.boundingBox())!;
   expect(decisionBox.y, "decision controls scroll fully into view at 800x600").toBeGreaterThanOrEqual(0);

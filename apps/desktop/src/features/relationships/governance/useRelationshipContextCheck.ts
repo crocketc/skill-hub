@@ -54,11 +54,11 @@ export function useRelationshipContextCheck({
       } catch {
         // 自动上下文检查失败保持安静：失效后的清单仍是可信事实源，
         // 用户可随时用行级重新检查补一次主动校验；但本次不标记完成。
-        await queryClient.invalidateQueries({ queryKey: relationshipsKeys.root });
+        await queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] });
         return false;
       }
       // 无论结论如何都失效清单：Light check 可能推进 revision/归档事实。
-      await queryClient.invalidateQueries({ queryKey: relationshipsKeys.root });
+      await queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] });
       return true;
     },
     [facade, queryClient],

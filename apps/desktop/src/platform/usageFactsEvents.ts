@@ -21,7 +21,7 @@ export async function refreshAllFactViews(
 ): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: overviewKeys.root }),
-    queryClient.invalidateQueries({ queryKey: relationshipsKeys.root }),
+    queryClient.invalidateQueries({ queryKey: [relationshipsKeys.root] }),
     queryClient.invalidateQueries({ queryKey: skillDetailKeys.root }),
     queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
     refreshSnapshot(),

@@ -523,165 +523,6 @@ fn residue_entry_type_matches(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{residue_entry_type_matches, DeploymentFilesystem};
-    use skillhub_core::DeploymentMode;
-
-    #[cfg(unix)]
-    use skillhub_core::physical_id_for_path;
-
-    #[cfg(unix)]
-    #[test]
-    fn recovery_identity_tracks_symbolic_link_entry_not_its_target() {
-        use super::symlink;
-
-        let workspace = tempfile::tempdir().expect("workspace");
-        let target = workspace.path().join("target");
-        let entry = workspace.path().join("skill");
-        let retired = workspace.path().join("retired-skill-link");
-        std::fs::create_dir(&target).expect("target directory");
-        symlink::create_dir_link(&target, &entry).expect("initial directory symlink");
-
-        let filesystem = DeploymentFilesystem::new();
-        let original_identity = filesystem
-            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
-            .expect("original link identity");
-        std::fs::rename(&entry, &retired).expect("retain original link inode");
-        symlink::create_dir_link(&target, &entry).expect("replacement to same target");
-
-        let replacement_identity = filesystem
-            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
-            .expect("replacement link identity");
-        assert_ne!(replacement_identity, original_identity);
-        assert_eq!(
-            physical_id_for_path(&entry),
-            physical_id_for_path(&target),
-            "both links still resolve to the same target"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn recovery_rename_and_remove_only_the_recorded_link_entry() {
-        use super::symlink;
-
-        let workspace = tempfile::tempdir().expect("workspace");
-        let target = workspace.path().join("target");
-        let entry = workspace.path().join("skill");
-        let backup = workspace.path().join("skill-backup");
-        std::fs::create_dir(&target).expect("target directory");
-        std::fs::write(target.join("user-data.txt"), "preserve").expect("target data");
-        symlink::create_dir_link(&target, &entry).expect("directory symlink");
-
-        let filesystem = DeploymentFilesystem::new();
-        let identity = filesystem
-            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
-            .expect("link entry identity");
-        assert!(filesystem
-            .rename_recovery_entry(
-                DeploymentMode::SymbolicLink,
-                &entry,
-                &backup,
-                "wrong-identity",
-            )
-            .is_err());
-        assert!(entry.is_symlink(), "mismatched entry is left in place");
-        assert!(!backup.exists());
-
-        filesystem
-            .rename_recovery_entry(DeploymentMode::SymbolicLink, &entry, &backup, &identity)
-            .expect("move verified link entry");
-        symlink::create_dir_link(&target, &entry).expect("replacement link");
-        assert!(filesystem
-            .remove_recovery_entry_if_identity(
-                DeploymentMode::SymbolicLink,
-                &backup,
-                "wrong-identity",
-            )
-            .is_err());
-        filesystem
-            .remove_recovery_entry_if_identity(DeploymentMode::SymbolicLink, &backup, &identity)
-            .expect("remove verified backup link");
-
-        assert!(entry.is_symlink(), "replacement entry is preserved");
-        assert_eq!(
-            std::fs::read_to_string(target.join("user-data.txt")).expect("target data"),
-            "preserve",
-            "removing a link entry must not remove its target"
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn recovery_identity_tracks_junction_entry_not_its_target() {
-        use super::junction_windows;
-
-        let workspace = tempfile::tempdir().expect("workspace");
-        let target = workspace.path().join("target");
-        let entry = workspace.path().join("skill");
-        let retired = workspace.path().join("retired-skill-junction");
-        std::fs::create_dir(&target).expect("target directory");
-        junction_windows::create_junction(&target, &entry).expect("initial junction");
-
-        let filesystem = DeploymentFilesystem::new();
-        let original_identity = filesystem
-            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
-            .expect("original junction identity");
-        std::fs::rename(&entry, &retired).expect("retain original junction");
-        junction_windows::create_junction(&target, &entry).expect("replacement to same target");
-
-        let replacement_identity = filesystem
-            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
-            .expect("replacement junction identity");
-        assert_ne!(replacement_identity, original_identity);
-    }
-
-    #[cfg(windows)]
-    use skillhub_core::physical_id_for_path;
-
-    #[test]
-    fn managed_copy_recovery_rejects_any_directory_link() {
-        assert!(!residue_entry_type_matches(
-            DeploymentMode::ManagedCopy,
-            true,
-            false,
-            true,
-        ));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn managed_copy_recovery_rejects_a_replaced_directory_junction() {
-        use super::junction_windows;
-
-        let workspace = tempfile::tempdir().expect("workspace");
-        let root = workspace.path().join("target-root");
-        let source = workspace.path().join("source");
-        let residue = root.join("skill");
-        std::fs::create_dir(&root).expect("target root");
-        std::fs::create_dir(&source).expect("junction source");
-        std::fs::write(source.join("SKILL.md"), "# preserve\n").expect("source content");
-        junction_windows::create_junction(&source, &residue).expect("replacement junction");
-
-        let filesystem = DeploymentFilesystem::new();
-        let result = filesystem.validate_residue_identity(
-            &root,
-            &residue,
-            "skill",
-            DeploymentMode::ManagedCopy,
-            &physical_id_for_path(&root).expect("root identity"),
-            &physical_id_for_path(&residue).expect("resolved replacement identity"),
-        );
-
-        assert!(result.is_err(), "a junction is not a managed copy residue");
-        assert!(
-            source.join("SKILL.md").is_file(),
-            "junction target survives"
-        );
-    }
-}
-
 /// Physical identity used in ownership proofs. Link deployments pin the link
 /// itself (a trailing reparse point is never followed) so removing the link
 /// keeps working after the central library replaces the source directory;
@@ -872,5 +713,164 @@ fn classify_link_error(error: &io::Error) -> LinkUnavailableCause {
     match error.kind() {
         io::ErrorKind::PermissionDenied => LinkUnavailableCause::Permission,
         _ => LinkUnavailableCause::Filesystem,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{residue_entry_type_matches, DeploymentFilesystem};
+    use skillhub_core::DeploymentMode;
+
+    #[cfg(unix)]
+    use skillhub_core::physical_id_for_path;
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_identity_tracks_symbolic_link_entry_not_its_target() {
+        use super::symlink;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let retired = workspace.path().join("retired-skill-link");
+        std::fs::create_dir(&target).expect("target directory");
+        symlink::create_dir_link(&target, &entry).expect("initial directory symlink");
+
+        let filesystem = DeploymentFilesystem::new();
+        let original_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("original link identity");
+        std::fs::rename(&entry, &retired).expect("retain original link inode");
+        symlink::create_dir_link(&target, &entry).expect("replacement to same target");
+
+        let replacement_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("replacement link identity");
+        assert_ne!(replacement_identity, original_identity);
+        assert_eq!(
+            physical_id_for_path(&entry),
+            physical_id_for_path(&target),
+            "both links still resolve to the same target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rename_and_remove_only_the_recorded_link_entry() {
+        use super::symlink;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let backup = workspace.path().join("skill-backup");
+        std::fs::create_dir(&target).expect("target directory");
+        std::fs::write(target.join("user-data.txt"), "preserve").expect("target data");
+        symlink::create_dir_link(&target, &entry).expect("directory symlink");
+
+        let filesystem = DeploymentFilesystem::new();
+        let identity = filesystem
+            .recovery_entry_identity(DeploymentMode::SymbolicLink, &entry)
+            .expect("link entry identity");
+        assert!(filesystem
+            .rename_recovery_entry(
+                DeploymentMode::SymbolicLink,
+                &entry,
+                &backup,
+                "wrong-identity",
+            )
+            .is_err());
+        assert!(entry.is_symlink(), "mismatched entry is left in place");
+        assert!(!backup.exists());
+
+        filesystem
+            .rename_recovery_entry(DeploymentMode::SymbolicLink, &entry, &backup, &identity)
+            .expect("move verified link entry");
+        symlink::create_dir_link(&target, &entry).expect("replacement link");
+        assert!(filesystem
+            .remove_recovery_entry_if_identity(
+                DeploymentMode::SymbolicLink,
+                &backup,
+                "wrong-identity",
+            )
+            .is_err());
+        filesystem
+            .remove_recovery_entry_if_identity(DeploymentMode::SymbolicLink, &backup, &identity)
+            .expect("remove verified backup link");
+
+        assert!(entry.is_symlink(), "replacement entry is preserved");
+        assert_eq!(
+            std::fs::read_to_string(target.join("user-data.txt")).expect("target data"),
+            "preserve",
+            "removing a link entry must not remove its target"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn recovery_identity_tracks_junction_entry_not_its_target() {
+        use super::junction_windows;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let target = workspace.path().join("target");
+        let entry = workspace.path().join("skill");
+        let retired = workspace.path().join("retired-skill-junction");
+        std::fs::create_dir(&target).expect("target directory");
+        junction_windows::create_junction(&target, &entry).expect("initial junction");
+
+        let filesystem = DeploymentFilesystem::new();
+        let original_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
+            .expect("original junction identity");
+        std::fs::rename(&entry, &retired).expect("retain original junction");
+        junction_windows::create_junction(&target, &entry).expect("replacement to same target");
+
+        let replacement_identity = filesystem
+            .recovery_entry_identity(DeploymentMode::DirectoryJunction, &entry)
+            .expect("replacement junction identity");
+        assert_ne!(replacement_identity, original_identity);
+    }
+
+    #[cfg(windows)]
+    use skillhub_core::physical_id_for_path;
+
+    #[test]
+    fn managed_copy_recovery_rejects_any_directory_link() {
+        assert!(!residue_entry_type_matches(
+            DeploymentMode::ManagedCopy,
+            true,
+            false,
+            true,
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_copy_recovery_rejects_a_replaced_directory_junction() {
+        use super::junction_windows;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let root = workspace.path().join("target-root");
+        let source = workspace.path().join("source");
+        let residue = root.join("skill");
+        std::fs::create_dir(&root).expect("target root");
+        std::fs::create_dir(&source).expect("junction source");
+        std::fs::write(source.join("SKILL.md"), "# preserve\n").expect("source content");
+        junction_windows::create_junction(&source, &residue).expect("replacement junction");
+
+        let filesystem = DeploymentFilesystem::new();
+        let result = filesystem.validate_residue_identity(
+            &root,
+            &residue,
+            "skill",
+            DeploymentMode::ManagedCopy,
+            &physical_id_for_path(&root).expect("root identity"),
+            &physical_id_for_path(&residue).expect("resolved replacement identity"),
+        );
+
+        assert!(result.is_err(), "a junction is not a managed copy residue");
+        assert!(
+            source.join("SKILL.md").is_file(),
+            "junction target survives"
+        );
     }
 }

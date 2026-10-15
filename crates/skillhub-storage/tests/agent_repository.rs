@@ -595,7 +595,7 @@ fn reconcile_updates_normalized_hash_state_and_timestamp() {
 }
 
 #[test]
-fn normalized_source_and_observed_relations_choose_the_longest_directory_parent() {
+fn normalized_source_and_observed_relations_stay_unbound_with_overlapping_directory_parents() {
     let database = Database::open_in_memory().unwrap();
     let skill = SkillId::new();
     insert_skill_for_relationship_test(&database, skill);
@@ -656,9 +656,9 @@ fn normalized_source_and_observed_relations_choose_the_longest_directory_parent(
         .relationship_repository()
         .list_source_relations()
         .unwrap()[0];
-    assert_eq!(source.directory_node_id.as_deref(), Some("nested-node"));
+    assert_eq!(source.directory_node_id, None);
     let observed = &database.relationship_repository().list_relations().unwrap()[0];
-    assert_eq!(observed.directory_node_id.as_deref(), Some("nested-node"));
+    assert_eq!(observed.directory_node_id, None);
 }
 
 #[test]

@@ -682,6 +682,7 @@ describe("native skill detail facade", () => {
           label: "Codex CLI",
           path: "C:/Users/demo/.codex/skills",
           available: true,
+          writable: true,
           physical_id: "fs:codex",
           modes: ["managed_copy"],
         }],
@@ -733,6 +734,7 @@ describe("native skill detail facade", () => {
           label: "Codex CLI",
           path: "C:/Users/demo/.codex/skills/",
           available: true,
+          writable: true,
           physical_id: "fs:codex",
           modes: ["managed_copy"],
         }],
@@ -1112,7 +1114,7 @@ describe("native skill detail facade", () => {
       })
       .mockResolvedValueOnce({
         type: "deployment_targets",
-        payload: [{ id: "target-1", label: "Claude Code", path: "C:/x", available: true, physical_id: "p", modes: ["managed_copy"] }],
+        payload: [{ id: "target-1", label: "Claude Code", path: "C:/x", available: true, writable: true, physical_id: "p", modes: ["managed_copy"] }],
       });
     const impact = await nativeSkillDetailFacade.getRollbackImpact("skill-1", "sha256:old");
     expect(impact).toEqual({

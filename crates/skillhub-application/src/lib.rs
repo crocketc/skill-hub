@@ -23232,19 +23232,20 @@ mod tests {
             _ = tokio::task::yield_now() => {},
         }
 
-        let database_guard = database.lock().unwrap();
-        let mut committed = database_guard
-            .operation_repository()
-            .get_sync(operation_id)
-            .unwrap()
-            .unwrap();
-        committed.phase = skillhub_core::OperationPhase::Committed;
-        committed.progress.phase = committed.phase;
-        database_guard
-            .operation_repository()
-            .update_sync(&committed)
-            .unwrap();
-        drop(database_guard);
+        {
+            let database_guard = database.lock().unwrap();
+            let mut committed = database_guard
+                .operation_repository()
+                .get_sync(operation_id)
+                .unwrap()
+                .unwrap();
+            committed.phase = skillhub_core::OperationPhase::Committed;
+            committed.progress.phase = committed.phase;
+            database_guard
+                .operation_repository()
+                .update_sync(&committed)
+                .unwrap();
+        }
         drop(held_guard);
 
         let (_recovery_guard, current_record) = pending.await.unwrap();
@@ -23577,48 +23578,51 @@ mod tests {
     async fn health_repair_only_gates_prepared_operations_that_need_recovery() {
         let facade = LocalApplicationFacade::new(Database::open_in_memory().unwrap());
         let database = facade.database_for_tests();
-        let database_guard = database.lock().unwrap();
-        let repository = database_guard.operation_repository();
+        let (unknown_id, planned_id, already_needs_recovery_id) = {
+            let database_guard = database.lock().unwrap();
+            let repository = database_guard.operation_repository();
 
-        for kind in skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS {
-            let mut record = OperationRecord::planned(
+            for kind in skillhub_core::SAFE_TO_ABANDON_PREPARED_OPERATION_KINDS {
+                let mut record = OperationRecord::planned(
+                    skillhub_core::OperationId::new(),
+                    *kind,
+                    "health-safe-prepared",
+                );
+                record.phase = skillhub_core::OperationPhase::Prepared;
+                record.progress.phase = record.phase;
+                repository.insert_sync(&record).unwrap();
+            }
+
+            let mut unknown = OperationRecord::planned(
                 skillhub_core::OperationId::new(),
-                *kind,
-                "health-safe-prepared",
+                "future_operation_kind",
+                "health-unknown-prepared",
             );
-            record.phase = skillhub_core::OperationPhase::Prepared;
-            record.progress.phase = skillhub_core::OperationPhase::Prepared;
-            repository.insert_sync(&record).unwrap();
-        }
+            unknown.phase = skillhub_core::OperationPhase::Prepared;
+            unknown.progress.phase = unknown.phase;
+            let unknown_id = unknown.operation_id;
+            repository.insert_sync(&unknown).unwrap();
 
-        let mut unknown = OperationRecord::planned(
-            skillhub_core::OperationId::new(),
-            "future_operation_kind",
-            "health-unknown-prepared",
-        );
-        unknown.phase = skillhub_core::OperationPhase::Prepared;
-        unknown.progress.phase = skillhub_core::OperationPhase::Prepared;
-        let unknown_id = unknown.operation_id;
-        repository.insert_sync(&unknown).unwrap();
+            let planned = OperationRecord::planned(
+                skillhub_core::OperationId::new(),
+                "deploy_skill",
+                "health-planned",
+            );
+            let planned_id = planned.operation_id;
+            repository.insert_sync(&planned).unwrap();
 
-        let planned = OperationRecord::planned(
-            skillhub_core::OperationId::new(),
-            "deploy_skill",
-            "health-planned",
-        );
-        let planned_id = planned.operation_id;
-        repository.insert_sync(&planned).unwrap();
+            let mut already_needs_recovery = OperationRecord::planned(
+                skillhub_core::OperationId::new(),
+                "deploy_skill",
+                "health-already-needs-recovery",
+            );
+            already_needs_recovery.phase = skillhub_core::OperationPhase::NeedsRecovery;
+            already_needs_recovery.progress.phase = already_needs_recovery.phase;
+            let already_needs_recovery_id = already_needs_recovery.operation_id;
+            repository.insert_sync(&already_needs_recovery).unwrap();
 
-        let mut already_needs_recovery = OperationRecord::planned(
-            skillhub_core::OperationId::new(),
-            "deploy_skill",
-            "health-already-needs-recovery",
-        );
-        already_needs_recovery.phase = skillhub_core::OperationPhase::NeedsRecovery;
-        already_needs_recovery.progress.phase = skillhub_core::OperationPhase::NeedsRecovery;
-        let already_needs_recovery_id = already_needs_recovery.operation_id;
-        repository.insert_sync(&already_needs_recovery).unwrap();
-        drop(database_guard);
+            (unknown_id, planned_id, already_needs_recovery_id)
+        };
 
         let report = match facade
             .execute(AppCommand::RunHealthCheck(skillhub_core::RunHealthCheck))

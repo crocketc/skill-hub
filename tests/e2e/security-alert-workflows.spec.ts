@@ -174,7 +174,7 @@ test("dispatch blocked by security alert: readable copy with security-page and p
   await page.getByRole("button", { name: "预览" }).click();
 
   // 结构化错误码升级为可读文案，同时给出两个处理入口。
-  const blocked = page.getByRole("alert").filter({ hasText: "该技能存在待处理的安全预警，处理前不可派发" });
+  const blocked = page.getByRole("alert").filter({ hasText: "该技能存在尚未完全信任的危险级安全问题，处理前不可派发" });
   await expect(blocked).toBeVisible();
   await expect(blocked).toContainText("可在详情安全页或待办中处理");
   const securityLink = page.getByRole("link", { name: "前往安全页处理" });

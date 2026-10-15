@@ -2067,6 +2067,8 @@ async fn legacy_archived_trial_is_normalized_and_keeps_its_due_reminder() {
              DROP TABLE active_usage_evidence;
              DROP TABLE active_usage_slots;
              DROP TABLE usage_decisions;
+             DROP INDEX idx_deployment_preview_recent_requests;
+             ALTER TABLE deployment_preview_snapshots DROP COLUMN request_json;
              PRAGMA user_version=22;",
         )
         .expect("simulate legacy database");
