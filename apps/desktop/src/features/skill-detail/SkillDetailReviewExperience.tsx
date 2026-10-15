@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { describeNativeError } from "../../api/nativeErrors";
-import type { SourceState, SourceUpdateFileChange, SourceUpdatePreview } from "../../api/bindings";
+import type { SourceState, SourceUpdatePreview } from "../../api/bindings";
 import { AgentPresentation, inferAgentKindKey, readableAgentIdName } from "../../ui/AgentPresentation";
 import { Button } from "../../ui/Button";
 import { DataState } from "../../ui/DataState";
@@ -39,12 +39,12 @@ import type {
 import { skillDetailKeys } from "./api";
 
 const sections = [
-  ["review-overview", "概览"],
-  ["review-content", "内容与文件"],
-  ["review-safety", "安全检查"],
-  ["review-usage", "使用去向"],
-  ["review-sources", "来源更新"],
-  ["review-versions", "版本历史"],
+  ["review-overview", "overview"],
+  ["review-content", "content"],
+  ["review-safety", "safety"],
+  ["review-usage", "usage"],
+  ["review-sources", "sources"],
+  ["review-versions", "versions"],
 ] as const;
 type ReviewSectionId = typeof sections[number][0];
 
@@ -150,14 +150,12 @@ export function SkillDetailReviewExperience({
     invocationPolicy: metadata?.invocationPolicy,
     license: metadata?.license,
     note: metadata?.note,
-    ownership: "导入记录",
+    ownership: metadata?.ownership,
     originalDescription: metadata?.originalDescription,
     purpose: metadata?.purpose ?? summary.purpose,
-    source: "PDF 阅读工具原始目录",
+    source: metadata?.source,
     tags: metadata?.tags ?? [],
-    translation: metadata?.translation
-      ? { ...metadata.translation, model: "示例译文", sourceVersion: "当前内容" }
-      : undefined,
+    translation: metadata?.translation,
   };
 
   return (
@@ -167,9 +165,9 @@ export function SkillDetailReviewExperience({
           <div className="sh-skill-detail-review__identity">
             <div className="sh-skill-detail-review__identity-name">
               <h1>{summary.name}</h1>
-              <p>当前版本 · {summary.currentVersion ?? t("skillLibrary.noVersion")}</p>
+              <p>{t("skillDetail.review.currentVersion", { version: summary.currentVersion ?? t("skillLibrary.noVersion") })}</p>
             </div>
-            <div aria-label="技能操作" className="sh-skill-detail-review__actions">
+            <div aria-label={t("skillDetail.review.actionsLabel")} className="sh-skill-detail-review__actions">
               <ReviewHeaderActions
                 onCentralize={onCentralize}
                 onReclaim={onReclaim}
@@ -200,8 +198,8 @@ export function SkillDetailReviewExperience({
               </div>
             ) : null}
           </div>
-          <nav aria-label="技能详情导航" className="sh-skill-detail-review__nav">
-            {sections.map(([id, label]) => (
+          <nav aria-label={t("skillDetail.review.navLabel")} className="sh-skill-detail-review__nav">
+            {sections.map(([id, labelKey]) => (
               <a
                 aria-current={activeSection === id ? "location" : undefined}
                 className={activeSection === id ? "is-active" : undefined}
@@ -209,7 +207,7 @@ export function SkillDetailReviewExperience({
                 key={id}
                 onClick={() => navigateToSection(id)}
               >
-                {label}
+                {t(`skillDetail.review.sections.${labelKey}`)}
               </a>
             ))}
           </nav>
@@ -218,12 +216,12 @@ export function SkillDetailReviewExperience({
         <main className="sh-skill-detail__content sh-skill-detail-review__main">
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-overview">
             <h2>
-              <ReviewSectionToggle label="概览" onToggle={() => toggleSection("review-overview")} open={openSections["review-overview"]} sectionId="review-overview" />
+              <ReviewSectionToggle label={t("skillDetail.review.sections.overview")} onToggle={() => toggleSection("review-overview")} open={openSections["review-overview"]} sectionId="review-overview" />
             </h2>
             <div hidden={!openSections["review-overview"]} id="review-overview-body">
               <div className="sh-skill-detail-review__overview">
                 {metadata ? <MetadataPanel facade={facade} llmFacade={llmFacade} metadata={safeMetadata} refreshSnapshot={refreshSnapshot} skillId={skillId} reviewPresentation /> : (
-                  <p role="status">正在读取技能画像…</p>
+                  <p role="status">{t("skillDetail.review.loadingProfile")}</p>
                 )}
                 <div className="sh-skill-detail-review__facts">
                   <ReviewOverviewStatus
@@ -241,15 +239,15 @@ export function SkillDetailReviewExperience({
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-content">
             <h2>
-              <ReviewSectionToggle label="内容与文件" onToggle={() => toggleSection("review-content")} open={openSections["review-content"]} sectionId="review-content" />
+              <ReviewSectionToggle label={t("skillDetail.review.sections.content")} onToggle={() => toggleSection("review-content")} open={openSections["review-content"]} sectionId="review-content" />
             </h2>
             <div hidden={!openSections["review-content"]} id="review-content-body">
-              {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} skillRootPath={summary.rootPath} /> : <p role="status">正在读取技能文件…</p>}
+              {markdownFacade ? <MarkdownWorkspace facade={markdownFacade} fileRail reviewSaveFlow skillId={skillId} skillRootPath={summary.rootPath} /> : <p role="status">{t("skillDetail.review.loadingFiles")}</p>}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-safety">
             <h2>
-              <ReviewSectionToggle label="安全检查" onToggle={() => toggleSection("review-safety")} open={openSections["review-safety"]} sectionId="review-safety" />
+              <ReviewSectionToggle label={t("skillDetail.review.sections.safety")} onToggle={() => toggleSection("review-safety")} open={openSections["review-safety"]} sectionId="review-safety" />
             </h2>
             <div hidden={!openSections["review-safety"]} id="review-safety-body">
               {summary.currentVersionId ? (
@@ -273,31 +271,31 @@ export function SkillDetailReviewExperience({
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-usage">
             <div className="sh-skill-detail-review__section-heading">
               <h2>
-                <ReviewSectionToggle label="使用去向" onToggle={() => toggleSection("review-usage")} open={openSections["review-usage"]} sectionId="review-usage" />
+                <ReviewSectionToggle label={t("skillDetail.review.sections.usage")} onToggle={() => toggleSection("review-usage")} open={openSections["review-usage"]} sectionId="review-usage" />
               </h2>
               <ReviewGraphEntry graphHref={graphHref} graphSource={graphSource} />
             </div>
             <div hidden={!openSections["review-usage"]} id="review-usage-body">
-              <p>此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。</p>
+              <p>{t("skillDetail.review.usage.guidance")}</p>
               <ReviewUsageDestinations destinations={usageDestinations} onOpenGovernance={onOpenGovernanceDestination} />
               {insights ? <ReviewUsageInsights facade={facade} insights={insights} llmFacade={llmFacade} skillId={skillId} /> : null}
             </div>
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-sources">
             <h2>
-              <ReviewSectionToggle label="来源更新" onToggle={() => toggleSection("review-sources")} open={openSections["review-sources"]} sectionId="review-sources" />
+              <ReviewSectionToggle label={t("skillDetail.review.sections.sources")} onToggle={() => toggleSection("review-sources")} open={openSections["review-sources"]} sectionId="review-sources" />
             </h2>
             <div hidden={!openSections["review-sources"]} id="review-sources-body">
               <div className="sh-skill-detail-review__import-record">
-                <h3>导入记录</h3>
-                {provenance ? <ReviewImportRecord provenance={provenance} /> : <p>没有可用的导入记录。</p>}
+                <h3>{t("skillDetail.review.import.heading")}</h3>
+                {provenance ? <ReviewImportRecord provenance={provenance} /> : <p>{t("skillDetail.review.import.unavailable")}</p>}
                 {metadata ? (
                   <dl className="sh-skill-detail-review__record sh-skill-detail-review__publisher-facts">
-                    <div><dt>导入来源</dt><dd>{safeMetadata.source}</dd></div>
-                    <div><dt>作者</dt><dd>{metadata.author || "未提供"}</dd></div>
-                    <div><dt>许可证</dt><dd>{metadata.license || "未提供"}</dd></div>
-                    <div><dt>版权</dt><dd>{metadata.copyright || "未提供"}</dd></div>
-                    <div><dt>当前归属</dt><dd>技能库中的独立主体</dd></div>
+                    <div><dt>{t("skillDetail.review.import.source")}</dt><dd>{safeMetadata.source ?? t("skillDetail.metadata.empty")}</dd></div>
+                    <div><dt>{t("skillDetail.review.import.author")}</dt><dd>{metadata.author || t("skillDetail.metadata.empty")}</dd></div>
+                    <div><dt>{t("skillDetail.review.import.license")}</dt><dd>{metadata.license || t("skillDetail.metadata.empty")}</dd></div>
+                    <div><dt>{t("skillDetail.review.import.copyright")}</dt><dd>{metadata.copyright || t("skillDetail.metadata.empty")}</dd></div>
+                    <div><dt>{t("skillDetail.review.import.ownership")}</dt><dd>{t("skillDetail.review.import.standalone")}</dd></div>
                   </dl>
                 ) : null}
               </div>
@@ -306,7 +304,7 @@ export function SkillDetailReviewExperience({
           </section>
           <section className="sh-skill-detail__zone sh-skill-detail-review__section" id="review-versions">
             <h2>
-              <ReviewSectionToggle label="版本历史" onToggle={() => toggleSection("review-versions")} open={openSections["review-versions"]} sectionId="review-versions" />
+              <ReviewSectionToggle label={t("skillDetail.review.sections.versions")} onToggle={() => toggleSection("review-versions")} open={openSections["review-versions"]} sectionId="review-versions" />
             </h2>
             <div hidden={!openSections["review-versions"]} id="review-versions-body">
               <VersionTimeline facade={facade} skillId={skillId} summary={summary} userFacingDates reviewPresentation />
@@ -351,10 +349,11 @@ function ReviewUsageInsights({ facade, insights, llmFacade, skillId }: {
   llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   skillId: string;
 }) {
+  const { t } = useTranslation();
   return (
     <details className="sh-skill-detail-review__supplemental" open>
-      <summary>依赖、重复候选与使用证据</summary>
-      <h3>依赖</h3>
+      <summary>{t("skillDetail.review.insights.heading")}</summary>
+      <h3>{t("skillDetail.review.insights.dependencies")}</h3>
       {/* G-18：依赖是结构化事实——形态、路径与代理可读名。 */}
       <ul>
         {insights.dependencies.map((dependency) => (
@@ -370,8 +369,10 @@ function ReviewUsageInsights({ facade, insights, llmFacade, skillId }: {
         llmFacade={llmFacade}
         skillId={skillId}
       />
-      <h3>使用证据</h3>
-      <p>{insights.usageEvidence ? `记录到 ${insights.usageEvidence.invocationCount} 次调用；不能据此保证 Agent 一定能执行。` : "暂无可靠调用记录。"}</p>
+      <h3>{t("skillDetail.review.insights.usageEvidence")}</h3>
+      <p>{insights.usageEvidence
+        ? t("skillDetail.review.insights.usageCount", { count: insights.usageEvidence.invocationCount })
+        : t("skillDetail.review.insights.usageEmpty")}</p>
     </details>
   );
 }
@@ -424,6 +425,7 @@ function ReviewAdjacentSkills({ adjacent, backSearch, detailPathname, libraryRet
 /** 图谱查阅入口（§16 查阅与定位；FB-②）：携当前 Skill 身份真实跳转图谱页，
  * 图谱仍是使用关系与复用修改的权威展示，详情页不复制图谱画布。 */
 function ReviewGraphEntry({ graphHref, graphSource }: { graphHref: string; graphSource?: GraphSourceContext }) {
+  const { t } = useTranslation();
   return (
     <Link
       className="sh-button sh-button--ghost sh-button--sm sh-skill-detail-review__accent-action"
@@ -431,7 +433,7 @@ function ReviewGraphEntry({ graphHref, graphSource }: { graphHref: string; graph
       to={graphHref}
     >
       <Icon aria-hidden="true" name="relationships" size={16} />
-      在图谱中查看
+      {t("skillDetail.review.graph")}
     </Link>
   );
 }
@@ -449,22 +451,23 @@ function ReviewUsageDestinations({
   onOpenGovernance?: (relationId: string) => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   if (!destinations) return null;
   if (destinations.state === "loading") {
-    return <p data-testid="usage-destinations-loading" role="status">正在获取使用去向。</p>;
+    return <p data-testid="usage-destinations-loading" role="status">{t("skillDetail.review.usage.loading")}</p>;
   }
   if (destinations.state === "unavailable") {
-    return <p data-testid="usage-destinations-error" role="alert">使用去向暂时无法获取；关系治理清单不可用。</p>;
+    return <p data-testid="usage-destinations-error" role="alert">{t("skillDetail.review.usage.error")}</p>;
   }
   if (destinations.cards.length === 0) {
     return (
       <p data-testid="usage-destinations-empty">
-        还没有使用去向；通过「派发」创建第一个使用位置后，这里会显示各位置的状态。
+        {t("skillDetail.review.usage.empty")}
       </p>
     );
   }
   return (
-    <div aria-label="技能使用去向" className="sh-skill-detail-review__destinations">
+    <div aria-label={t("skillDetail.review.usage.label")} className="sh-skill-detail-review__destinations">
       {destinations.cards.map((card) => (
         <UsageDestinationCardView
           card={card}
@@ -489,10 +492,14 @@ function UsageDestinationCardView({
   onOpenGovernance?: (relationId: string) => void;
   onOpenProjectList: () => void;
 }) {
-  const healthNote = card.unhealthy ? "入口健康异常，请在关系治理中检查。" : "";
+  const { t } = useTranslation();
+  const healthNote = card.unhealthy ? t("skillDetail.review.usage.health") : "";
   const detail = card.takenOver
-    ? `管理中的链接跟随技能库当前版本。${card.targetKind === "shared_directory" ? "共享目录只计一个物理去向。" : ""}${healthNote}`
-    : `原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。${healthNote}`;
+    ? t("skillDetail.review.usage.managedLink", {
+      shared: card.targetKind === "shared_directory" ? t("skillDetail.review.usage.sharedManaged") : "",
+      health: healthNote ? ` ${healthNote}` : "",
+    })
+    : t("skillDetail.review.usage.unmanagedCopy", { health: healthNote ? ` ${healthNote}` : "" });
   return (
     <article className="sh-skill-detail-review__destination" data-testid={`usage-destination-${card.relationId}`}>
       <div className="sh-skill-detail-review__destination-heading">
@@ -506,13 +513,13 @@ function UsageDestinationCardView({
               sharedDirectory
             />
           ) : card.targetKind === "project" ? (
-            <strong>{projectDisplayName(card.path) ?? "项目位置"}</strong>
+            <strong>{projectDisplayName(card.path) ?? t("skillDetail.review.usage.projectLocation")}</strong>
           ) : (
             <AgentPresentation agentId={card.agentClientIds[0] ?? ""} />
           )}
         </div>
         <StatusBadge tone={card.takenOver ? "success" : "warning"}>
-          {card.takenOver ? "管理中" : "未管理"}
+          {t(card.takenOver ? "skillDetail.review.usage.managed" : "skillDetail.review.usage.unmanaged")}
         </StatusBadge>
       </div>
       <p title={detail}>{detail}</p>
@@ -523,11 +530,11 @@ function UsageDestinationCardView({
           size="sm"
           variant="ghost"
         >
-          {card.targetKind === "project" ? "进入项目" : "进入 Agent"}
+          {t(card.targetKind === "project" ? "skillDetail.review.usage.enterProject" : "skillDetail.review.usage.enterAgent")}
         </Button>
         {onOpenGovernance ? (
           <Button onClick={() => onOpenGovernance(card.relationId)} size="sm" variant="ghost">
-            查看治理详情
+            {t("skillDetail.review.usage.governance")}
           </Button>
         ) : null}
       </div>
@@ -535,40 +542,15 @@ function UsageDestinationCardView({
   );
 }
 
-// W3-4：来源更新区接真实五命令——getSourceUpdateStatus（持久化状态投影）、
-// checkSourceUpdate（只读检查）、prepareSourceUpdate+commitSourceUpdate（K6
-// 预览绑定采用流）、ignoreSourceUpdate（按候选身份忽略）、relinkSource（G-15
-// 显式来源类型）；T17 增加独立的解除更新来源入口。状态、候选与谱系全部来自门面事实。
-const SOURCE_KIND_LABELS: Record<string, string> = {
-  local: "本机目录导入",
-  https: "网络 HTTPS 导入",
-  git: "Git 仓库导入",
+// W3-4: source status and choices come from the facade; labels come from i18n.
+const CHECK_RESULT_KEYS: Record<SourceState, string> = {
+  up_to_date: "upToDate",
+  update_available: "updateAvailable",
+  update_available_with_local_changes: "updateAvailableLocalChanges",
+  no_upstream: "noUpstream",
+  source_unavailable: "unavailable",
+  authentication_required: "authentication",
 };
-
-const SOURCE_UPDATE_FILE_CHANGE_LABELS: Record<SourceUpdateFileChange["change"], string> = {
-  added: "新增",
-  removed: "移除",
-  modified: "修改",
-};
-
-function checkResultNotice(state: SourceState): string {
-  switch (state) {
-    case "up_to_date": return "来源检查完成：已是最新。";
-    case "update_available": return "来源检查完成：发现可采用的更新候选。";
-    case "update_available_with_local_changes": return "来源检查完成：发现可采用的更新候选；本机内容有未同步修改。";
-    case "no_upstream": return "来源检查完成：没有可检查更新的上游来源。";
-    case "source_unavailable": return "来源检查失败 · 上次关联仍保留，技能内容没有变化。";
-    case "authentication_required": return "来源需要认证后才能检查更新。";
-  }
-}
-
-function sourceKindLabel(kind: "local" | "https" | "git"): string {
-  switch (kind) {
-    case "local": return "本机目录";
-    case "https": return "HTTPS（安全超文本传输协议）来源";
-    case "git": return "Git（版本控制）仓库";
-  }
-}
 
 function ReviewSourceUpdates({ facade, skillId, summary }: {
   facade: SkillDetailFacade;
@@ -576,6 +558,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
   summary: SkillDetailSummary;
 }) {
   const { t, i18n } = useTranslation();
+  const localize = (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never));
   const queryClient = useQueryClient();
   const statusQuery = useQuery({
     queryFn: () => facade.getSourceUpdateStatus(skillId),
@@ -610,7 +593,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
   const checkMutation = useMutation({
     mutationFn: () => facade.checkSourceUpdate(skillId),
     onSuccess: (result) => {
-      setNotice(checkResultNotice(result.state));
+      setNotice(localize(`skillDetail.review.source.checkResult.${CHECK_RESULT_KEYS[result.state]}`));
       setActionError(null);
       invalidateSourceFacts();
     },
@@ -622,7 +605,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
   const ignoreMutation = useMutation({
     mutationFn: (candidateIdentity: string) => facade.ignoreSourceUpdate(skillId, candidateIdentity),
     onSuccess: () => {
-      setNotice("已忽略当前候选；之后的新候选会再次提醒。");
+      setNotice(localize("skillDetail.review.source.status.ignored"));
       setActionError(null);
       invalidateSourceFacts();
     },
@@ -650,8 +633,8 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
       setPreview(null);
       setNotice(
         applied.deployments_need_reconciliation
-          ? "已采用来源更新并创建新版本。有使用关系需要重新核对；请在关系治理中检查。"
-          : "已采用来源更新并创建新版本。",
+          ? localize("skillDetail.review.source.adoptionNeedsReview")
+          : localize("skillDetail.review.source.adoptionComplete"),
       );
       setActionError(null);
       invalidateSourceFacts();
@@ -664,7 +647,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
       setRelinkOpen(false);
       setRelinkValue("");
       setRelinkError(null);
-      setNotice("已登记更新来源；可随时执行只读检查。");
+      setNotice(localize("skillDetail.review.source.linkedNotice"));
       setActionError(null);
       invalidateSourceFacts();
     },
@@ -675,7 +658,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
       facade.unlinkUpdateSource(skillId, expectedSourceRevision),
     onSuccess: () => {
       setUnlinkOpen(false);
-      setNotice("已解除更新来源；技能内容、版本和导入来源记录保持不变。");
+      setNotice(localize("skillDetail.review.source.unlinkedNotice"));
       setActionError(null);
       invalidateSourceFacts();
     },
@@ -693,53 +676,53 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
     && !status.candidate_ignored
     && status.candidate_identity !== null;
   let stateText: string;
-  if (statusQuery.isPending) stateText = "正在获取来源更新状态。";
-  else if (statusQuery.isError || status === undefined) stateText = "来源更新状态暂时无法获取。";
+  if (statusQuery.isPending) stateText = localize("skillDetail.review.source.status.loading");
+  else if (statusQuery.isError || status === undefined) stateText = localize("skillDetail.review.source.status.unavailable");
   else if (status.state === null) {
-    if (!status.association) stateText = "尚未关联更新来源。";
+    if (!status.association) stateText = localize("skillDetail.review.source.status.noAssociation");
     else if (status.check_capability === "local_directory") {
-      stateText = "本机目录已关联；该来源不支持 Git（版本控制）更新检查。";
+      stateText = localize("skillDetail.review.source.status.localUnsupported");
     } else if (status.check_capability === "unsupported") {
-      stateText = "已关联的来源暂不支持更新检查。";
+      stateText = localize("skillDetail.review.source.status.unsupported");
     } else {
-      stateText = "已关联 Git（版本控制）更新来源，尚未检查更新。";
+      stateText = localize("skillDetail.review.source.status.gitNotChecked");
     }
   }
   else {
     switch (status.state) {
       case "no_upstream":
         if (status.check_capability === "local_directory") {
-          stateText = "本机目录已关联；该来源不支持 Git（版本控制）更新检查。";
+          stateText = localize("skillDetail.review.source.status.noUpstreamLocal");
         } else if (status.association === null) {
-          stateText = "当前没有关联更新来源。";
+          stateText = localize("skillDetail.review.source.status.noAssociationAvailable");
         } else {
-          stateText = "已关联来源没有可检查的上游。";
+          stateText = localize("skillDetail.review.source.status.noUpstream");
         }
         break;
-      case "up_to_date": stateText = "来源为最新状态。"; break;
-      case "update_available": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}。`; break;
-      case "update_available_with_local_changes": stateText = `发现可采用的更新候选${status.upstream_label ? `（${status.upstream_label}）` : ""}；本机内容有未同步修改，采用前会说明覆盖影响。`; break;
-      case "source_unavailable": stateText = "来源暂不可用；已登记的来源保持不变，技能内容没有变化。"; break;
-      case "authentication_required": stateText = "来源需要认证后才能检查更新。"; break;
+      case "up_to_date": stateText = localize("skillDetail.review.source.status.upToDate"); break;
+      case "update_available": stateText = localize("skillDetail.review.source.status.updateAvailable", { label: status.upstream_label ? ` (${status.upstream_label})` : "" }); break;
+      case "update_available_with_local_changes": stateText = localize("skillDetail.review.source.status.updateAvailableLocalChanges", { label: status.upstream_label ? ` (${status.upstream_label})` : "" }); break;
+      case "source_unavailable": stateText = localize("skillDetail.review.source.status.sourceUnavailable"); break;
+      case "authentication_required": stateText = localize("skillDetail.review.source.status.authentication"); break;
     }
-    if (status.candidate_ignored) stateText += "当前候选已被忽略；之后的新候选会再次提醒。";
+    if (status.candidate_ignored) stateText += localize("skillDetail.review.source.status.ignored");
   }
 
   return (
-    <section className="sh-skill-detail-review__source-updates" aria-label="网络更新来源">
+    <section className="sh-skill-detail-review__source-updates" aria-label={localize("skillDetail.review.source.heading")}>
       <div className="sh-skill-detail-review__section-heading">
         <div>
-          <h3>网络更新来源</h3>
+          <h3>{localize("skillDetail.review.source.heading")}</h3>
           <p>{stateText}</p>
-          {status?.checked_at ? <p className="sh-skill-detail-review__secondary">最近检查：{formatTimestamp(status.checked_at, locale)}</p> : null}
+          {status?.checked_at ? <p className="sh-skill-detail-review__secondary">{localize("skillDetail.review.source.recentCheck", { date: formatTimestamp(status.checked_at, locale) })}</p> : null}
         </div>
       </div>
       {status?.association ? (
         <p className="sh-skill-detail-review__source-association">
-          当前更新来源：{sourceKindLabel(status.association.source.kind)}。
+          {localize("skillDetail.review.source.currentSource", { kind: localize(`skillDetail.review.source.kind.${status.association.source.kind}`) })}
         </p>
       ) : null}
-      <p>关联来源只建立更新关系，不会替换当前内容或自动升级。</p>
+      <p>{localize("skillDetail.review.source.associationNote")}</p>
       {notice ? <p role="status">{notice}</p> : null}
       {actionError ? <p role="alert">{actionError}</p> : null}
       <div className="sh-skill-detail-review__source-actions">
@@ -782,14 +765,14 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
         ) : null}
         {candidateAvailable ? (
           <>
-            <Button onClick={() => void preparePreview()} size="sm">预览采用影响</Button>
+            <Button onClick={() => void preparePreview()} size="sm">{localize("skillDetail.review.source.actions.preview")}</Button>
             <Button
               loading={ignoreMutation.isPending}
               onClick={() => ignoreMutation.mutate(status.candidate_identity as string)}
               size="sm"
               variant="ghost"
             >
-              忽略本次更新
+              {localize("skillDetail.review.source.actions.ignore")}
             </Button>
           </>
         ) : null}
@@ -804,26 +787,26 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
         <Dialog.Portal>
           <Dialog.Overlay className="sh-dialog__overlay" />
           <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>{hasSource ? "更换网络更新来源" : "关联网络更新来源"}</Dialog.Title>
-            <Dialog.Description>来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。</Dialog.Description>
+            <Dialog.Title>{localize(hasSource ? "skillDetail.review.source.replaceTitle" : "skillDetail.review.source.associateTitle")}</Dialog.Title>
+            <Dialog.Description>{localize("skillDetail.review.source.relinkDescription")}</Dialog.Description>
             <label className="sh-skill-detail-review__dialog-field">
-              来源类型
+              {localize("skillDetail.review.source.sourceType")}
               <select
                 onChange={(event) => setRelinkKind(event.currentTarget.value as SourceRelinkInput["kind"])}
                 value={relinkKind}
               >
                 <option value="https">HTTPS URL</option>
-                <option value="git">Git 仓库</option>
-                <option value="local">本地目录</option>
+                <option value="git">{localize("skillDetail.review.source.gitRepository")}</option>
+                <option value="local">{localize("skillDetail.review.source.localFolder")}</option>
               </select>
             </label>
             <label className="sh-skill-detail-review__dialog-field">
-              来源地址
+              {localize("skillDetail.review.source.sourceAddress")}
               <input onChange={(event) => setRelinkValue(event.currentTarget.value)} value={relinkValue} />
             </label>
             {relinkError ? <p role="alert">{relinkError}</p> : null}
             <div className="sh-dialog__actions">
-              <Button onClick={() => setRelinkOpen(false)} size="sm" variant="ghost">关闭</Button>
+              <Button onClick={() => setRelinkOpen(false)} size="sm" variant="ghost">{localize("skillDetail.review.source.close")}</Button>
               <Button
                 disabled={!relinkValue.trim()}
                 loading={relinkMutation.isPending}
@@ -831,7 +814,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
                 size="sm"
                 variant="secondary"
               >
-                {hasSource ? "确认更换" : "确认关联"}
+                {localize(hasSource ? "skillDetail.review.source.confirmReplace" : "skillDetail.review.source.confirmAssociate")}
               </Button>
             </div>
           </Dialog.Content>
@@ -847,14 +830,14 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
         <Dialog.Portal>
           <Dialog.Overlay className="sh-dialog__overlay" />
           <Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>解除更新来源</Dialog.Title>
+            <Dialog.Title>{localize("skillDetail.review.source.unlinkTitle")}</Dialog.Title>
             <Dialog.Description>
-              这会解除当前更新来源关联并清除对应的检查结果和已忽略候选。技能内容、版本与导入来源记录不会改变。
+              {localize("skillDetail.review.source.unlinkDescription")}
             </Dialog.Description>
             {actionError ? <p role="alert">{actionError}</p> : null}
             <div className="sh-dialog__actions">
               <Button onClick={() => setUnlinkOpen(false)} size="sm" variant="ghost">
-                保留关联
+                {localize("skillDetail.review.source.keepLinked")}
               </Button>
               <Button
                 disabled={!status?.association_revision}
@@ -867,7 +850,7 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
                 size="sm"
                 variant="secondary"
               >
-                确认解除
+                {localize("skillDetail.review.source.confirmUnlink")}
               </Button>
             </div>
           </Dialog.Content>
@@ -877,25 +860,25 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
         <Dialog.Portal>
           <Dialog.Overlay className="sh-dialog__overlay" />
           <Dialog.Content aria-describedby="review-source-adopt-description" className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>采用更新影响预览</Dialog.Title>
-            <Dialog.Description id="review-source-adopt-description">确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。</Dialog.Description>
-            {preview?.upstream_label ? <p>来源版本：{preview.upstream_label}</p> : null}
+            <Dialog.Title>{localize("skillDetail.review.source.previewTitle")}</Dialog.Title>
+            <Dialog.Description id="review-source-adopt-description">{localize("skillDetail.review.source.previewDescription")}</Dialog.Description>
+            {preview?.upstream_label ? <p>{localize("skillDetail.review.source.sourceVersion", { version: preview.upstream_label })}</p> : null}
             <ul>
               {(preview?.files ?? []).map((file) => (
-                <li key={file.path}>{`${file.path}（${SOURCE_UPDATE_FILE_CHANGE_LABELS[file.change]}）`}</li>
+                <li key={file.path}>{`${file.path} (${localize(`skillDetail.review.source.${file.change}`)})`}</li>
               ))}
             </ul>
-            {preview ? <p>预览有效期至 {formatTimestamp(preview.expires_at, locale)}；过期后需重新预览。</p> : null}
+            {preview ? <p>{localize("skillDetail.review.source.previewExpiry", { date: formatTimestamp(preview.expires_at, locale) })}</p> : null}
             {commitError ? <p role="alert">{commitError}</p> : null}
             <div className="sh-dialog__actions">
-              <Button onClick={() => setPreviewOpen(false)} size="sm" variant="ghost">取消</Button>
+              <Button onClick={() => setPreviewOpen(false)} size="sm" variant="ghost">{localize("skillDetail.review.source.cancel")}</Button>
               <Button
                 disabled={!preview}
                 loading={commitMutation.isPending}
                 onClick={() => { if (preview) commitMutation.mutate(preview); }}
                 size="sm"
               >
-                确认采用更新
+                {localize("skillDetail.review.source.confirmAdopt")}
               </Button>
             </div>
           </Dialog.Content>
@@ -903,41 +886,42 @@ function ReviewSourceUpdates({ facade, skillId, summary }: {
       </Dialog.Root>
       {summary.upstreamLineage ? (
         <div className="sh-skill-detail-review__action-impact">
-          <h3>复用修改的原技能</h3>
+          <h3>{localize("skillDetail.review.source.lineageHeading")}</h3>
           <p>
-            从{" "}
+            {localize("skillDetail.review.source.lineagePrefix")}
             {summary.upstreamLineage.source_exists === false ? (
               <span>
-                {summary.upstreamLineage.source_display_name ?? "来源主体（名称不可解析）"}
-                （来源主体已删除，保留为只读追溯）
+                {summary.upstreamLineage.source_display_name ?? localize("skillDetail.review.source.unresolved")}
+                {localize("skillDetail.review.source.deleted")}
               </span>
             ) : (
               <Link to={`/library/${encodeURIComponent(summary.upstreamLineage.source_skill_id)}`}>
-                {summary.upstreamLineage.source_display_name ?? "来源主体（名称不可解析）"}
+                {summary.upstreamLineage.source_display_name ?? localize("skillDetail.review.source.unresolved")}
               </Link>
             )}
-            {" "}复用修改创建，两个主体独立维护。此追溯不会自动建立网络更新来源。
+            {" "}{localize("skillDetail.review.source.lineageDescription")}
           </p>
         </div>
       ) : (
-        <p>无复用修改依据。此技能不是从其他 Skill 复用修改创建的。</p>
+        <p>{localize("skillDetail.review.source.noLineage")}</p>
       )}
     </section>
   );
 }
 
 function ReviewImportRecord({ provenance }: { provenance: SkillProvenance }) {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const record = provenance.provenance;
-  if (!record) return <p>此技能没有导入存证，不能据此推断网络更新来源。</p>;
+  if (!record) return <p>{t("skillDetail.review.import.noRecord")}</p>;
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en-US";
+  const localize = (key: string) => String(t(key as never));
   return (
     <dl className="sh-skill-detail-review__record">
-      <div><dt>导入类型</dt><dd>{SOURCE_KIND_LABELS[record.sourceKind] ?? record.sourceKind}</dd></div>
-      <div><dt>导入时间</dt><dd>{formatTimestamp(record.importedAt, locale)}</dd></div>
-      <div><dt>原始位置</dt><dd><code title={record.originalPath}>{record.originalPath}</code></dd></div>
-      <div><dt>来源记录</dt><dd><code title={record.sourceLocator}>{record.sourceLocator}</code></dd></div>
-      <div><dt>记录说明</dt><dd>这是导入时的来源存证，不是可更新的网络来源。</dd></div>
+      <div><dt>{localize("skillDetail.review.import.type")}</dt><dd>{localize(`skillDetail.review.import.kind.${record.sourceKind}`)}</dd></div>
+      <div><dt>{localize("skillDetail.review.import.time")}</dt><dd>{formatTimestamp(record.importedAt, locale)}</dd></div>
+      <div><dt>{localize("skillDetail.review.import.originalLocation")}</dt><dd><code title={record.originalPath}>{record.originalPath}</code></dd></div>
+      <div><dt>{localize("skillDetail.review.import.sourceRecord")}</dt><dd><code title={record.sourceLocator}>{record.sourceLocator}</code></dd></div>
+      <div><dt>{localize("skillDetail.review.import.explanationLabel")}</dt><dd>{localize("skillDetail.review.import.explanation")}</dd></div>
     </dl>
   );
 }

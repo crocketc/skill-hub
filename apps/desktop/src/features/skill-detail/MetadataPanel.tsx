@@ -359,8 +359,13 @@ function MetadataPanelForSkill({
             <h3>{t("skillDetail.metadata.translation")}</h3>
             <div className="sh-metadata-panel__translation-actions">
               {reviewPresentation && metadata.translation?.text ? (
-                <Button onClick={() => setTranslationPurposeDraft(metadata.translation?.text)} size="sm" title="将当前用途替换为这段译文" variant="ghost">
-                  设为我的用途
+                <Button
+                  onClick={() => setTranslationPurposeDraft(metadata.translation?.text)}
+                  size="sm"
+                  title={t("skillDetail.metadata.translationPurposeTitle")}
+                  variant="ghost"
+                >
+                  {t("skillDetail.metadata.useTranslationAsPurpose")}
                 </Button>
               ) : null}
               <Button
@@ -417,7 +422,7 @@ function MetadataPanelForSkill({
         <div aria-label={t("skillDetail.metadata.translationPurposeConfirmLabel")} role="alertdialog">
           <p>{translationPurposeDraft}</p>
           <Button onClick={() => void saveTranslationAsPurpose()} size="sm">
-            {reviewPresentation ? "确认替换我的用途" : t("skillDetail.metadata.useTranslationAsPurpose")}
+            {t(reviewPresentation ? "skillDetail.metadata.translationPurposeConfirmLabel" : "skillDetail.metadata.useTranslationAsPurpose")}
               </Button>
               <Button onClick={() => setTranslationPurposeDraft(undefined)} size="sm" variant="ghost">
                 {t("actions.cancel")}

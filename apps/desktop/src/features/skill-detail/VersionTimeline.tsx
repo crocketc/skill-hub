@@ -146,7 +146,7 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
           queryClient.invalidateQueries({ queryKey: skillLibraryKeys.root }),
         ]);
         setRollbackTarget(undefined);
-        if (reviewPresentation) setReviewResult("已创建新的当前版本；管理中的链接继续跟随当前版本，独立拷贝保持原状。目标内容已完成示例基础检查；原始风险记录仍保留。");
+        if (reviewPresentation) setReviewResult(t("skillDetail.versions.reviewRollbackSuccess"));
       },
       () => setCommitError(t("skillDetail.versions.rollbackError")),
     ).finally(() => {
@@ -222,13 +222,13 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
               </label>
               {!version.current ? (
                 <Button onClick={() => prepareRollback(version.id)} size="sm" variant="ghost">
-                  {reviewPresentation ? `恢复到 ${version.label}` : t("skillDetail.versions.rollbackTo", { version: version.label })}
+                  {t("skillDetail.versions.rollbackTo", { version: version.label })}
                 </Button>
               ) : reviewPresentation ? (
                 // 原型紧凑行的槽位预留：当前版本没有恢复动作，用等宽占位
                 // 接住槽位，各行命名/比较/恢复按钮起点保持一致。
                 <span aria-hidden="true" className="sh-button sh-button--ghost sh-button--sm sh-version-timeline__slot-placeholder">
-                  {`恢复到 ${version.label}`}
+                  {t("skillDetail.versions.rollbackTo", { version: version.label })}
                 </span>
               ) : null}
             </article>
@@ -256,13 +256,12 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
         </div>
       ) : null}
       {rollbackTarget ? (
-        <section aria-label={reviewPresentation ? "恢复影响预览" : t("skillDetail.versions.rollbackPreview")} role="region" className="sh-version-timeline__rollback">
-          <h3 ref={previewHeadingRef} tabIndex={-1}>{reviewPresentation ? "恢复影响预览" : t("skillDetail.versions.rollbackPreview")}</h3>
+        <section aria-label={t("skillDetail.versions.rollbackPreview")} role="region" className="sh-version-timeline__rollback">
+          <h3 ref={previewHeadingRef} tabIndex={-1}>{t("skillDetail.versions.rollbackPreview")}</h3>
           {impactQuery.isPending ? <p role="status">{t("skillDetail.versions.impactLoading")}</p> : null}
           {impactQuery.data ? (
             <>
-              <p>{reviewPresentation ? "恢复会创建新的当前版本，原当前版本保留在历史中。" : t("skillDetail.versions.createsVersion")}</p>
-              {reviewPresentation ? <><p>目标版本内容已进行示例基础检查；发现记录不会因恢复而清空。</p><p>管理中的链接：2 个，继续跟随新当前版本。独立拷贝：1 个，原样保留。</p></> : null}
+              <p>{t("skillDetail.versions.createsVersion")}</p>
               <ul>
                 {impactQuery.data.deployments.map((deployment) => (
                   <li key={deployment.id}>
@@ -272,9 +271,9 @@ export function VersionTimeline({ facade, skillId, summary, userFacingDates = fa
                   </li>
                 ))}
               </ul>
-              <p>{reviewPresentation ? "恢复后重新执行基础安全检查" : t("skillDetail.versions.rerunBasic")}</p>
+              <p>{t("skillDetail.versions.rerunBasic")}</p>
               <Button disabled={commitPending} loading={commitPending} onClick={commitRollback} size="sm">
-                {reviewPresentation ? "确认创建恢复版本" : t("skillDetail.versions.confirmRollback")}
+                {t("skillDetail.versions.confirmRollback")}
               </Button>
               <Button disabled={commitPending} onClick={() => setRollbackTarget(undefined)} size="sm" variant="ghost">
                 {t("actions.cancel")}

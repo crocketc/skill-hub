@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { describe, expect, it } from "vitest";
@@ -13,13 +13,14 @@ import { VersionTimeline } from "./VersionTimeline";
 async function renderTimeline(
   facade = createMockSkillDetailFacade(),
   summary?: SkillDetailSummary,
+  options: { locale?: "en-US" | "zh-CN"; reviewPresentation?: boolean } = {},
 ) {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const i18n = await createSkillHubI18n([options.locale ?? "zh-CN"]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
-        <VersionTimeline facade={facade} skillId="skill-pdf" summary={summary} />
+        <VersionTimeline facade={facade} reviewPresentation={options.reviewPresentation} skillId="skill-pdf" summary={summary} />
       </I18nextProvider>
     </QueryClientProvider>,
   );
@@ -29,14 +30,15 @@ async function renderTimeline(
 async function renderTimelineWithBridge(
   facade = createMockSkillDetailFacade(),
   summary?: SkillDetailSummary,
+  options: { locale?: "en-US" | "zh-CN"; reviewPresentation?: boolean } = {},
 ) {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const i18n = await createSkillHubI18n([options.locale ?? "zh-CN"]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <I18nextProvider i18n={i18n}>
         <AppNotificationsProvider>
-          <VersionTimeline facade={facade} skillId="skill-pdf" summary={summary} />
+          <VersionTimeline facade={facade} reviewPresentation={options.reviewPresentation} skillId="skill-pdf" summary={summary} />
         </AppNotificationsProvider>
       </I18nextProvider>
     </QueryClientProvider>,
@@ -87,6 +89,24 @@ describe("VersionTimeline", () => {
     expect(screen.getByText("Demo Project 固定版本不受影响")).toBeVisible();
     expect(screen.getByText("回滚后重新执行基础安全检查")).toBeVisible();
     expect(facade.calls.committedRollbacks).toEqual([]);
+  });
+
+  it("localizes the review rollback preview and shows only queried impact facts", async () => {
+    const facade = await renderTimelineWithBridge(createMockSkillDetailFacade(), undefined, {
+      locale: "en-US",
+      reviewPresentation: true,
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rollback to v2.4.0" }));
+    const preview = await screen.findByRole("region", { name: "Rollback impact preview" });
+    expect(await within(preview).findByText("Rollback creates a new current version; it does not erase history.")).toBeVisible();
+    expect(within(preview).getByText("Codex CLI will update")).toBeVisible();
+    expect(within(preview).getByText("Demo Project is pinned and will not be affected")).toBeVisible();
+    expect(within(preview).queryByText(/example|2 managed|1 independent/i)).not.toBeInTheDocument();
+
+    fireEvent.click(within(preview).getByRole("button", { name: "Confirm and create rollback version" }));
+    expect(await screen.findByTestId("review-version-result")).toHaveTextContent("A new current version has been created.");
+    expect(facade.calls.committedRollbacks).toEqual([{ skillId: "skill-pdf", versionId: "version-240" }]);
   });
 
   it("blocks duplicate rollback submission and preserves impact after failure", async () => {

@@ -1991,7 +1991,8 @@
       "updateUnavailable": "Upstream update comparison is not connected yet.",
       "updateVersion": "Current {{current}} → upstream {{upstream}}",
       "upstreamPending": "version pending",
-      "viewUpdateDiff": "View update diff"
+      "viewUpdateDiff": "View update diff",
+      "reviewRollbackSuccess": "A new current version has been created."
     },
     "insights": {
       "dependencyShapes": {
@@ -2064,7 +2065,8 @@
       "translationOverwrite": "The existing user-revised {{locale}} translation will be replaced.",
       "translationPurposeConfirmLabel": "Confirm translated purpose",
       "useTranslationAsPurpose": "Use translation as my purpose",
-      "userRevised": "User revised"
+      "userRevised": "User revised",
+      "translationPurposeTitle": "Replace my purpose with this translation"
     },
     "navigation": {
       "label": "Skill navigation",
@@ -2120,6 +2122,184 @@
         "replace": "Replace update source",
         "unlink": "Unlink update source",
         "check": "Check for updates"
+      }
+    },
+    "review": {
+      "navLabel": "Skill sections",
+      "sections": {
+        "overview": "Overview",
+        "content": "Content and files",
+        "safety": "Security checks",
+        "usage": "Usage destinations",
+        "sources": "Source updates",
+        "versions": "Version history"
+      },
+      "currentVersion": "Current version · {{version}}",
+      "actionsLabel": "Skill actions",
+      "loadingProfile": "Loading Skill details…",
+      "loadingFiles": "Loading Skill files…",
+      "overview": {
+        "lifecycle": "Lifecycle",
+        "trial": "Trial",
+        "regular": "Regular",
+        "reviewDate": "Review date",
+        "trialReview": "Trial review",
+        "unset": "Not set",
+        "adjustDate": "Change review date",
+        "setDate": "Set review date",
+        "combination": "Combination",
+        "noCombination": "Not in a combination",
+        "manageCombinations": "Manage combinations",
+        "dialogTitle": "Trial review settings",
+        "dialogDescription": "The due date is a reminder only. SkillHub will not delete the Skill or reclaim its usage locations automatically.",
+        "date": "Review date",
+        "saveDate": "Save review date",
+        "makeRegular": "Set as regular"
+      },
+      "subjectLocation": {
+        "label": "Skill library location",
+        "unknown": "The library folder does not exist yet or its location is unknown.",
+        "open": "Open location",
+        "copy": "Copy path",
+        "copied": "Path copied.",
+        "copyError": "Could not copy the path. Allow clipboard access or select and copy the full path above.",
+        "openError": "Could not open the library folder."
+      },
+      "import": {
+        "heading": "Import record",
+        "unavailable": "No import record is available.",
+        "source": "Import source",
+        "author": "Author",
+        "license": "License",
+        "copyright": "Copyright",
+        "ownership": "Current ownership",
+        "standalone": "Skill library item",
+        "noRecord": "This Skill has no import record. Do not infer an update source from it.",
+        "type": "Import type",
+        "time": "Imported at",
+        "originalLocation": "Original location",
+        "sourceRecord": "Source record",
+        "explanationLabel": "Record note",
+        "explanation": "This record describes the source at import time. It is not an update source.",
+        "kind": {
+          "local": "Local folder import",
+          "https": "HTTPS import",
+          "git": "Git repository import"
+        }
+      },
+      "usage": {
+        "guidance": "This section shows each usage location and its status. Manage, keep or release, repair, reclaim, and unlink relationships in Relationship Governance or the related Agent or Project page. Card actions keep this Skill and relationship in context.",
+        "loading": "Loading usage destinations.",
+        "error": "Usage destinations are temporarily unavailable. The Relationship Governance list could not be loaded.",
+        "empty": "There are no usage locations yet. Dispatch this Skill to create one. Its status will appear here.",
+        "label": "Skill usage destinations",
+        "health": "The target entry has a health issue. Check it in Relationship Governance.",
+        "managedLink": "This managed link follows the current Skill library version.{{shared}}{{health}}",
+        "sharedManaged": " A shared directory counts as one physical location.",
+        "unmanagedCopy": "This location is a standalone copy. You can choose “Manage through the Skill library” in Relationship Governance.{{health}}",
+        "projectLocation": "Project location",
+        "managed": "Managed",
+        "unmanaged": "Unmanaged",
+        "enterProject": "Open Project",
+        "enterAgent": "Open Agent",
+        "governance": "View governance details"
+      },
+      "insights": {
+        "heading": "Dependencies, duplicates, and usage evidence",
+        "dependencies": "Dependencies",
+        "usageEvidence": "Usage evidence",
+        "usageCount": "{{count}} recorded calls. This does not guarantee that an Agent can run the Skill.",
+        "usageEmpty": "No reliable call records are available."
+      },
+      "graph": "View in graph",
+      "source": {
+        "localImport": "Local folder import",
+        "httpsImport": "HTTPS import",
+        "gitImport": "Git repository import",
+        "added": "Added",
+        "removed": "Removed",
+        "modified": "Modified",
+        "checkResult": {
+          "upToDate": "Source check complete. It is up to date.",
+          "updateAvailable": "Source check complete. An update candidate is available.",
+          "updateAvailableLocalChanges": "Source check complete. An update candidate is available. Local changes are not synced.",
+          "noUpstream": "Source check complete. No upstream source is available to check.",
+          "unavailable": "Source check failed. The link is kept and Skill content is unchanged.",
+          "authentication": "Sign in to check for updates from this source."
+        },
+        "kind": {
+          "local": "Local folder",
+          "https": "HTTPS source",
+          "git": "Git repository"
+        },
+        "status": {
+          "loading": "Loading update source status.",
+          "unavailable": "Update source status is temporarily unavailable.",
+          "noAssociation": "No update source is linked.",
+          "localUnsupported": "A local folder is linked. It does not support Git update checks.",
+          "unsupported": "This linked source does not support update checks.",
+          "gitNotChecked": "A Git update source is linked. No update check has run yet.",
+          "noUpstreamLocal": "A local folder is linked. It does not support Git update checks.",
+          "noAssociationAvailable": "No update source is linked.",
+          "noUpstream": "The linked source has no upstream to check.",
+          "upToDate": "The source is up to date.",
+          "updateAvailable": "An update candidate is available{{label}}.",
+          "updateAvailableLocalChanges": "An update candidate is available{{label}}. Local changes are not synced. The preview will show what may be replaced.",
+          "sourceUnavailable": "The source is unavailable. The saved link is kept and Skill content is unchanged.",
+          "authentication": "Sign in to check for updates from this source.",
+          "ignored": " The current candidate is ignored. New candidates will be shown."
+        },
+        "heading": "Network update source",
+        "recentCheck": "Last checked: {{date}}",
+        "currentSource": "Current update source: {{kind}}.",
+        "associationNote": "Linking a source does not replace or automatically update current content.",
+        "actions": {
+          "preview": "Preview update adoption impact",
+          "ignore": "Ignore this update"
+        },
+        "replaceTitle": "Replace network update source",
+        "associateTitle": "Link network update source",
+        "relinkDescription": "Choose the source type. SkillHub will not guess the protocol from the address or replace current content.",
+        "sourceType": "Source type",
+        "gitRepository": "Git repository",
+        "localFolder": "Local folder",
+        "sourceAddress": "Source address",
+        "close": "Close",
+        "confirmReplace": "Confirm replacement",
+        "confirmAssociate": "Confirm link",
+        "unlinkTitle": "Unlink update source",
+        "unlinkDescription": "This removes the update source link, check results, and ignored candidate records. Skill content, versions, and import records stay unchanged.",
+        "keepLinked": "Keep linked",
+        "confirmUnlink": "Confirm unlink",
+        "previewTitle": "Update adoption impact preview",
+        "previewDescription": "Review these file changes before creating a new version. The current content stays in version history.",
+        "sourceVersion": "Source version: {{version}}",
+        "previewExpiry": "Preview expires at {{date}}. Create a new preview after it expires.",
+        "cancel": "Cancel",
+        "confirmAdopt": "Confirm update adoption",
+        "lineageHeading": "Original Skill used for this adaptation",
+        "unresolved": "Source item (name unavailable)",
+        "lineagePrefix": "From ",
+        "deleted": " (The source item was deleted. This read-only record is kept.)",
+        "lineageDescription": "This Skill was created from an adaptation. The two items are maintained separately. This record does not link an update source automatically.",
+        "noLineage": "No adaptation record is available. This Skill was not created by adapting another Skill.",
+        "importNoRecord": "This Skill has no import record. Do not infer an update source from it.",
+        "importType": "Import type",
+        "importTime": "Imported at",
+        "originalLocation": "Original location",
+        "sourceRecord": "Source record",
+        "importNoteLabel": "Record note",
+        "importNote": "This record describes the source at import time. It is not an update source.",
+        "adoptionNeedsReview": "The update was applied and a new version was created. Review affected usage relationships in Relationship Governance.",
+        "adoptionComplete": "The update was applied and a new version was created.",
+        "linkedNotice": "The update source is linked. You can run a read-only check at any time.",
+        "unlinkedNotice": "The update source is unlinked. Skill content, versions, and import records are unchanged."
+      },
+      "header": {
+        "centralize": "Manage through the Skill library",
+        "dispatch": "Dispatch",
+        "export": "Export",
+        "delete": "Delete"
       }
     }
   },

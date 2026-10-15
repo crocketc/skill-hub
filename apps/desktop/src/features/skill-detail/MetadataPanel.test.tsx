@@ -15,6 +15,7 @@ async function renderMetadata({
   facade = createMockSkillDetailFacade(),
   metadata = detailFixture().metadata,
   llmFacade = createReadyLlmStatusFacade(),
+  locale = "zh-CN",
   refreshSnapshot,
   reviewPresentation = false,
   skillId = "skill-pdf",
@@ -23,10 +24,11 @@ async function renderMetadata({
   metadata?: SkillMetadata;
   llmFacade?: Pick<LlmAdminFacade, "readRuntimeStatus">;
   refreshSnapshot?: () => Promise<void>;
+  locale?: "en-US" | "zh-CN";
   reviewPresentation?: boolean;
   skillId?: string;
 } = {}) {
-  const i18n = await createSkillHubI18n(["zh-CN"]);
+  const i18n = await createSkillHubI18n([locale]);
   const client = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
@@ -48,7 +50,9 @@ async function renderMetadata({
   if (metadata.originalDescription?.trim()) {
     await waitFor(() => expect(
       screen.getByRole("button", {
-        name: metadata.translation?.text ? "重新翻译描述" : "AI 翻译",
+        name: locale === "en-US"
+          ? metadata.translation?.text ? "Translate description again" : "AI translate"
+          : metadata.translation?.text ? "重新翻译描述" : "AI 翻译",
       }),
     ).toBeEnabled());
   }
@@ -511,6 +515,17 @@ describe("MetadataPanel", () => {
         skillId: "skill-pdf",
       });
     });
+  });
+
+  it("localizes the review-purpose translation action in English", async () => {
+    await renderMetadata({ locale: "en-US", reviewPresentation: true });
+
+    const applyTranslation = screen.getByRole("button", { name: "Use translation as my purpose" });
+    expect(applyTranslation).toHaveAttribute("title", "Replace my purpose with this translation");
+    fireEvent.click(applyTranslation);
+
+    expect(screen.getByRole("alertdialog", { name: "Confirm translated purpose" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Confirm translated purpose" })).toBeVisible();
   });
 });
 

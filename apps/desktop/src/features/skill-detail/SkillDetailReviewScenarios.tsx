@@ -50,25 +50,25 @@ export function ReviewOverviewStatus({ combinations, facade, onSummarySaved, ski
   return (
     <>
       <dl className="sh-skill-detail-review__profile-strip">
-        <div><dt>生命周期</dt><dd>{isTrial ? "试用中" : "常规"}</dd></div>
+        <div><dt>{t("skillDetail.review.overview.lifecycle")}</dt><dd>{t(isTrial ? "skillDetail.review.overview.trial" : "skillDetail.review.overview.regular")}</dd></div>
         {isTrial ? (
-          <div><dt>复核日期</dt><dd>{trialDue ? formatTimestamp(trialDue, locale) : "尚未设定"}<Button onClick={() => openTrialDialog(trialDue)} size="sm" variant="ghost">调整复核日期</Button></dd></div>
+          <div><dt>{t("skillDetail.review.overview.reviewDate")}</dt><dd>{trialDue ? formatTimestamp(trialDue, locale) : t("skillDetail.review.overview.unset")}<Button onClick={() => openTrialDialog(trialDue)} size="sm" variant="ghost">{t("skillDetail.review.overview.adjustDate")}</Button></dd></div>
         ) : (
-          <div><dt>试用复核</dt><dd><span>尚未设定</span><Button onClick={() => openTrialDialog("")} size="sm" variant="ghost">设置复核日期</Button></dd></div>
+          <div><dt>{t("skillDetail.review.overview.trialReview")}</dt><dd><span>{t("skillDetail.review.overview.unset")}</span><Button onClick={() => openTrialDialog("")} size="sm" variant="ghost">{t("skillDetail.review.overview.setDate")}</Button></dd></div>
         )}
-        <div><dt>组合</dt><dd><span>{memberships.length ? memberships.map((combination) => combination.name).join("、") : "未加入组合"}</span><Link to="/library/combinations">管理组合</Link></dd></div>
+        <div><dt>{t("skillDetail.review.overview.combination")}</dt><dd><span>{memberships.length ? memberships.map((combination) => combination.name).join("、") : t("skillDetail.review.overview.noCombination")}</span><Link to="/library/combinations">{t("skillDetail.review.overview.manageCombinations")}</Link></dd></div>
       </dl>
 
       <Dialog.Root open={trialOpen} onOpenChange={setTrialOpen}>
         <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-          <Dialog.Title>试用复核设置</Dialog.Title>
-          <Dialog.Description>到期只提醒复核，不会自动删除技能或回收使用位置。</Dialog.Description>
-          <label className="sh-skill-detail-review__dialog-field">复核日期<input aria-label="复核日期" onChange={(event) => setTrialDateDraft(event.currentTarget.value)} type="date" value={trialDateDraft} /></label>
+          <Dialog.Title>{t("skillDetail.review.overview.dialogTitle")}</Dialog.Title>
+          <Dialog.Description>{t("skillDetail.review.overview.dialogDescription")}</Dialog.Description>
+          <label className="sh-skill-detail-review__dialog-field">{t("skillDetail.review.overview.date")}<input aria-label={t("skillDetail.review.overview.date")} onChange={(event) => setTrialDateDraft(event.currentTarget.value)} type="date" value={trialDateDraft} /></label>
           {saveError ? <p role="alert">{saveError}</p> : null}
           <div className="sh-dialog__actions">
-            <Button onClick={() => setTrialOpen(false)} size="sm" variant="ghost">取消</Button>
-            <Button disabled={saving || !trialDateDraft} onClick={() => void saveTrial(trialDateDraft)} size="sm" variant="secondary">保存复核日期</Button>
-            {isTrial ? <Button disabled={saving} onClick={() => void saveTrial(null)} size="sm">转为常规</Button> : null}
+            <Button onClick={() => setTrialOpen(false)} size="sm" variant="ghost">{t("actions.cancel")}</Button>
+            <Button disabled={saving || !trialDateDraft} onClick={() => void saveTrial(trialDateDraft)} size="sm" variant="secondary">{t("skillDetail.review.overview.saveDate")}</Button>
+            {isTrial ? <Button disabled={saving} onClick={() => void saveTrial(null)} size="sm">{t("skillDetail.review.overview.makeRegular")}</Button> : null}
           </div>
         </Dialog.Content></Dialog.Portal>
       </Dialog.Root>
@@ -83,6 +83,7 @@ export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener
   directoryOpener?: DirectoryOpener;
   rootPath?: string;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string>();
   const [openError, setOpenError] = useState(false);
@@ -102,16 +103,16 @@ export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener
   if (!rootPath) {
     return (
       <div className="sh-skill-detail-review__context-row">
-        <div><span>技能库主体位置</span><p>主体目录未物化或未知。</p></div>
+        <div><span>{t("skillDetail.review.subjectLocation.label")}</span><p>{t("skillDetail.review.subjectLocation.unknown")}</p></div>
       </div>
     );
   }
   return (
     <div className="sh-skill-detail-review__context-row">
       <div>
-        <span>技能库主体位置</span>
+        <span>{t("skillDetail.review.subjectLocation.label")}</span>
         <strong><code title={rootPath}>{rootPath}</code></strong>
-        <Button disabled={opening} onClick={() => void openLocation()} size="sm" variant="ghost">打开位置</Button>
+        <Button disabled={opening} onClick={() => void openLocation()} size="sm" variant="ghost">{t("skillDetail.review.subjectLocation.open")}</Button>
         <Button onClick={() => {
           setCopied(false); setCopyError(undefined);
           void (async () => {
@@ -119,13 +120,13 @@ export function ReviewSubjectLocation({ directoryOpener = desktopDirectoryOpener
               if (!navigator.clipboard) throw new Error("Clipboard unavailable");
               await navigator.clipboard.writeText(rootPath);
               setCopied(true);
-            } catch { setCopyError("无法复制路径。请允许剪贴板访问，或选中上方完整路径后手动复制。"); }
+            } catch { setCopyError(t("skillDetail.review.subjectLocation.copyError")); }
           })();
-        }} size="sm" variant="secondary">复制路径</Button>
+        }} size="sm" variant="secondary">{t("skillDetail.review.subjectLocation.copy")}</Button>
       </div>
-      {copied ? <p role="status">路径已复制。</p> : null}
+      {copied ? <p role="status">{t("skillDetail.review.subjectLocation.copied")}</p> : null}
       {copyError ? <p role="alert">{copyError}</p> : null}
-      {openError ? <p role="alert">无法打开主体目录。</p> : null}
+      {openError ? <p role="alert">{t("skillDetail.review.subjectLocation.openError")}</p> : null}
     </div>
   );
 }
@@ -152,7 +153,7 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
   return (
     <>
       {onCentralize ? (
-        <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">转入技能库管理</Button>
+        <Button className="sh-skill-detail-review__warning-action" onClick={onCentralize} size="sm" variant="ghost">{t("skillDetail.review.header.centralize")}</Button>
       ) : null}
       {onReclaim ? (
         <Button onClick={onReclaim} size="sm" variant="secondary">{t("skillDetail.actions.reclaim")}</Button>
@@ -160,9 +161,9 @@ export function ReviewHeaderActions({ onCentralize, onDispatch, onExport, onDele
       {onRenameRuntimeName ? (
         <Button onClick={onRenameRuntimeName} size="sm" variant="secondary">{t("skillDetail.runtimeRename.button")}</Button>
       ) : null}
-      <Button onClick={onDispatch} size="sm">派发</Button>
-      <Button onClick={onExport} size="sm" variant="secondary">导出</Button>
-      <Button onClick={onDelete} size="sm" variant="danger">删除</Button>
+      <Button onClick={onDispatch} size="sm">{t("skillDetail.review.header.dispatch")}</Button>
+      <Button onClick={onExport} size="sm" variant="secondary">{t("skillDetail.review.header.export")}</Button>
+      <Button onClick={onDelete} size="sm" variant="danger">{t("skillDetail.review.header.delete")}</Button>
     </>
   );
 }

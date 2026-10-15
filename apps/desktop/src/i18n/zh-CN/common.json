@@ -1991,7 +1991,8 @@
       "updateUnavailable": "上游更新比较尚未连接",
       "updateVersion": "当前 {{current}} → 上游 {{upstream}}",
       "upstreamPending": "版本待获取",
-      "viewUpdateDiff": "查看更新差异"
+      "viewUpdateDiff": "查看更新差异",
+      "reviewRollbackSuccess": "已创建新的当前版本。"
     },
     "insights": {
       "dependencyShapes": {
@@ -2064,7 +2065,8 @@
       "translationOverwrite": "现有用户修订译文将被替换（{{locale}}）。",
       "translationPurposeConfirmLabel": "确认将译文写入用途",
       "useTranslationAsPurpose": "将译文写入我的用途",
-      "userRevised": "用户已修订"
+      "userRevised": "用户已修订",
+      "translationPurposeTitle": "将当前用途替换为这段译文"
     },
     "navigation": {
       "label": "Skill 导航",
@@ -2120,6 +2122,184 @@
         "replace": "更换更新来源",
         "unlink": "解除更新来源",
         "check": "检查更新"
+      }
+    },
+    "review": {
+      "navLabel": "技能详情分区导航",
+      "sections": {
+        "overview": "概览",
+        "content": "内容与文件",
+        "safety": "安全检查",
+        "usage": "使用去向",
+        "sources": "来源更新",
+        "versions": "版本历史"
+      },
+      "currentVersion": "当前版本 · {{version}}",
+      "actionsLabel": "技能操作",
+      "loadingProfile": "正在读取技能画像…",
+      "loadingFiles": "正在读取技能文件…",
+      "overview": {
+        "lifecycle": "生命周期",
+        "trial": "试用中",
+        "regular": "常规",
+        "reviewDate": "复核日期",
+        "trialReview": "试用复核",
+        "unset": "尚未设定",
+        "adjustDate": "调整复核日期",
+        "setDate": "设置复核日期",
+        "combination": "组合",
+        "noCombination": "未加入组合",
+        "manageCombinations": "管理组合",
+        "dialogTitle": "试用复核设置",
+        "dialogDescription": "到期只提醒复核，不会自动删除技能或回收使用位置。",
+        "date": "复核日期",
+        "saveDate": "保存复核日期",
+        "makeRegular": "转为常规"
+      },
+      "subjectLocation": {
+        "label": "技能库主体位置",
+        "unknown": "主体目录未物化或未知。",
+        "open": "打开位置",
+        "copy": "复制路径",
+        "copied": "路径已复制。",
+        "copyError": "无法复制路径。请允许剪贴板访问，或选中上方完整路径后手动复制。",
+        "openError": "无法打开主体目录。"
+      },
+      "import": {
+        "heading": "导入记录",
+        "unavailable": "没有可用的导入记录。",
+        "source": "导入来源",
+        "author": "作者",
+        "license": "许可证",
+        "copyright": "版权",
+        "ownership": "当前归属",
+        "standalone": "技能库中的独立主体",
+        "noRecord": "此技能没有导入存证，不能据此推断网络更新来源。",
+        "type": "导入类型",
+        "time": "导入时间",
+        "originalLocation": "原始位置",
+        "sourceRecord": "来源记录",
+        "explanationLabel": "记录说明",
+        "explanation": "这是导入时的来源存证，不是可更新的网络来源。",
+        "kind": {
+          "local": "本机目录导入",
+          "https": "网络 HTTPS 导入",
+          "git": "Git 仓库导入"
+        }
+      },
+      "usage": {
+        "guidance": "此处显示每个使用位置及其状态。接管、保留或撤销、修复、回收和解除关系，请前往关系治理或对应的 Agent、项目页。卡片操作会保留当前技能和关系。",
+        "loading": "正在获取使用去向。",
+        "error": "使用去向暂时无法获取；关系治理清单不可用。",
+        "empty": "还没有使用去向。派发技能后，这里会显示使用位置及其状态。",
+        "label": "技能使用去向",
+        "health": "目标入口健康状态异常，请在关系治理中检查。",
+        "managedLink": "受管链接会跟随技能库中的当前版本。{{shared}}{{health}}",
+        "sharedManaged": " 共享目录只计一个物理去向。",
+        "unmanagedCopy": "原位置仍是独立拷贝。可在关系治理中选择“转入技能库管理”。{{health}}",
+        "projectLocation": "项目位置",
+        "managed": "管理中",
+        "unmanaged": "未管理",
+        "enterProject": "进入项目",
+        "enterAgent": "进入 Agent",
+        "governance": "查看治理详情"
+      },
+      "insights": {
+        "heading": "依赖、重复候选与使用证据",
+        "dependencies": "依赖",
+        "usageEvidence": "使用证据",
+        "usageCount": "记录到 {{count}} 次调用；不能据此保证 Agent 一定能执行。",
+        "usageEmpty": "暂无可靠调用记录。"
+      },
+      "graph": "在图谱中查看",
+      "source": {
+        "localImport": "本机目录导入",
+        "httpsImport": "网络 HTTPS 导入",
+        "gitImport": "Git 仓库导入",
+        "added": "新增",
+        "removed": "移除",
+        "modified": "修改",
+        "checkResult": {
+          "upToDate": "来源检查完成：已是最新。",
+          "updateAvailable": "来源检查完成：发现可采用的更新候选。",
+          "updateAvailableLocalChanges": "来源检查完成：发现可采用的更新候选；本机内容有未同步修改。",
+          "noUpstream": "来源检查完成：没有可检查更新的上游来源。",
+          "unavailable": "来源检查失败 · 上次关联仍保留，技能内容没有变化。",
+          "authentication": "来源需要认证后才能检查更新。"
+        },
+        "kind": {
+          "local": "本机目录",
+          "https": "HTTPS（安全超文本传输协议）来源",
+          "git": "Git（版本控制）仓库"
+        },
+        "status": {
+          "loading": "正在获取来源更新状态。",
+          "unavailable": "来源更新状态暂时无法获取。",
+          "noAssociation": "尚未关联更新来源。",
+          "localUnsupported": "本机目录已关联；该来源不支持 Git（版本控制）更新检查。",
+          "unsupported": "已关联的来源暂不支持更新检查。",
+          "gitNotChecked": "已关联 Git（版本控制）更新来源，尚未检查更新。",
+          "noUpstreamLocal": "本机目录已关联；该来源不支持 Git（版本控制）更新检查。",
+          "noAssociationAvailable": "当前没有关联更新来源。",
+          "noUpstream": "已关联来源没有可检查的上游。",
+          "upToDate": "来源为最新状态。",
+          "updateAvailable": "发现可采用的更新候选{{label}}。",
+          "updateAvailableLocalChanges": "发现可采用的更新候选{{label}}；本机内容有未同步修改，采用前会说明覆盖影响。",
+          "sourceUnavailable": "来源暂不可用；已登记的来源保持不变，技能内容没有变化。",
+          "authentication": "来源需要认证后才能检查更新。",
+          "ignored": "当前候选已被忽略；之后的新候选会再次提醒。"
+        },
+        "heading": "网络更新来源",
+        "recentCheck": "最近检查：{{date}}",
+        "currentSource": "当前更新来源：{{kind}}。",
+        "associationNote": "关联来源只建立更新关系，不会替换当前内容或自动升级。",
+        "actions": {
+          "preview": "预览采用影响",
+          "ignore": "忽略本次更新"
+        },
+        "replaceTitle": "更换网络更新来源",
+        "associateTitle": "关联网络更新来源",
+        "relinkDescription": "来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。",
+        "sourceType": "来源类型",
+        "gitRepository": "Git 仓库",
+        "localFolder": "本地目录",
+        "sourceAddress": "来源地址",
+        "close": "关闭",
+        "confirmReplace": "确认更换",
+        "confirmAssociate": "确认关联",
+        "unlinkTitle": "解除更新来源",
+        "unlinkDescription": "这会解除当前更新来源关联并清除对应的检查结果和已忽略候选。技能内容、版本与导入来源记录不会改变。",
+        "keepLinked": "保留关联",
+        "confirmUnlink": "确认解除",
+        "previewTitle": "采用更新影响预览",
+        "previewDescription": "确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。",
+        "sourceVersion": "来源版本：{{version}}",
+        "previewExpiry": "预览有效期至 {{date}}；过期后需重新预览。",
+        "cancel": "取消",
+        "confirmAdopt": "确认采用更新",
+        "lineageHeading": "复用修改的原技能",
+        "unresolved": "来源主体（名称不可解析）",
+        "lineagePrefix": "来源于",
+        "deleted": "（来源主体已删除，保留为只读追溯）",
+        "lineageDescription": "复用修改创建，两个主体独立维护。此追溯不会自动建立网络更新来源。",
+        "noLineage": "无复用修改依据。此技能不是从其他 Skill 复用修改创建的。",
+        "importNoRecord": "此技能没有导入存证，不能据此推断网络更新来源。",
+        "importType": "导入类型",
+        "importTime": "导入时间",
+        "originalLocation": "原始位置",
+        "sourceRecord": "来源记录",
+        "importNoteLabel": "记录说明",
+        "importNote": "这是导入时的来源存证，不是可更新的网络来源。",
+        "adoptionNeedsReview": "已采用来源更新并创建新版本。有使用关系需要重新核对；请在关系治理中检查。",
+        "adoptionComplete": "已采用来源更新并创建新版本。",
+        "linkedNotice": "已登记更新来源；可随时执行只读检查。",
+        "unlinkedNotice": "已解除更新来源；技能内容、版本和导入来源记录保持不变。"
+      },
+      "header": {
+        "centralize": "转入技能库管理",
+        "dispatch": "派发",
+        "export": "导出",
+        "delete": "删除"
       }
     }
   },
@@ -2222,7 +2402,10 @@
       },
       "sharedConsumers": {
         "heading": "使用这个共享目录的对象",
-        "kind": { "agent": "Agent", "project": "项目" },
+        "kind": {
+          "agent": "Agent",
+          "project": "项目"
+        },
         "activeRelations_one": "{{count}} 条使用关系",
         "activeRelations_other": "{{count}} 条使用关系",
         "incomplete": "无法完整确认所有使用对象，因此不能替换或换名派发。"
