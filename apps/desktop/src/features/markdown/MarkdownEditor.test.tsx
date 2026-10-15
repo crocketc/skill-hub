@@ -38,7 +38,7 @@ function interceptSaveCopy(facade: MockMarkdownFacade) {
 
 async function renderEditor(
   options: MockMarkdownOptions = {},
-  props: { onExit?: () => void } = {},
+  props: { onExit?: () => void; reviewSaveFlow?: boolean } = {},
 ) {
   const facade = createMockMarkdownFacade(options);
   const file = await facade.readMarkdownFile("pdf-reader", "SKILL.md");
@@ -55,6 +55,7 @@ async function renderEditor(
             file={file}
             onSaved={() => undefined}
             onExit={props.onExit}
+            reviewSaveFlow={props.reviewSaveFlow}
             skillId="pdf-reader"
           />
         </I18nextProvider>
@@ -98,6 +99,46 @@ function defineScrollable(
 }
 
 describe("MarkdownEditor", () => {
+  it("localizes the detail save flow and its successful result", async () => {
+    const facade = await renderEditor({}, { reviewSaveFlow: true });
+
+    expect(screen.getByText("Managed links follow the current version. Unmanaged use locations remain unchanged.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Save…" }));
+    expect(await screen.findByRole("heading", { name: "Save content" })).toBeVisible();
+    expect(screen.getByText("Use the current draft content for this save.")).toBeVisible();
+    expect(screen.getByText("Save method")).toBeVisible();
+    expect(screen.getByLabelText("Replace the current Skill and keep the old versions")).toBeChecked();
+    expect(screen.getByLabelText("Create a new Skill and record the reused modification source")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View save impact" }));
+    expect(await screen.findByRole("heading", { name: "Preview save impact" })).toBeVisible();
+    expect(screen.getByText("Review the draft's impact on the Skill, source, and usage locations.")).toBeVisible();
+    expect(screen.getByText("The current version stays in history.")).toBeVisible();
+    expect(screen.getByText("The linked network update source stays linked.")).toBeVisible();
+    expect(screen.getByText("Usage location effects come from the pre-save preview.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and create version" }));
+    expect(await screen.findByText("Content saved as a new version. The network update source remains linked.")).toBeVisible();
+    expect(facade.calls.savedVersions).toHaveLength(1);
+  });
+
+  it("localizes the save-as-new continuation", async () => {
+    await renderEditor({}, { reviewSaveFlow: true });
+    fireEvent.click(screen.getByRole("button", { name: "Save…" }));
+    fireEvent.click(screen.getByLabelText("Create a new Skill and record the reused modification source"));
+    fireEvent.click(screen.getByRole("button", { name: "View save impact" }));
+
+    expect(await screen.findByRole("button", { name: "Continue: choose inheritance and targets" })).toBeVisible();
+  });
+
+  it("closes the localized detail save chooser when canceled", async () => {
+    await renderEditor({}, { reviewSaveFlow: true });
+    fireEvent.click(screen.getByRole("button", { name: "Save…" }));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   // K9：保存产生新版本后，同一路径的旧版本资源缓存不得继续沿用。
   it("invalidates version-scoped asset caches when a save creates a new version", async () => {
     const facade = createMockMarkdownFacade();

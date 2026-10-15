@@ -253,7 +253,7 @@ export function MarkdownEditor({
         versionId: result.newVersionId,
       };
       setDraftState("idle");
-      if (reviewSaveFlow) setReviewSaveResult("内容已保存为新版本；网络更新来源继续保留。");
+      if (reviewSaveFlow) setReviewSaveResult(t("markdown.editor.reviewSave.saved"));
       await queryClient.invalidateQueries({ queryKey: markdownKeys.file(skillId, file.path) });
       // K9：保存产生新版本，按前缀失效该技能的资源缓存——旧版本的图片
       // 不得在切换/保存后被当作当前内容沿用。
@@ -411,7 +411,7 @@ export function MarkdownEditor({
         </div>
         <div className="sh-markdown-editor__save-cluster">
           <span className="sh-markdown-editor__save-hint">
-            {reviewSaveFlow ? "管理中的链接跟随当前版本；未管理的使用位置保持原状。" : t("markdown.editor.saveHint")}
+            {reviewSaveFlow ? t("markdown.editor.reviewSave.hint") : t("markdown.editor.saveHint")}
           </span>
           {!reviewSaveFlow ? <span className="sh-markdown-editor__copy-note">
             <Button
@@ -438,7 +438,7 @@ export function MarkdownEditor({
               setReviewSaveOpen(true);
             } else void validateAndSave();
           }} size="sm">
-            {reviewSaveFlow ? "保存…" : t("markdown.editor.save")}
+            {reviewSaveFlow ? t("markdown.editor.reviewSave.button") : t("markdown.editor.save")}
           </Button>
         </div>
       </div>
@@ -556,26 +556,26 @@ export function MarkdownEditor({
       {reviewSaveFlow ? (
         <Dialog.Root open={reviewSaveOpen} onOpenChange={(open) => { if (!open) closeReviewSave(); }}>
           <Dialog.Portal><Dialog.Overlay className="sh-dialog__overlay" /><Dialog.Content className="sh-dialog sh-dialog__content sh-skill-detail-review__dialog">
-            <Dialog.Title>{reviewSaveStep === "choose" ? "保存内容" : "保存影响预览"}</Dialog.Title>
-            <Dialog.Description>{reviewSaveStep === "choose" ? "当前正在编辑的内容会直接用于本次保存。" : "请核对编辑草稿与主体、来源、使用位置的影响。"}</Dialog.Description>
-            {reviewSaveStep === "choose" ? <fieldset className="sh-skill-detail-review__choice-list"><legend>保存方式</legend>
-              <label><input checked={reviewSaveMode === "overwrite"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("overwrite")} type="radio" />覆盖当前 Skill（保留旧版本）</label>
-              <label><input checked={reviewSaveMode === "new"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("new")} type="radio" />创建新 Skill（另存，登记复用修改来源）</label>
+            <Dialog.Title>{reviewSaveStep === "choose" ? t("markdown.editor.reviewSave.titleChoose") : t("markdown.editor.reviewSave.titleImpact")}</Dialog.Title>
+            <Dialog.Description>{reviewSaveStep === "choose" ? t("markdown.editor.reviewSave.descriptionChoose") : t("markdown.editor.reviewSave.descriptionImpact")}</Dialog.Description>
+            {reviewSaveStep === "choose" ? <fieldset className="sh-skill-detail-review__choice-list"><legend>{t("markdown.editor.reviewSave.method")}</legend>
+              <label><input checked={reviewSaveMode === "overwrite"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("overwrite")} type="radio" />{t("markdown.editor.reviewSave.modeOverwrite")}</label>
+              <label><input checked={reviewSaveMode === "new"} name="review-markdown-save-mode" onChange={() => setReviewSaveMode("new")} type="radio" />{t("markdown.editor.reviewSave.modeNew")}</label>
             </fieldset> : null}
             {reviewSaveStep === "impact" ? <>
-              <p>正在保存的文件：<strong>{file.path.split(/[\\/]/).filter(Boolean).at(-1) ?? "技能文件"}</strong> · {source.length} 个字符</p>
+              <p>{t("markdown.editor.reviewSave.file", { file: file.path.split(/[\\/]/).filter(Boolean).at(-1) ?? t("markdown.editor.reviewSave.skillFile"), count: source.length })}</p>
               <pre className="sh-skill-detail-review__draft-preview">{source.slice(0, 480)}{source.length > 480 ? "…" : ""}</pre>
               <ul className="sh-skill-detail-review__impact-list">
                 {/* K5/MS-06：创建分支的继承选择与目标影响由统一另存对话框按
                     真实预览呈现，原型影响步不再伪造「受管链接/独立副本」数量。 */}
-                <li>当前版本保留在历史中</li>
-                <li>已关联的网络更新来源继续关联</li>
-                <li>使用位置影响由保存前的目标预览如实分列</li>
+                <li>{t("markdown.editor.reviewSave.impactVersion")}</li>
+                <li>{t("markdown.editor.reviewSave.impactSource")}</li>
+                <li>{t("markdown.editor.reviewSave.impactUsage")}</li>
               </ul>
             </> : null}
             <div className="sh-dialog__actions">
-              <Button onClick={closeReviewSave} size="sm" variant="ghost">取消</Button>
-              {reviewSaveStep === "choose" ? <Button onClick={() => setReviewSaveStep("impact")} size="sm">查看保存影响</Button> : <Button disabled={saving} loading={saving} onClick={confirmReviewSave} size="sm">{reviewSaveMode === "overwrite" ? "确认保存并创建版本" : "继续：选择继承与目标"}</Button>}
+              <Button onClick={closeReviewSave} size="sm" variant="ghost">{t("actions.cancel")}</Button>
+              {reviewSaveStep === "choose" ? <Button onClick={() => setReviewSaveStep("impact")} size="sm">{t("markdown.editor.reviewSave.viewImpact")}</Button> : <Button disabled={saving} loading={saving} onClick={confirmReviewSave} size="sm">{reviewSaveMode === "overwrite" ? t("markdown.editor.reviewSave.confirmOverwrite") : t("markdown.editor.reviewSave.continueNew")}</Button>}
             </div>
           </Dialog.Content></Dialog.Portal>
         </Dialog.Root>
