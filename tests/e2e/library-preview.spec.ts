@@ -48,10 +48,10 @@ test("skill library keeps the professional table reachable with selection", asyn
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
   await expect(batchBar).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Batch export" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Run security check" })).toHaveCount(0);
   await expect(batchBar.getByRole("button", { name: "Submit export job" })).toHaveCount(0);
-  await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Batch delete" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
 
@@ -84,10 +84,10 @@ test("selected skills expose separated batch actions in the default card view", 
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
   await expect(batchBar).toBeVisible();
-  await expect(batchBar.getByRole("button", { name: "Start export" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Batch export" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Run security check" })).toHaveCount(0);
   await expect(batchBar.getByRole("button", { name: "Submit export job" })).toHaveCount(0);
-  await expect(batchBar.getByRole("button", { name: "Delete selected Skills from library" })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Batch delete" })).toBeVisible();
   await expect(batchBar.getByRole("button", { name: "Export", exact: true })).not.toBeVisible();
 });
 

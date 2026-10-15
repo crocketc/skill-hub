@@ -13,14 +13,14 @@ test("batch actions stay in the library bar and wrap without clipping at narrow 
   const actions = bar.locator(".sh-skill-library__batch-actions");
   const expectedOrder = [
     "Batch dispatch",
-    "Add tags",
-    "Remove tags",
+    "Batch add tags",
+    "Batch remove tags",
     "Batch add to combinations",
     "Batch remove from combinations",
     "Batch run basic check",
     "Batch run AI check",
-    "Start export",
-    "Delete selected Skills from library",
+    "Batch export",
+    "Batch delete",
   ];
   const buttons = actions.getByRole("button");
   await expect(buttons).toHaveText(expectedOrder);

@@ -983,7 +983,7 @@ test("batch export carries its selected Skill into the real wizard flow and repo
   await page.goto("/library");
 
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
-  await page.getByRole("button", { name: "Start export" }).click();
+  await page.getByRole("button", { name: "Batch export" }).click();
   await expect(page).toHaveURL(/\/settings\/data-protection$/);
   await expect(page.getByRole("textbox", { name: "Skill IDs" })).toHaveValue("pdf-reader");
 
@@ -1001,7 +1001,7 @@ test("batch deletion carries selected Skills through impact review and shows par
 
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
   await page.getByRole("checkbox", { name: "Select Release Notes" }).check();
-  await page.getByRole("button", { name: "Delete selected Skills from library" }).click();
+  await page.getByRole("button", { name: "Batch delete" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Review batch deletion impact" });
   await expect(dialog).toContainText("PDF Reader");

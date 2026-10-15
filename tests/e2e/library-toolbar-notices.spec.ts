@@ -56,7 +56,7 @@ test("batch tag results toast leaves after 2s and stays reachable inside its his
 }, testInfo) => {
   await page.goto(LIBRARY_ROUTE);
   await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
-  await page.getByRole("button", { name: "Add tags" }).click();
+  await page.getByRole("button", { name: "Batch add tags" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Add tags" });
   await dialog.getByRole("textbox", { name: "Tags" }).fill("review");
@@ -100,7 +100,7 @@ test("clicking a notification stack expands all notices without marking them rea
   await page.goto(LIBRARY_ROUTE);
   for (const tag of ["review", "glass-check"]) {
     await page.getByRole("checkbox", { name: "Select PDF Reader" }).check();
-    await page.getByRole("button", { name: "Add tags", exact: true }).click();
+    await page.getByRole("button", { name: "Batch add tags", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Add tags" });
     await dialog.getByRole("textbox", { name: "Tags" }).fill(tag);
     await dialog.getByRole("button", { name: "Add tags" }).click();

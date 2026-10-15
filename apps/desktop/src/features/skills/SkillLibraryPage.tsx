@@ -395,17 +395,17 @@ function BatchBar({
           onClick={onDispatch}
           size="sm"
           title={t("skillLibrary.page.batch.dispatchTitle")}
-          variant="ghost"
+          variant="primary"
         >
           {t("skillLibrary.page.batch.dispatch")}
         </Button>
         {canEditTags ? (
           <>
             <Button onClick={() => onTagAction("add_tag")} size="sm" variant="ghost">
-              {t("skillLibrary.page.batch.addTags")}
+              {t("skillLibrary.page.batch.addTagsAction")}
             </Button>
             <Button onClick={() => onTagAction("remove_tag")} size="sm" variant="ghost">
-              {t("skillLibrary.page.batch.removeTags")}
+              {t("skillLibrary.page.batch.removeTagsAction")}
             </Button>
           </>
         ) : null}
@@ -488,7 +488,7 @@ function BatchBar({
           {t("skillLibrary.page.batch.startExport")}
         </Button>
         <div className="sh-skill-library__batch-destructive">
-          <Button onClick={onDelete} size="sm" variant="ghost">
+          <Button onClick={onDelete} size="sm" variant="danger">
             {t("skillLibrary.page.batch.delete")}
           </Button>
         </div>

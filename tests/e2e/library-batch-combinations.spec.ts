@@ -62,7 +62,7 @@ test("batch source checks preserve the selected scope and report Skills without 
   await page.getByRole("checkbox", { name: "Select DOCX Writer" }).check();
 
   const batchBar = page.getByRole("complementary", { name: "Batch actions" });
-  await batchBar.getByRole("button", { name: "Check source updates" }).click();
+  await batchBar.getByRole("button", { name: "Batch check for updates" }).click();
 
   const result = page.getByTestId("source-update-checks");
   await expect(result).toContainText("2 selected; 1 have update sources, 1 have none.");

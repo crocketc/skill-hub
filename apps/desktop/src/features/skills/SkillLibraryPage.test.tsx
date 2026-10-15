@@ -453,7 +453,7 @@ describe("SkillLibraryPage", () => {
     const region = screen.getByRole("region", { name: "Skill results" });
     region.scrollTop = 120;
     fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
     // 底部抽屉：portal 面板带底部滑出类，不在页面文档流内（不再跳到页面底部）。
@@ -489,7 +489,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     await screen.findByRole("dialog", { name: "Review batch deletion impact" });
     fireEvent.click(
       await within(screen.getByTestId("drawer-panel")).getByRole("button", { name: "Cancel" }),
@@ -518,7 +518,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
 
     await waitFor(() => expect(cancelDelete).toHaveBeenCalledWith("delete-pdf"));
     expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
@@ -543,7 +543,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
 
     expect(within(dialog).getByText("The link file here will be removed")).toBeVisible();
@@ -577,7 +577,7 @@ describe("SkillLibraryPage", () => {
         await vi.advanceTimersByTimeAsync(1);
       });
       fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
-      fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+      fireEvent.click(screen.getByRole("button", { name: "Batch add tags" }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1);
       });
@@ -618,7 +618,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     // QA-001：二次点击确认取代 FORCE DELETE 文本输入。
@@ -642,7 +642,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
@@ -679,7 +679,7 @@ describe("SkillLibraryPage", () => {
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     expect(await screen.findByRole("dialog", { name: "Review batch deletion impact" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "Click again to confirm deleting 2 Skills" }));
@@ -722,7 +722,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade, tracker });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
     fireEvent.click(within(dialog).getAllByRole("radio", { name: /Delete the copy too/ })[1]);
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
@@ -767,7 +767,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
     const dialog = await screen.findByRole("dialog", { name: "Review batch deletion impact" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue deletion" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Click again to confirm deleting 1 Skills" }));
@@ -791,7 +791,7 @@ describe("SkillLibraryPage", () => {
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete selected Skills from library" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch delete" }));
 
     expect(await screen.findByText("Usage relationship target details could not be verified, so removal was not prepared.")).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Review batch deletion impact" })).not.toBeInTheDocument();
@@ -815,7 +815,7 @@ it("localizes failed deletion impact preparation and keeps confirmation closed i
     renderLibrary({ facade, removalFacade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "选择 PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "从库中删除所选 Skill" }));
+    fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
 
     expect(await screen.findByText("无法核实使用关系目标详情，未准备删除操作。")).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "检查批量删除影响" })).not.toBeInTheDocument();
@@ -904,7 +904,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(screen.getByRole("checkbox", { name: "Select PDF Reader" }));
 
     expect(screen.getByText("All 79 filtered results selected")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch export" }));
 
     expect(await screen.findByText("Data protection export")).toBeVisible();
     const state = router.state.location.state as { exportSkillIds: string[] };
@@ -920,8 +920,8 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
 
     const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
-    expect(within(batchBar).queryByRole("button", { name: "Add tags" })).not.toBeInTheDocument();
-    expect(within(batchBar).queryByRole("button", { name: "Remove tags" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Batch add tags" })).not.toBeInTheDocument();
+    expect(within(batchBar).queryByRole("button", { name: "Batch remove tags" })).not.toBeInTheDocument();
     expect(within(batchBar).queryByRole("button", { name: "Run security check" })).not.toBeInTheDocument();
     expect(within(batchBar).queryByRole("button", { name: "Submit export job" })).not.toBeInTheDocument();
   });
@@ -933,7 +933,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch add tags" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Add tags" });
     expect(within(dialog).getByText("This will affect 1 Skill")).toBeVisible();
@@ -961,7 +961,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Remove tags" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch remove tags" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Remove tags" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
@@ -994,7 +994,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add tags" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch add tags" }));
     const dialog = await screen.findByRole("dialog", { name: "Add tags" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Tags" }), {
       target: { value: "review" },
@@ -1019,7 +1019,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     );
   });
 
-  it("orders batch actions from high-frequency flows to a separated destructive group", async () => {
+  it("orders batch actions from high-frequency flows to a danger-styled destructive group", async () => {
     const facade = createMockSkillLibraryFacade();
     renderLibrary({ facade });
 
@@ -1038,15 +1038,15 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     ).toEqual([
       // 已接通：派发、标签、组合、安全检查与导出向导。
       "Batch dispatch",
-      "Add tags",
-      "Remove tags",
+      "Batch add tags",
+      "Batch remove tags",
       "Batch add to combinations",
       "Batch remove from combinations",
       "Batch run basic check",
       "Batch run AI check",
-      "Start export",
+      "Batch export",
       // 破坏性操作单独分组且位于最右侧
-      "Delete selected Skills from library",
+      "Batch delete",
     ]);
     const destructive = (actions as HTMLElement).querySelector(
       ".sh-skill-library__batch-destructive",
@@ -1054,9 +1054,11 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(destructive).not.toBeNull();
     expect(
       within(destructive as HTMLElement).getByRole("button", {
-        name: "Delete selected Skills from library",
+        name: "Batch delete",
       }),
     ).toBeInTheDocument();
+    expect(within(actions as HTMLElement).getByRole("button", { name: "Batch dispatch" })).toHaveClass("sh-button--primary");
+    expect(within(destructive as HTMLElement).getByRole("button", { name: "Batch delete" })).toHaveClass("sh-button--danger");
     // “清除选择”保持轻量操作，与批量动作分离且不占用破坏性分组位置
     expect(
       within(batchBar).getByRole("button", { name: "Clear selection" }),
@@ -1092,7 +1094,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     expect(screen.queryByRole("complementary", { name: "Batch actions" })).not.toBeInTheDocument();
   });
 
-  it("downgrades batch deletion to a secondary action while keeping the force-delete flow", async () => {
+  it("styles batch deletion as a danger action while keeping the force-delete flow", async () => {
     const facade = createMockSkillLibraryFacade();
     const removalFacade: RemovalFacade = {
       prepareDelete: vi.fn().mockResolvedValue({
@@ -1109,10 +1111,9 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     const destructive = batchBar.querySelector(".sh-skill-library__batch-destructive");
     expect(destructive).not.toBeNull();
     const deleteButton = within(destructive as HTMLElement).getByRole("button", {
-      name: "Delete selected Skills from library",
+      name: "Batch delete",
     });
-    expect(deleteButton).toHaveClass("sh-button--ghost");
-    expect(deleteButton).not.toHaveClass("sh-button--danger");
+    expect(deleteButton).toHaveClass("sh-button--danger");
 
     fireEvent.click(deleteButton);
     expect(
@@ -1134,7 +1135,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
       .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim());
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length);
-    // 语义重复的历史命名已消除：不再出现与“发起导出”难以区分的裸“Export”按钮
+    // 语义重复的历史命名已消除：不再出现第二个批量导出入口。
     expect(
       within(batchBar).queryByRole("button", { name: "Export" }),
     ).not.toBeInTheDocument();
@@ -1150,9 +1151,9 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
     const batchBar = screen.getByRole("complementary", { name: "Batch actions" });
     expect(within(batchBar).getAllByRole("button", { name: /export/i })).toHaveLength(1);
-    expect(within(batchBar).getByRole("button", { name: "Start export" })).toHaveAttribute("title");
+    expect(within(batchBar).getByRole("button", { name: "Batch export" })).toHaveAttribute("title");
     expect(within(batchBar).queryByRole("button", { name: "Submit export job" })).not.toBeInTheDocument();
-    fireEvent.click(within(batchBar).getByRole("button", { name: "Start export" }));
+    fireEvent.click(within(batchBar).getByRole("button", { name: "Batch export" }));
     expect(await screen.findByText("Data protection export")).toBeVisible();
     expect(router.state.location.pathname).toBe("/settings/data-protection");
   });
@@ -1162,7 +1163,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     const { router } = renderLibrary({ facade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch export" }));
 
     expect(await screen.findByText("Data protection export")).toBeVisible();
     expect(router.state.location.pathname).toBe("/settings/data-protection");
@@ -1175,7 +1176,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
     fireEvent.click(screen.getByRole("button", { name: "Select all 80 filtered results" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch export" }));
 
     expect(await screen.findByText("Data protection export")).toBeVisible();
     expect(router.state.location.pathname).toBe("/settings/data-protection");
@@ -1191,7 +1192,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select current page" }));
     fireEvent.click(screen.getByRole("button", { name: "Select all 80 filtered results" }));
     facade.listSkills = () => Promise.reject(new Error("offline"));
-    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch export" }));
 
     // 批量错误经通知中心以危险通知呈现（role=alert、常驻可关闭）。
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -2498,7 +2499,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select PDF Reader" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch check for updates" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The batch workflow could not be started",
     );
@@ -2525,7 +2526,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
     const listCallsBeforeCheck = facade.calls.listSkills.length;
-    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch check for updates" }));
 
     expect(await screen.findByTestId("source-update-checks")).toBeVisible();
     expect(checkSourceUpdates).toHaveBeenCalledWith(["skill-pdf"]);
@@ -2543,9 +2544,9 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     renderLibrary({ facade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch check for updates" }));
     await waitFor(() => expect(checkSourceUpdates).toHaveBeenCalledWith(["skill-pdf"]));
-    expect(screen.getByRole("button", { name: "Checking source updates…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Checking source updates for selected Skills…" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select DOCX Writer" }));
     await act(async () => {
@@ -2553,7 +2554,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Check source updates" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Batch check for updates" })).toBeEnabled();
     });
     expect(screen.queryByTestId("source-update-checks")).not.toBeInTheDocument();
   });
@@ -2566,7 +2567,7 @@ it("routes the drawer reclaim entry to skill detail with list context and auto-o
     renderLibrary({ facade });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select PDF Reader" }));
-    fireEvent.click(screen.getByRole("button", { name: "Check source updates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batch check for updates" }));
 
     const result = await screen.findByTestId("source-update-checks");
     const unavailable = await within(result).findByRole("group", { name: "Source unavailable (1)" });
