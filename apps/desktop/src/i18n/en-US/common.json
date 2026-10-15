@@ -93,7 +93,7 @@
       "reviewSave": {
         "button": "Save…",
         "saved": "Content saved as a new version. The network update source remains linked.",
-        "hint": "Managed links follow the current version. Unmanaged use locations remain unchanged.",
+        "hint": "Links follow the current Skill library version. Other use locations stay unchanged.",
         "titleChoose": "Save content",
         "titleImpact": "Preview save impact",
         "descriptionChoose": "Use the current draft content for this save.",
@@ -2194,7 +2194,7 @@
         "empty": "There are no usage locations yet. Dispatch this Skill to create one. Its status will appear here.",
         "label": "Skill usage destinations",
         "health": "The target entry has a health issue. Check it in Relationship Governance.",
-        "managedLink": "This managed link follows the current Skill library version.{{shared}}{{health}}",
+        "managedLink": "This location stays in sync with the current Skill library version.{{shared}}{{health}}",
         "sharedManaged": " A shared directory counts as one physical location.",
         "unmanagedCopy": "This location is a standalone copy. You can choose “Manage through the Skill library” in Relationship Governance.{{health}}",
         "projectLocation": "Project location",
@@ -2217,7 +2217,7 @@
         "httpsImport": "HTTPS import",
         "gitImport": "Git repository import",
         "added": "Added",
-        "removed": "Removed",
+        "removed": "File removed",
         "modified": "Modified",
         "checkResult": {
           "upToDate": "Source check complete. It is up to date.",

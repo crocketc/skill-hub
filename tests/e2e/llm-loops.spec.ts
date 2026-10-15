@@ -12,8 +12,7 @@ test("the saved-translation loop retranslates the description on demand", async 
   // 库内已保存的模型译文与出处事实可见；原文与译文分开展示。
   // 出处事实经评审态 presenter 映射为用户可读措辞，不裸露内部模型标识。
   await expect(translationField.locator("p")).toHaveText("模型译文");
-  await expect(page.getByText("示例译文")).toBeVisible();
-  await expect(page.getByText("当前内容", { exact: true })).toBeVisible();
+  await expect(page.getByText("示例译文")).toHaveCount(0);
 
   // 真实流接线轮（149c7065）：重翻译不再弹「未配置 AI」说明框，而是发送真实
   // translate_description intent；预览门面模拟后端成功回写，译文随之刷新。
@@ -27,7 +26,7 @@ test("translation settings return to the same skill and refresh capability state
 
   const panel = page.locator(".sh-metadata-panel");
   const translateAgain = panel.getByRole("button", { name: "Translate description again" });
-  await expect(page.getByText("示例译文")).toBeVisible();
+  await expect(page.getByText("示例译文")).toHaveCount(0);
   await expect(translateAgain).toBeDisabled();
 
   await page.getByRole("link", { name: "Open Network & AI settings" }).click();
@@ -39,14 +38,14 @@ test("translation settings return to the same skill and refresh capability state
 
   await page.goBack();
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf\?scenario=translation-setup$/);
-  await expect(page.getByText("示例译文")).toBeVisible();
+  await expect(page.getByText("示例译文")).toHaveCount(0);
   await expect(translateAgain).toBeEnabled();
   await expect(page.getByRole("link", { name: "Open Network & AI settings" })).toHaveCount(0);
 });
 
 test("the semantic duplicate analysis reports AI candidates as advisory", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
-  await page.getByRole("link", { name: "使用去向" }).click();
+  await page.getByRole("link", { name: "Usage destinations" }).click();
 
   // 真实流接线轮（149c7065）：确定性候选常显（来自 getInsights，不依赖 AI）；
   // 预览门面 isAiAvailable 返回 true（已配置供应商），AI 分析按钮可点并返回

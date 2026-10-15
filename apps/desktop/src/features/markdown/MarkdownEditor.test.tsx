@@ -102,7 +102,7 @@ describe("MarkdownEditor", () => {
   it("localizes the detail save flow and its successful result", async () => {
     const facade = await renderEditor({}, { reviewSaveFlow: true });
 
-    expect(screen.getByText("Managed links follow the current version. Unmanaged use locations remain unchanged.")).toBeVisible();
+    expect(screen.getByText("Links follow the current Skill library version. Other use locations stay unchanged.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Save…" }));
     expect(await screen.findByRole("heading", { name: "Save content" })).toBeVisible();
     expect(screen.getByText("Use the current draft content for this save.")).toBeVisible();

@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures";
 /**
  * 原型转正后的技能详情评审布局（SkillDetailReviewExperience 六信息区）：
  * 概览 / 内容与文件 / 安全检查 / 使用去向 / 来源更新 / 版本历史。
- * 分区导航与分区标签为组件内置中文，不随 locale 变化。
+ * 分区导航与标签按当前界面语言显示。
  * 只断言公开 DOM、可访问名称与几何；截图产物走 --output 指定的任务 /tmp 目录。
  */
 
@@ -23,19 +23,19 @@ const themeNames = [
 ] as const;
 
 const reviewSections = [
-  ["review-overview", "概览"],
-  ["review-content", "内容与文件"],
-  ["review-safety", "安全检查"],
-  ["review-usage", "使用去向"],
-  ["review-sources", "来源更新"],
-  ["review-versions", "版本历史"],
+  ["review-overview", "Overview"],
+  ["review-content", "Content and files"],
+  ["review-safety", "Security checks"],
+  ["review-usage", "Usage destinations"],
+  ["review-sources", "Source updates"],
+  ["review-versions", "Version history"],
 ] as const;
 
 test("organizes the detail page into six information zones", async ({ page }) => {
   await page.goto("/__preview/skill-detail/skill-pdf");
 
   // 六区导航：链接名称与 href 一一对应真实分区。
-  const zoneNav = page.getByRole("navigation", { name: "技能详情导航" });
+  const zoneNav = page.getByRole("navigation", { name: "Skill sections" });
   await expect(zoneNav.getByRole("link")).toHaveCount(6);
   for (const [id, label] of reviewSections) {
     await expect(zoneNav.getByRole("link", { name: label })).toHaveAttribute("href", `#${id}`);
@@ -47,12 +47,12 @@ test("organizes the detail page into six information zones", async ({ page }) =>
   }
 
   // 详情只使用应用标题栏返回，不在侧栏重复显示返回技能库。
-  await expect(page.getByRole("button", { name: "Back" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "返回技能库" })).toHaveCount(0);
 
   // 侧栏身份区：当前版本与技能操作组常驻。
-  await expect(page.getByText("当前版本 · v2.4.1")).toBeVisible();
-  await expect(page.locator('[aria-label="技能操作"]').getByRole("button", { name: "派发" })).toBeVisible();
+  await expect(page.getByText("Current version · v2.4.1")).toBeVisible();
+  await expect(page.locator('[aria-label="Skill actions"]').getByRole("button", { name: "Dispatch" })).toBeVisible();
 
   // 真实流接线轮（8a8baf01，§9 裁决：评审原型即生产默认呈现）：原型示例
   // 警示 note 已随横幅退役；预览路由的隔离性由 DEV 门面（previewApi）
@@ -106,7 +106,7 @@ test("states each fact once and keeps deterministic candidates ahead of the opti
   // 六区标题唯一：分区折叠开关是该块唯一导航标题（旧五区面板标题已整体移除）。
   const zoneLabels = await page.locator(".sh-skill-detail-review__section-toggle").allTextContents();
   expect(new Set(zoneLabels).size).toBe(zoneLabels.length);
-  expect(zoneLabels).toEqual(["概览", "内容与文件", "安全检查", "使用去向", "来源更新", "版本历史"]);
+  expect(zoneLabels).toEqual(["Overview", "Content and files", "Security checks", "Usage destinations", "Source updates", "Version history"]);
   await expect(page.getByRole("heading", { name: "Source identity" })).toHaveCount(0);
 
   // 旧九章节锚点不再是本页事实出口；真实流接线轮（8a8baf01）：伪造的
@@ -179,7 +179,7 @@ test.describe("responsive workspace behaviour", () => {
     await page.setViewportSize({ width: 800, height: 900 });
     await page.goto("/__preview/skill-detail/skill-pdf");
 
-    const zoneNav = page.getByRole("navigation", { name: "技能详情导航" });
+    const zoneNav = page.getByRole("navigation", { name: "Skill sections" });
     await expect(zoneNav).toBeVisible();
     for (const [, zone] of reviewSections) {
       await expect(zoneNav.getByRole("link", { name: zone })).toBeVisible();
@@ -204,7 +204,7 @@ test.describe("responsive workspace behaviour", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/__preview/skill-detail/skill-pdf");
 
-    const zoneNav = page.getByRole("navigation", { name: "技能详情导航" });
+    const zoneNav = page.getByRole("navigation", { name: "Skill sections" });
     await expect(zoneNav).toBeVisible();
     const tops = await zoneNav.getByRole("link").evaluateAll((links) =>
       links.map((link) => Math.round(link.getBoundingClientRect().top)),
@@ -267,9 +267,9 @@ test.describe("theme contract", () => {
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
       // 关键状态：分区导航、技能操作组与概览分区都可见。
-      await expect(page.getByRole("navigation", { name: "技能详情导航" })).toBeVisible();
-      await expect(page.locator('[aria-label="技能操作"]')).toBeVisible();
-      await expect(page.getByRole("heading", { name: "概览", exact: true })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Skill sections" })).toBeVisible();
+      await expect(page.locator('[aria-label="Skill actions"]')).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
 
       // 键盘焦点可见：Tab 走到分区导航链接后必须出现 focus 描边。
       let focusedZoneLink = false;

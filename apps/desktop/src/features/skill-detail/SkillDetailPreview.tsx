@@ -40,8 +40,11 @@ function createReviewFacade(base: SkillDetailFacade): SkillDetailFacade {
   let restored = false;
   return {
     ...base,
+    async getProvenance() {
+      return { provenance: null, observedDeployments: [] };
+    },
     async getMetadata(skillId) {
-      const metadata = await base.getMetadata(skillId);
+      const metadata = { ...(await base.getMetadata(skillId)), source: undefined };
       const patch = patches.get(skillId);
       if (!patch) return metadata;
       const next: SkillMetadata = {

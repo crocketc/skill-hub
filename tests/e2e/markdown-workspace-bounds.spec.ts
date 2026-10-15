@@ -64,14 +64,14 @@ test.describe("markdown workspace height bounds", () => {
     await typeLongDocument(page);
     // P1-14：评审保存流——默认覆盖当前 Skill（旧版本保留在历史），
     // 核对保存影响后确认；成功反馈出现在编辑器状态条。
-    await page.getByRole("button", { name: "保存…" }).click();
+    await page.getByRole("button", { name: "Save…" }).click();
     const saveDialog = page.getByRole("dialog");
     await expect(saveDialog).toBeVisible();
-    await expect(saveDialog.getByText("覆盖当前 Skill（保留旧版本）")).toBeVisible();
-    await saveDialog.getByRole("button", { name: "查看保存影响" }).click();
-    await expect(saveDialog).toContainText("当前版本保留在历史中");
-    await saveDialog.getByRole("button", { name: "确认保存并创建版本" }).click();
-    await expect(page.getByText("内容已保存为新版本")).toBeVisible();
+    await expect(saveDialog.getByText("Replace the current Skill and keep the old versions")).toBeVisible();
+    await saveDialog.getByRole("button", { name: "View save impact" }).click();
+    await expect(saveDialog).toContainText("The current version stays in history.");
+    await saveDialog.getByRole("button", { name: "Confirm and create version" }).click();
+    await expect(page.getByText("Content saved as a new version.")).toBeVisible();
     // 保存后切回阅读模式，长文档工作区仍受高度约束并在内部滚动。
     await page.getByRole("tab", { name: "Read" }).click();
     await expect(page.getByRole("heading", { name: "Section 1", exact: true })).toBeVisible();

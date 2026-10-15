@@ -1253,43 +1253,43 @@ test("native skill detail surfaces review sections, source adoption, and version
   // 真实流接线轮（ed0cdf39/治理卡收口）：去向卡详情改写为行动导向措辞，
   // 未管理的独立拷贝直接给出关系治理入口指引，徽标为「未管理」。
   // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
-  await expect(page.getByText("原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。")).toBeVisible();
+  await expect(page.getByText("This location is a standalone copy. You can choose “Manage through the Skill library” in Relationship Governance.")).toBeVisible();
   // 来源更新区（真实流，K6）：显式关联网络来源 → 显式只读检查 → 采用影响
   // 预览 → 确认采用。关联只登记来源（不替换内容、不自动检查）；检查通过
   // 后才出现采用入口；采用前先看文件级影响预览。
   await page.getByRole("button", { name: "Associate update source" }).click();
   const chooser = page.getByRole("dialog");
-  await expect(chooser).toContainText("关联网络更新来源");
-  await expect(chooser).toContainText("来源类型由你显式选择；SkillHub 不会从地址文本猜测协议，也不会替换当前内容。");
-  await chooser.getByLabel("来源类型").selectOption("git");
-  await chooser.getByLabel("来源地址").fill("https://example.com/pdf-reader.git");
-  await chooser.getByRole("button", { name: "确认关联" }).click();
-  await expect(page.getByText("已登记更新来源；可随时执行只读检查。")).toBeVisible();
+  await expect(chooser).toContainText("Link network update source");
+  await expect(chooser).toContainText("Choose the source type. SkillHub will not guess the protocol from the address or replace current content.");
+  await chooser.getByLabel("Source type").selectOption("git");
+  await chooser.getByLabel("Source address").fill("https://example.com/pdf-reader.git");
+  await chooser.getByRole("button", { name: "Confirm link" }).click();
+  await expect(page.getByText("The update source is linked. You can run a read-only check at any time.")).toBeVisible();
   await page.getByRole("button", { name: "Check for updates" }).click();
-  await expect(page.getByText("来源检查完成：发现可采用的更新候选。")).toBeVisible();
-  await expect(page.getByText("发现可采用的更新候选（v2.0.0）。")).toBeVisible();
-  await page.getByRole("button", { name: "预览采用影响" }).click();
+  await expect(page.getByText("Source check complete. An update candidate is available.")).toBeVisible();
+  await expect(page.getByText("An update candidate is available (v2.0.0).")).toBeVisible();
+  await page.getByRole("button", { name: "Preview update adoption impact" }).click();
   const adoptDialog = page.getByRole("dialog");
-  await expect(adoptDialog).toContainText("采用更新影响预览");
-  await expect(adoptDialog).toContainText("确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。");
-  await expect(adoptDialog).toContainText("来源版本：v2.0.0");
-  await expect(adoptDialog).toContainText("SKILL.md（修改）");
-  await adoptDialog.getByRole("button", { name: "确认采用更新" }).click();
-  await expect(page.getByText("已采用来源更新并创建新版本。")).toBeVisible();
+  await expect(adoptDialog).toContainText("Update adoption impact preview");
+  await expect(adoptDialog).toContainText("Review these file changes before creating a new version. The current content stays in version history.");
+  await expect(adoptDialog).toContainText("Source version: v2.0.0");
+  await expect(adoptDialog).toContainText("SKILL.md (Modified)");
+  await adoptDialog.getByRole("button", { name: "Confirm update adoption" }).click();
+  await expect(page.getByText("The update was applied and a new version was created.")).toBeVisible();
   // 版本历史区：对比两个版本后按评审流回滚，影响预览先行、确认创建恢复版本。
-  await page.getByRole("link", { name: "版本历史" }).click();
+  await page.getByRole("link", { name: "Version history" }).click();
   await expect(page).toHaveURL(/#review-versions$/);
   await expect(page.locator("#review-versions .sh-version-timeline")).toBeVisible();
   await page.getByLabel("Select v1 for comparison").check();
   await page.getByLabel("Select v0 for comparison").check();
   await page.getByRole("button", { name: "Compare selected versions" }).click();
   await expect(page.getByRole("region", { name: "Changed file details" })).toContainText("SKILL.md");
-  await page.getByRole("button", { name: "恢复到 v0" }).click();
-  const rollbackPreview = page.locator("#review-versions").getByRole("region", { name: "恢复影响预览" });
+  await page.getByRole("button", { name: "Rollback to v0" }).click();
+  const rollbackPreview = page.locator("#review-versions").getByRole("region", { name: "Rollback impact preview" });
   await expect(rollbackPreview).toBeVisible();
   // 评审态影响预览如实分列恢复结果。确认提交链路由 edit-recover.spec 在
   // 预览路由覆盖；native 桩未实现 rollback 提交，这里断言到预览与确认入口为止。
-  await expect(rollbackPreview).toContainText("恢复会创建新的当前版本，原当前版本保留在历史中。");
+  await expect(rollbackPreview).toContainText("Rollback creates a new current version; it does not erase history.");
   await expect(rollbackPreview).toContainText("Codex CLI will update");
-  await expect(rollbackPreview.getByRole("button", { name: "确认创建恢复版本" })).toBeVisible();
+  await expect(rollbackPreview.getByRole("button", { name: "Confirm and create rollback version" })).toBeVisible();
 });

@@ -67,9 +67,9 @@ test("skill detail surfaces governed usage and removal impact", async ({ page })
   // 待接管给出治理入口指引，已接管说明跟随与共享目录计数口径。
   const usage = page.locator("#review-usage-body");
   // 术语轮（2026-10-08）：副本→拷贝；断言意图（待接管去向卡行动指引）不变。
-  await expect(usage.getByText("原位置仍是独立拷贝；可在关系治理中选择“转入技能库管理”。")).toBeVisible();
+  await expect(usage.getByText("原位置仍是独立拷贝。可在关系治理中选择“转入技能库管理”。")).toBeVisible();
   await expect(
-    usage.getByText("管理中的链接跟随技能库当前版本。共享目录只计一个物理去向。"),
+    usage.getByText(/此位置会与技能库当前版本保持同步。\s+共享目录只计一个物理去向。/),
   ).toBeVisible();
 
   // 真实删除流（47bf9085）：工具栏「删除」打开真实删除对话框。2026-10-08

@@ -117,7 +117,7 @@ test("quick drawer opens from card activation and the version section stays reac
   await expect(page).toHaveURL(/\/__preview\/skill-detail\/skill-pdf/);
   await expect(page.getByRole("heading", { name: "PDF Reader" })).toBeVisible();
   // 转正后详情页为六区评审布局，版本时间线位于「版本历史」分区。
-  await page.getByRole("link", { name: "版本历史" }).click();
+  await page.getByRole("link", { name: "Version history" }).click();
   await expect(page).toHaveURL(/#review-versions$/);
   // 预览路由（/__preview/**）无库上下文；版本分区可达性以真实渲染的
   // 版本时间线及其交互元素为锚。

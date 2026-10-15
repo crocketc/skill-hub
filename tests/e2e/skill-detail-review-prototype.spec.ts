@@ -82,7 +82,7 @@ test("review detail uses six user-task sections and one compact skill heading", 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(reviewUrl);
 
-  const navigation = page.getByRole("navigation", { name: "技能详情导航" });
+  const navigation = page.getByRole("navigation", { name: "技能详情分区导航" });
   await expect(navigation.getByRole("link")).toHaveCount(6);
   for (const section of [
     "概览",
@@ -121,7 +121,8 @@ test("review detail keeps readable sample facts and the Markdown reader visible 
     expect(visibleText).not.toContain(internalValue);
   }
 
-  await expect(page.getByText("PDF 阅读工具原始目录", { exact: true })).toBeVisible();
+  await expect(page.getByText("此技能没有导入存证，不能据此推断网络更新来源。", { exact: true })).toBeVisible();
+  await expect(page.getByText("技能库主体位置", { exact: true })).toBeVisible();
   // K9/W3-6：主体位置展示真实物化根路径（预览夹具 rootPath），
   // 不再有样例路径弹层。
   await expect(page.getByText("C:/Users/demo/SkillHub/skills/pdf-reader", { exact: true })).toBeVisible();
@@ -178,17 +179,17 @@ test("review source flow previews the effect and cancelling does not record a de
   // 真实流接线轮（W3-4/K6）：来源更新区接五命令真实契约，夹具已置
   // update_available_with_local_changes 候选。采用入口先取得真实预览，
   // 取消不产生任何采用决定。
-  await expect(page.getByText("发现可采用的更新候选（v2.5.0）")).toBeVisible();
+  await expect(page.getByText(/发现可采用的更新候选.*本机内容有未同步修改/)).toBeVisible();
   await page.getByRole("button", { name: "预览采用影响" }).click();
   const adoptDialog = page.getByRole("dialog", { name: "采用更新影响预览" });
   await expect(adoptDialog).toBeVisible();
   await expect(adoptDialog).toContainText("确认后将按以下文件级变化创建新版本；当前内容保留为历史版本。");
-  await expect(adoptDialog).toContainText("SKILL.md（修改）");
-  await expect(adoptDialog).toContainText("scripts/run.py（新增）");
+  await expect(adoptDialog).toContainText("SKILL.md (修改)");
+  await expect(adoptDialog).toContainText("scripts/run.py (新增)");
   await adoptDialog.getByRole("button", { name: "取消" }).click();
   await expect(adoptDialog).toHaveCount(0);
   // 状态投影不变：候选仍如实呈现，没有冒充已采用的文案。
-  await expect(page.getByText("发现可采用的更新候选（v2.5.0）")).toBeVisible();
+  await expect(page.getByText(/发现可采用的更新候选.*本机内容有未同步修改/)).toBeVisible();
   await expect(page.getByText("已采用来源更新并创建新版本。")).toHaveCount(0);
 });
 
@@ -204,11 +205,11 @@ test("review content save uses the active Markdown draft for overwrite and new-s
   await page.getByRole("button", { name: "保存…" }).click();
   const saveDialog = page.getByRole("dialog", { name: "保存内容" });
   await expect(saveDialog).toBeVisible();
-  await saveDialog.getByLabel("创建新 Skill（另存，登记复用修改来源）").check();
+  await saveDialog.getByLabel("创建新 Skill，并登记复用修改来源").check();
   await saveDialog.getByRole("button", { name: "查看保存影响" }).click();
   const newSkillImpact = page.getByRole("dialog", { name: "保存影响预览" });
   await expect(newSkillImpact.locator("pre")).toContainText("当前编辑草稿由保存面板直接读取。");
-  await expect(newSkillImpact).toContainText("使用位置影响由保存前的目标预览如实分列");
+  await expect(newSkillImpact).toContainText("使用位置影响以保存前的实际预览为准。");
   await newSkillImpact.getByRole("button", { name: "继续：选择继承与目标" }).click();
 
   // 真实另存对话框：不继承/替换继承二选一，默认不继承。
@@ -227,17 +228,17 @@ test("review content save uses the active Markdown draft for overwrite and new-s
 
   await page.getByRole("button", { name: "保存…" }).click();
   const overwriteDialog = page.getByRole("dialog", { name: "保存内容" });
-  await overwriteDialog.getByLabel("覆盖当前 Skill（保留旧版本）").check();
+  await overwriteDialog.getByLabel("覆盖当前 Skill，并保留旧版本").check();
   await overwriteDialog.getByRole("button", { name: "查看保存影响" }).click();
-  await expect(page.getByText("当前版本保留在历史中", { exact: true })).toBeVisible();
+  await expect(page.getByText("当前版本会保留在历史中。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "确认保存并创建版本" }).click();
-  await expect(page.getByText("内容已保存为新版本；网络更新来源继续保留。", { exact: true })).toBeVisible();
+  await expect(page.getByText("内容已保存为新版本；网络更新来源仍保持关联。", { exact: true })).toBeVisible();
 
   // 替换继承分支：确认门在真实对话框——无候选目标时如实呈现空态，
   // 没有目标预览就没有接管提交入口。
   await page.getByRole("button", { name: "保存…" }).click();
   const newSkillDialog = page.getByRole("dialog", { name: "保存内容" });
-  await newSkillDialog.getByLabel("创建新 Skill（另存，登记复用修改来源）").check();
+  await newSkillDialog.getByLabel("创建新 Skill，并登记复用修改来源").check();
   await newSkillDialog.getByRole("button", { name: "查看保存影响" }).click();
   // 影响步更换对话框标题（保存内容 → 保存影响预览），按新名称重新解析。
   await page.getByRole("dialog", { name: "保存影响预览" }).getByRole("button", { name: "继续：选择继承与目标" }).click();
@@ -335,9 +336,9 @@ test("review profile edits cancel or save and translation actions remain explici
   // 不再有「重新翻译」演示弹层；译文写入用途仍需显式确认。
   await page.getByRole("button", { name: "重新翻译描述" }).click();
   await expect(page.getByText("Retranslated description (zh-CN)")).toBeVisible();
-  await page.getByRole("button", { name: "设为我的用途" }).click();
+  await page.getByRole("button", { name: "将译文写入我的用途" }).click();
   await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page.getByRole("button", { name: "确认替换我的用途" }).click();
+  await page.getByRole("button", { name: "确认将译文写入用途" }).click();
   await expect(page.locator(".sh-metadata-panel__editable").filter({ has: page.getByRole("heading", { name: "我的用途说明", exact: true }) })).toContainText("Retranslated description (zh-CN)");
 });
 
@@ -441,7 +442,7 @@ test("review version rows keep shared info and action slots across rows", async 
   // 恢复槽位：历史行是真实按钮，当前行是无障碍隐藏的等宽占位。
   const restoreSlots = rows.locator("> *:last-child");
   await expect(restoreSlots).toHaveCount(3);
-  await expect(restoreSlots.filter({ hasText: /恢复到/ })).toHaveCount(3);
+  await expect(restoreSlots.filter({ hasText: /回滚到/ })).toHaveCount(3);
   await expectSameLeft(restoreSlots);
 });
 
@@ -489,20 +490,20 @@ test("review versions compare, rename and restore with current relationship impa
   await page.getByRole("button", { name: "保存名称" }).click();
   await expect(page.getByRole("heading", { name: "稳定版" })).toBeVisible();
 
-  await page.getByRole("button", { name: "恢复到 稳定版" }).click();
-  const rollback = page.getByRole("region", { name: "恢复影响预览" });
-  await expect(rollback).toContainText("管理中的链接：2 个");
-  // 术语轮（2026-10-08）：副本→拷贝。
-  await expect(rollback).toContainText("独立拷贝：1 个");
-  await expect(rollback).toContainText("恢复后重新执行基础安全检查");
+  await page.getByRole("button", { name: "回滚到 稳定版" }).click();
+  const rollback = page.getByRole("region", { name: "回滚影响预览" });
+  await expect(rollback).toContainText("回滚会创建新的当前版本，不会删除历史记录。");
+  await expect(rollback).toContainText("共享目录 · 受管链接 将更新");
+  await expect(rollback).toContainText("文档协作项目 · 受管链接 将更新");
+  await expect(rollback).toContainText("Codex 终端 · 独立拷贝 固定版本不受影响");
+  await expect(rollback).toContainText("回滚后重新执行基础安全检查");
   await rollback.getByRole("button", { name: "取消" }).click();
   await expect(rollback).toHaveCount(0);
 
-  await page.getByRole("button", { name: "恢复到 稳定版" }).click();
-  await page.getByRole("region", { name: "恢复影响预览" }).getByRole("button", { name: "确认创建恢复版本" }).click();
+  await page.getByRole("button", { name: "回滚到 稳定版" }).click();
+  await page.getByRole("region", { name: "回滚影响预览" }).getByRole("button", { name: "确认创建回滚版本" }).click();
   await expect(page.getByTestId("review-version-result")).toContainText("已创建新的当前版本");
-  await expect(page.getByTestId("review-version-result")).toContainText("管理中的链接继续跟随当前版本");
-  await expect(page.getByTestId("review-version-result")).toContainText("独立拷贝保持原状");
+  await expect(page.getByTestId("review-version-result")).toContainText("已创建新的当前版本。");
 });
 
 test("review content explorer lists files and opens the system app", async ({ page }) => {
@@ -545,10 +546,11 @@ test("review source flow keeps the ignore decision scoped to the current candida
   // update_available_with_local_changes）；忽略按候选身份记录，重新拉取
   // 的状态如实标注忽略事实，采用入口随之隐藏。「关联并采用」联合演示
   // 由显式两段流程（登记来源 → 检查 → 预览采用）替代。
-  await expect(page.getByText("发现可采用的更新候选（v2.5.0）")).toBeVisible();
+  await expect(page.getByText(/发现可采用的更新候选.*本机内容有未同步修改/)).toBeVisible();
   await page.getByRole("button", { name: "忽略本次更新" }).click();
-  await expect(page.getByText("已忽略当前候选；之后的新候选会再次提醒。", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前候选已被忽略；之后的新候选会再次提醒。")).toBeVisible();
+  await expect(page.getByText("当前候选已被忽略；之后的新候选会再次提醒。", { exact: true })).toBeVisible();
+  await expect(page.locator(".sh-skill-detail-review__source-updates .sh-skill-detail-review__section-heading"))
+    .toContainText(/发现可采用的更新候选.*本机内容有未同步修改.*当前候选已被忽略/);
   await expect(page.getByRole("button", { name: "预览采用影响" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "忽略本次更新" })).toHaveCount(0);
 });
@@ -634,7 +636,7 @@ test("review usage section explains section-level governance once above the card
 
   const usageSection = page.locator("#review-usage");
   // 术语轮（2026-10-08）：回收→回收技能、结束→解除关系；汇总句随界面文案重锚。
-  await expect(usageSection.getByText("此处汇总每个使用位置的健康状态与治理待办；接管、保留/撤销、修复、回收技能、解除关系在关系治理（或对应 Agent/项目页）执行，点击卡片按钮会携带该技能与具体关系的上下文跳转。", { exact: true })).toBeVisible();
+  await expect(usageSection.getByText("此处显示每个使用位置及其状态。接管、保留或撤销、修复、回收和解除关系，请前往关系治理或对应的 Agent、项目页。卡片操作会保留当前技能和关系。", { exact: true })).toBeVisible();
   await expect(usageSection.locator(".sh-skill-detail-review__destination")).toHaveCount(3);
 });
 

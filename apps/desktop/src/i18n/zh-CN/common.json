@@ -2194,7 +2194,7 @@
         "empty": "还没有使用去向。派发技能后，这里会显示使用位置及其状态。",
         "label": "技能使用去向",
         "health": "目标入口健康状态异常，请在关系治理中检查。",
-        "managedLink": "受管链接会跟随技能库中的当前版本。{{shared}}{{health}}",
+        "managedLink": "此位置会与技能库当前版本保持同步。{{shared}}{{health}}",
         "sharedManaged": " 共享目录只计一个物理去向。",
         "unmanagedCopy": "原位置仍是独立拷贝。可在关系治理中选择“转入技能库管理”。{{health}}",
         "projectLocation": "项目位置",
@@ -2217,7 +2217,7 @@
         "httpsImport": "网络 HTTPS 导入",
         "gitImport": "Git 仓库导入",
         "added": "新增",
-        "removed": "移除",
+        "removed": "文件已移除",
         "modified": "修改",
         "checkResult": {
           "upToDate": "来源检查完成：已是最新。",

@@ -14,5 +14,5 @@ test("skill detail exposes Markdown read, source, and edit modes", async ({ page
   await expect(page.getByRole("textbox", { name: "Markdown source" })).toBeVisible();
   // 评审保存流（reviewSaveFlow）：保存入口改为「保存…」对话框流程，
   // 完整的保存→版本→时间线链路由 edit-recover 用例覆盖。
-  await expect(page.getByRole("button", { name: "保存…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save…" })).toBeVisible();
 });
