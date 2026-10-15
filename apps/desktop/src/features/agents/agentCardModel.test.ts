@@ -219,7 +219,7 @@ describe("buildAgentDirectoryCardModels", () => {
         {
           ...projectedDirectory().members[0],
           logical_target_id: "agent-skills.shared-directory",
-          brand: "agent-skills",
+          brand: null,
           client_id: "agent-skills.shared-directory",
           kind: "shared_directory",
         },
@@ -244,6 +244,12 @@ describe("buildAgentDirectoryCardModels", () => {
     expect(cards[0].sharedAgentBrands).toEqual(["Cursor", "OpenAI"]);
     expect(cards[0].sharedAgentBrandKinds).toEqual({ Cursor: ["desktop"], OpenAI: ["cli"] });
     expect(cards[0].members.map((member) => member.id)).toEqual(["agent-skills.shared-directory", "openai.cli.target", "cursor.desktop.target"]);
+    expect(cards[0].members[0].instance).toBe("");
+    expect(cards[0].members[0].relations[0]).toMatchObject({
+      logicalLabel: "",
+      logicalLabelKind: "shared_directory",
+    });
+    expect(cards[0].brandLabel).toBe("");
     expect(cards[0].directoryMembers?.map((member) => member.logical_target_id)).toEqual(["agent-skills.shared-directory", "openai.cli.target", "cursor.desktop.target"]);
     expect(cards[0].supportedModes).toEqual(["managed_copy"]);
     expect(cards[0].members.map((member) => [member.deploymentStatus, member.managedDeploymentCount, member.managedDeploymentRelationCount]))

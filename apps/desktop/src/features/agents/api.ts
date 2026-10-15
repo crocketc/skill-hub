@@ -15,6 +15,7 @@ export type {
 
 export interface AgentRelation {
   logicalLabel: string;
+  logicalLabelKind?: "shared_directory" | "unknown";
   logicalTargetId: string;
   physicalPath: string;
   physicalTargetId: string;

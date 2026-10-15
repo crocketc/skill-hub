@@ -257,6 +257,26 @@ it("renders two logical clients connected to one physical directory", async () =
   expect(screen.getAllByTestId("physical-target")).toHaveLength(1);
 });
 
+it.each([
+  ["en-US", "Shared directory"],
+  ["zh-CN", "共享目录"],
+] as const)("localizes shared-directory relation labels in %s", async (locale, expectedLabel) => {
+  const i18n = await createSkillHubI18n([locale]);
+  render(
+    <I18nextProvider i18n={i18n}>
+      <RelationsView relations={[{
+        logicalLabel: "",
+        logicalLabelKind: "shared_directory",
+        logicalTargetId: "shared-directory",
+        physicalPath: "C:/Users/demo/.agents/skills",
+        physicalTargetId: "shared-path",
+      }]} />
+    </I18nextProvider>,
+  );
+
+  expect(screen.getByTestId("logical-target")).toHaveTextContent(expectedLabel);
+});
+
 it("renders the directory matrix beside the physical relations view", async () => {
   const overview: RelationshipOverview = {
     ...emptyOverview,

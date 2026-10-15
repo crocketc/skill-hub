@@ -25,7 +25,13 @@ export function RelationsView({ relations }: RelationsViewProps) {
             <span>{t("agents.pathLabel")} <code>{physical.physicalPath}</code></span>
             <div className="sh-agent-relations__logical">
               {relations.filter((relation) => relation.physicalTargetId === physical.physicalTargetId).map((relation) => (
-                <span data-testid="logical-target" key={relation.logicalTargetId}>{relation.logicalLabel}</span>
+                <span data-testid="logical-target" key={relation.logicalTargetId}>
+                  {relation.logicalLabelKind === "shared_directory"
+                    ? t("agents.kind.sharedDirectory")
+                    : relation.logicalLabelKind === "unknown"
+                      ? t("agents.kind.unknown")
+                      : relation.logicalLabel}
+                </span>
               ))}
             </div>
           </article>

@@ -125,7 +125,8 @@ describe("directory projection compatibility adapter", () => {
 
     const views = agentDirectoryProjectionToViews(projection);
     expect(views).toHaveLength(1);
-    expect(views[0].instance).toBe("共享目录");
+    expect(views[0].instance).toBe("");
+    expect(views[0].kinds).toContain("shared_directory");
     expect(views[0].sharedAgentBrands).toEqual(["Cursor", "OpenAI"]);
     expect(views[0].relations[0].logicalTargetId).toBe("openai.cli.internal-target");
     expect(views[0].directoryMembers?.[0].capabilities.modes).toEqual(["managed_copy", "symbolic_link"]);
@@ -140,7 +141,8 @@ describe("directory projection compatibility adapter", () => {
     expect(cards).toHaveLength(1);
     expect(cards[0].sharedDirectory).toBe(true);
     expect(cards[0].agent.brand).toBe("Agent Skills");
-    expect(cards[0].agent.instance).toBe("共享目录");
+    expect(cards[0].agent.instance).toBe("");
+    expect(cards[0].agent.kinds).toContain("shared_directory");
     expect(cards[0].agent.instance).not.toContain("internal");
     expect(cards[0].agent.directoryMembers?.map((member) => member.managed_deployment_count)).toEqual([1, 0]);
     expect(cards[0].agent.deploymentStatus).toBe("deployed");

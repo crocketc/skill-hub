@@ -78,7 +78,9 @@ function projectedDeploymentStatus(members: readonly AgentDirectoryMemberFact[])
 
 function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirectoryMemberFact): AgentView {
   const brand = member.brand ?? "Agent Skills";
-  const displayName = member.brand ?? "共享目录";
+  const sharedDirectory = directory.is_shared_directory ?? directory.role === "shared_directory";
+  const displayName = member.brand ?? "";
+  const logicalLabelKind = member.brand ? undefined : sharedDirectory ? "shared_directory" : "unknown";
   return {
     id: member.logical_target_id,
     brand,
@@ -90,6 +92,7 @@ function projectedMemberView(directory: AgentDirectoryFact, member: AgentDirecto
     officialReference: null,
     relations: [{
       logicalLabel: displayName,
+      logicalLabelKind,
       logicalTargetId: member.logical_target_id,
       physicalPath: directory.path,
       physicalTargetId: directory.identity.kind === "verified_physical" ? directory.identity.value : "",
@@ -165,7 +168,7 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
         id: identity,
         brand,
         client: "unknown",
-        instance: shared ? "共享目录" : brand,
+        instance: shared ? "" : brand,
         discoveredPaths: directory.exists ? [directory.path] : [],
         managedDeploymentCount: 0,
         managedDeploymentRelationCount: 0,
@@ -175,11 +178,12 @@ export function agentDirectoryProjectionToAgentViews(projection: AgentDirectoryP
       }),
       id: representative?.id ?? identity,
       brand,
-      instance: shared ? "共享目录" : representative?.instance ?? brand,
+      instance: shared ? "" : representative?.instance ?? brand,
       kinds,
       discoveredPaths: directory.exists || directory.status !== "missing" ? [directory.path] : [],
       relations: directory.members.map((member) => ({
-        logicalLabel: member.brand ?? "共享目录",
+        logicalLabel: member.brand ?? "",
+        logicalLabelKind: member.brand ? undefined : shared ? "shared_directory" : "unknown",
         logicalTargetId: member.logical_target_id,
         physicalPath: directory.path,
         physicalTargetId: directory.identity.kind === "verified_physical" ? directory.identity.value : "",
@@ -234,7 +238,7 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
     return {
       id: `${directory.role}:${shared ? "shared" : "agent"}:${identityKey}`,
       brand: shared ? "Agent Skills" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
-      brandLabel: shared ? "共享目录" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
+      brandLabel: shared ? "" : directory.members.find((member) => member.brand)?.brand ?? "Agent",
       kinds,
       directories: [directoryView],
       sharedDirectory: shared,
@@ -256,7 +260,7 @@ export function buildAgentDirectoryCardModels(projection: AgentDirectoryProjecti
 function directoryKey(directory: AgentDirectoryView): string {
   const identity = directory.physicalIdentityVerified && directory.physicalIdentityKey
     ? `physical:${directory.physicalIdentityKey}`
-    : `candidate:${directory.candidateIdentityKey ?? (directory.path ?? "待创建").trim().replaceAll("\\", "/").replace(/\/+$/g, "").toLowerCase()}`;
+    : `candidate:${directory.candidateIdentityKey ?? (directory.path ?? "pending").trim().replaceAll("\\", "/").replace(/\/+$/g, "").toLowerCase()}`;
   return `${directory.role}:${directory.isSharedDirectory ? "shared" : "normal"}:${directory.builtin ? "builtin" : "normal"}:${identity}`;
 }
 
