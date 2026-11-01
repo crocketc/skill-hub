@@ -103,7 +103,7 @@ jobs:
             "$RELEASE_TAG" "$(git rev-parse HEAD)" > artifacts/release-metadata.txt
 
       - name: Upload source metadata and SBOM
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-metadata
           path: artifacts
@@ -166,7 +166,7 @@ jobs:
           "tag=$env:RELEASE_TAG`ncommit=$(git rev-parse HEAD)`nplatform=windows`ntarget=${{ matrix.target }}`ntrust=tauri-updater-signed;installer-unsigned" | Set-Content -Encoding ascii artifacts/release-metadata-${{ matrix.target }}.txt
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-${{ matrix.target }}
           path: artifacts
@@ -222,7 +222,7 @@ jobs:
             "$RELEASE_TAG" "$(git rev-parse HEAD)" > artifacts/release-metadata-macos-universal.txt
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-universal
           path: artifacts
@@ -261,7 +261,7 @@ jobs:
           printf 'tag=%s\ncommit=%s\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" > release-evidence/release-provenance.txt
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-evidence-${{ env.RELEASE_TAG }}
           path: release-evidence
